@@ -27,9 +27,35 @@ const COUNTS: PlannedSession = {
   awaitAbort: false,
   reply: { outcome: "done", summary: "Counted the widgets." },
 };
-// Setup records the slot and folder it ran with outside the checkout, in
-// the machine's root beside the pipeline root.
-const RECORD_SETUP = `printf '%s\\t%s\\n' "$ISSUE_PIPELINE_LANE_SLOT" "$PWD" >> "$ISSUE_PIPELINE_ROOT/../setup.log"`;
+const HARDENS: PlannedSession = {
+  ...COUNTS,
+  commit: {
+    file: "counter.txt",
+    content: "3 widgets, checked\n",
+    message: "Check the widget count",
+  },
+  reply: { outcome: "done", summary: "Checked the count." },
+};
+const REVIEWS: PlannedSession = {
+  commit: null,
+  change: null,
+  changeFirst: false,
+  awaitAbort: false,
+  reply: { summary: "No security finding.", finding: null },
+};
+// Implement and Harden each on a poll of their own; the third poll stops.
+const DEVELOPER_POLLS = 3;
+// Integrate and Review Security each on a poll of their own; the third
+// poll stops.
+const GATEKEEPER_POLLS = 3;
+const INTEGRATE_CHECKOUT = /\/integrate-[^/]+\/repo$/u;
+// A project command that records its name, slot and folder outside the
+// checkout, in the machine's root beside the pipeline root.
+function recording(name: string): string {
+  return `printf '%s\\t%s\\t%s\\n' ${name} "$ISSUE_PIPELINE_LANE_SLOT" "$PWD" >> "$ISSUE_PIPELINE_ROOT/../commands.log"`;
+}
+const RECORD_SETUP = recording("setup");
+const RECORD_TEST = recording("test");
 const PARTIAL = "warm.partial";
 const SETUP_EXIT = 3;
 // Polls until the failing run stops: a later poll finds the issue held.
@@ -42,9 +68,9 @@ const SETUP_INCOMPLETE = /lane setup is incomplete/u;
 const OPERATOR_SLOT = "ISSUE_PIPELINE_LANE_SLOT";
 process.env[OPERATOR_SLOT] = "9";
 
-// What setup observed, one [slot, folder] per run.
-function setupRuns(box: Machine): string[][] {
-  const log = path.join(box.root, "setup.log");
+// What the recording commands observed, one [name, slot, folder] per run.
+function commandRuns(box: Machine): string[][] {
+  const log = path.join(box.root, "commands.log");
   if (!fs.existsSync(log)) {
     return [];
   }
@@ -107,12 +133,12 @@ test("configured setup and the writer session use the issue's leased lane slot, 
     );
     // Setup ran once, in the action's own checkout, with slot 1 of the
     // pool rather than the operator's slot 9.
-    const runs = setupRuns(box);
+    const runs = commandRuns(box);
     assert.equal(runs.length, 1);
-    assert.equal(runs[0]?.[0], "1");
+    assert.deepEqual(runs[0]?.slice(0, 2), ["setup", "1"]);
     assert.ok(
-      runs[0]?.[1]?.endsWith(`issue-${ISSUE}-action-${action.id}/repo`),
-      `setup ran in ${String(runs[0]?.[1])}`,
+      runs[0]?.[2]?.endsWith(`issue-${ISSUE}-action-${action.id}/repo`),
+      `setup ran in ${String(runs[0]?.[2])}`,
     );
     // The model process inherited the same leased slot.
     const launches = box.launches();
@@ -155,7 +181,7 @@ test("a failed setup starts no session and retains the checkout, its untracked w
     );
     assert.deepEqual(action.sessions, []);
     assert.deepEqual(box.launches(), []);
-    assert.equal(setupRuns(box).length, 1);
+    assert.equal(commandRuns(box).length, 1);
     const log = path.join(
       box.pipeline,
       "runs",
@@ -184,6 +210,74 @@ test("a failed setup starts no session and retains the checkout, its untracked w
     });
     assert.equal(action.ownership.state, "retained");
     assert.match(String(action.ownership.reason), SETUP_INCOMPLETE);
+    passed = true;
+  } finally {
+    keepIfFailed(box, passed);
+  }
+});
+
+test("Harden, Integrate's checks and Review Security each use the issue's leased slot", async () => {
+  const box = machine(() => undefined, {
+    landPermission: false,
+    laneSlots: 2,
+    setup: RECORD_SETUP,
+    test: RECORD_TEST,
+  });
+  let passed = false;
+  try {
+    const developer = await box.runBuddy([COUNTS, HARDENS], DEVELOPER_POLLS, {
+      role: "developer",
+      tasks: ["implement", "harden"],
+    });
+    assert.equal(developer.status, 0, developer.stderr);
+    const gatekeeper = await box.runBuddy([REVIEWS], GATEKEEPER_POLLS, {
+      role: "gatekeeper",
+      tasks: ["integrate", "review-security"],
+    });
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const byTask = new Map(
+      gatekeeper.actions.map((action) => [action.task, action]),
+    );
+    const order = [
+      "implement",
+      "harden",
+      "integrate",
+      "review-security",
+    ] as const;
+    assert.deepEqual(
+      order.map((task) => {
+        const action = byTask.get(task);
+        return [task, action?.verdict, action?.ownership.state];
+      }),
+      order.map((task) => [task, "passed", "released"]),
+    );
+    // Each preparing task ran setup in its own checkout; Integrate's
+    // deterministic checks ran setup and the test in their own detached
+    // checkout. Every one of them, and every model session, got slot 1.
+    function actionRepo(task: (typeof order)[number]): string {
+      return `issue-${ISSUE}-action-${String(byTask.get(task)?.id)}/repo`;
+    }
+    const runs = commandRuns(box);
+    assert.deepEqual(
+      runs.map(([name, slot]) => [name, slot]),
+      [
+        ["setup", "1"],
+        ["setup", "1"],
+        ["setup", "1"],
+        ["test", "1"],
+        ["setup", "1"],
+      ],
+    );
+    assert.ok(runs[0]?.[2]?.endsWith(actionRepo("implement")));
+    assert.ok(runs[1]?.[2]?.endsWith(actionRepo("harden")));
+    assert.match(runs[2]?.[2] ?? "", INTEGRATE_CHECKOUT);
+    assert.equal(runs[3]?.[2], runs[2]?.[2]);
+    assert.ok(runs[4]?.[2]?.endsWith(actionRepo("review-security")));
+    assert.deepEqual(
+      box.launches().map((launch) => launch.laneSlot),
+      ["1", "1", "1"],
+    );
+    assert.deepEqual(laneStore(box), { leases: [], prunedAt: null });
     passed = true;
   } finally {
     keepIfFailed(box, passed);

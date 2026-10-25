@@ -103,11 +103,13 @@ type BuddyChoice =
 // The machine's trusted repository configuration, fixed before any action:
 // whether it grants Land (`permissions.land`), which the shared checking
 // policy digest covers, its optional lane slot pool (`laneSlots`) and the
-// pinned project policy's optional setup command.
+// pinned project policy's optional setup command and test command, which
+// otherwise logs the commit it checked (checksRun).
 interface MachineSetup {
   landPermission: boolean;
   laneSlots?: number;
   setup?: string;
+  test?: string;
 }
 
 // What one buddy run printed and left behind.
@@ -205,7 +207,7 @@ function checksLog(root: string): string {
 // whose test command passes, logging the commit it checked.
 function repository(
   root: string,
-  setup: string | undefined,
+  configured: Pick<MachineSetup, "setup" | "test">,
 ): {
   origin: string;
   work: string;
@@ -227,7 +229,8 @@ function repository(
   git(work, ["add", "README.md"]);
   git(work, ["commit", "--quiet", "-m", "Target"]);
   git(work, ["push", "--quiet", "origin", "main"]);
-  const test = `git rev-parse HEAD >> '${checksLog(root)}'`;
+  const { setup } = configured;
+  const test = configured.test ?? `git rev-parse HEAD >> '${checksLog(root)}'`;
   let commands: { test: string; setup?: string } = { test };
   if (setup !== undefined) {
     commands = { test, setup };
@@ -437,7 +440,7 @@ function machine(
   install(pipeline, agentDir);
   writeShim(bin, "gh", FAKE_GH);
   writeShim(bin, "pi", FAKE_PI);
-  const { origin, work, policy, revision } = repository(root, setup.setup);
+  const { origin, work, policy, revision } = repository(root, setup);
   const credentials = path.join(root, "credentials.env");
   fs.writeFileSync(
     credentials,
