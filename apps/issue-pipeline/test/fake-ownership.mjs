@@ -69,8 +69,8 @@ function changeStore(change) {
 
 // A coordination store with nothing the real transport wrote yet: only the
 // base commit its token commits descend from.
-/** @param {{ repo: string, baseBranch: string }} cfg @returns {void} */
-function freshStore({ repo, baseBranch }) {
+/** @param {{ repo: string, baseBranch: string }} cfg @param {string} [dir] the fake's folder @returns {void} */
+function freshStore({ repo, baseBranch }, dir = fakeDir) {
   const store = {
     repo,
     base: baseBranch,
@@ -84,16 +84,18 @@ function freshStore({ repo, baseBranch }) {
     takeover: false,
     request: null,
   };
-  fs.writeFileSync(path.join(fakeDir, "ownership.json"), JSON.stringify(store));
+  fs.writeFileSync(path.join(dir, "ownership.json"), JSON.stringify(store));
 }
 
 // Whether a scripted listing of issue `n`'s comments holds saved state,
 // which an earlier run must have saved.
 /** @param {number} n @returns {boolean} */
 function hasSavedState(n) {
-  const replies = JSON.parse(
-    fs.readFileSync(path.join(fakeDir, "replies.json"), "utf8"),
-  );
+  const file = path.join(fakeDir, "replies.json");
+  if (!fs.existsSync(file)) {
+    return false;
+  }
+  const replies = JSON.parse(fs.readFileSync(file, "utf8"));
   return replies.some(
     (/** @type {{ when: string, stdout?: string }} */ { when, stdout = "" }) =>
       when.includes(`issues/${n}/comments?`) &&
@@ -223,27 +225,35 @@ function bindOpsRequest({ config, root, request: sent }) {
 }
 
 /**
- * Runs `send` with `request` bound to a new owner of its issue on any fake
- * GitHub that serves the real transport, such as the full-flow world: it
- * acquires as a stage job does, and releases after, so the next job can
- * acquire. The checkout is the issue's worktree on its legacy branch.
+ * Runs `send` with `request` bound to a new owner of its issue, as a stage
+ * job's is: it acquires through the real transport and releases after, so
+ * the next job can acquire. A fake that serves the transport itself, such
+ * as the full-flow world, needs no `store`; one that serves it through
+ * fake-ownership-gh.cjs names the folder it keeps its store in. The
+ * checkout is the request's, else the issue's worktree on its legacy branch.
  * @template T
- * @param {{ config: string, env: NodeJS.ProcessEnv, request: object }} where
+ * @param {{ config: string, env: NodeJS.ProcessEnv, request: object, store?: string }} where
  * @param {(request: object) => T} send
  * @returns {T}
  */
-function ownedRequest({ config, env, request: sent }, send) {
+function ownedRequest({ config, env, request: sent, store }, send) {
   const request = /** @type {OpsRequest} */ (sent);
   const n = request.number;
   if (typeof n !== "number" || "execution" in request) {
     return send(request);
   }
-  const { repo } = JSON.parse(fs.readFileSync(config, "utf8"));
+  const settings = JSON.parse(fs.readFileSync(config, "utf8"));
   const { ISSUE_PIPELINE_ROOT: root = "" } = env;
   const checkout = {
     issue: n,
-    dir: path.join(root, "work", repo.replace("/", "__"), `issue-${n}`),
+    dir: path.join(
+      root,
+      "work",
+      settings.repo.replace("/", "__"),
+      `issue-${n}`,
+    ),
     branch: `agent/issue-${n}`,
+    ...request.checkout,
   };
   const frame = { config, number: n, lane: "L", checkout };
   /** @param {string} mode @param {object} input @returns {string} */
@@ -258,8 +268,18 @@ function ownedRequest({ config, env, request: sent }, send) {
     }
     return r.stdout;
   }
-
+  if (store !== undefined) {
+    freshStore(settings, store);
+    const file = path.join(store, "ownership.json");
+    const fresh = JSON.parse(fs.readFileSync(file, "utf8"));
+    fs.writeFileSync(file, JSON.stringify({ ...fresh, acquiring: true }));
+  }
   const execution = JSON.parse(owner("owner", frame));
+  if (store !== undefined) {
+    const file = path.join(store, "ownership.json");
+    const owned = JSON.parse(fs.readFileSync(file, "utf8"));
+    fs.writeFileSync(file, JSON.stringify({ ...owned, acquiring: false }));
+  }
   try {
     return send({ ...request, checkout, execution });
   } finally {
