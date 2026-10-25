@@ -132,7 +132,7 @@ function syncTask(cfg: Config, request: unknown): SyncReply {
   return stopped(sync);
 }
 
-function syncTaskFinish(cfg: Config, request: unknown): SyncReply {
+function syncTaskFinish(cfg: Config, request: unknown): EffectOutcome {
   const open = openRun(cfg, request, "sync", "sync-task-finish");
   const req = FINISH.parse(request);
   const sync = syncOf(open);

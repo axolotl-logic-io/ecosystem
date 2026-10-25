@@ -308,12 +308,14 @@ function records(world: World, number: number): unknown[] {
 export type { Harness, Inbox };
 export {
   BUDDY_RUN,
+  baseWorld,
   COMMIT,
   harness,
   LANDING,
   labelledIssue,
   MARK,
   mentions,
+  ORGANIZATION,
   OTHER_COMMIT,
   OTHER_REQUIREMENTS,
   REPO,

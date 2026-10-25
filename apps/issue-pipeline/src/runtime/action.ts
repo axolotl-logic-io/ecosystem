@@ -69,7 +69,11 @@ import type { LaunchStart, StopSignal } from "../job/status.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { SignalScope } from "../signals/inbox.ts";
 import { requalify, stopLatch } from "../signals/inbox.ts";
-import { beginAction, finishAction } from "../tasks/index.ts";
+import {
+  ActionNotAdmitted,
+  beginAction,
+  finishAction,
+} from "../tasks/index.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 import type { BuddyEnvelope, BuddyRepository } from "./buddy-config.ts";
 import { assertBuddyAuthorization } from "./buddy-config.ts";
@@ -142,11 +146,14 @@ interface ActionSetting {
 }
 
 // How an action run settled.
+// `notAdmitted`: the attempt's state when beginAction recorded none, so
+// no action began; null once it began.
 interface ActionSummary {
   id: ActionRunId;
   end: ActionEnd;
   ownership: "released" | "retained";
   reason: string | null;
+  notAdmitted: "waiting" | "held" | null;
 }
 
 // Thrown at a boundary that a stop, a changed trust, a lost ownership, a
@@ -638,7 +645,11 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
     boundary: (name: string): Promise<void> => boundaryOf(open, name),
     op: async (name: string, payload: object): Promise<unknown> => {
       await boundaryOf(open, `op ${name}`);
-      return await recordedOp(name, payload);
+      const reply = await recordedOp(name, payload);
+      if (!reply.ok) {
+        throw new Error(reply.error);
+      }
+      return reply.reply;
     },
     session: (spec: SessionSpec): Promise<SessionResult> =>
       sessionOf(launcher, spec),
@@ -824,13 +835,20 @@ async function recordEnd(
   }
 }
 
-// Settles `open` after its task ended with `end`: records the end (for a
-// new attempt), preserves the checkout, releases the reservation and then
-// the issue's execution, as far as nothing holds each.
+// How the task of an action ran: its end, the record of that end for a new
+// attempt, and the attempt's state when none began.
+interface TaskRun {
+  end: ActionEnd;
+  record: (() => Promise<void>) | null;
+  notAdmitted: "waiting" | "held" | null;
+}
+
+// Settles `open` after its task ran: records the end (for a new attempt),
+// preserves the checkout, releases the reservation and then the issue's
+// execution, as far as nothing holds each.
 async function settle(
   open: OpenAction,
-  end: ActionEnd,
-  record: (() => Promise<void>) | null,
+  { end, record, notAdmitted }: TaskRun,
 ): Promise<ActionSummary> {
   const recorded = await recordEnd(record);
   open.control.close();
@@ -852,7 +870,7 @@ async function settle(
       ownership: { state: ownership, reason },
     }),
   );
-  return { id: open.admitted.id, end, ownership, reason };
+  return { id: open.admitted.id, end, ownership, reason, notAdmitted };
 }
 
 function initialObservation(
@@ -919,16 +937,37 @@ function unopened(
     end: unknownEnd(reason, "ended"),
     ownership: "retained",
     reason,
+    notAdmitted: null,
   };
+}
+
+// The end of an attempt beginAction did not begin: ActionNotAdmitted's own
+// state, recorded nothing; any other failure leaves whether the attempt
+// was recorded unknown, which holds.
+function notBegun(error: unknown): {
+  end: ActionEnd;
+  notAdmitted: "waiting" | "held";
+} {
+  const reason = `no attempt began: ${messageOf(error)}`;
+  if (error instanceof ActionNotAdmitted && error.state === "waiting") {
+    return {
+      end: { state: "waiting", outcome: null, reason, verdict: "unknown" },
+      notAdmitted: "waiting",
+    };
+  }
+  if (error instanceof ActionNotAdmitted) {
+    return {
+      end: { state: "ended", outcome: null, reason, verdict: "unknown" },
+      notAdmitted: "held",
+    };
+  }
+  return { end: unknownEnd(reason, "ended"), notAdmitted: "held" };
 }
 
 // Runs the task of `open`: only its read-only recover for a recover
 // readiness, else a new attempt that begins (beginAction) before its first
 // effect and whose end is recorded (finishAction) at settlement.
-async function runTask(
-  open: OpenAction,
-  ctx: ActionContext,
-): Promise<{ end: ActionEnd; record: (() => Promise<void>) | null }> {
+async function runTask(open: OpenAction, ctx: ActionContext): Promise<TaskRun> {
   const { task } = open.setting;
   if (open.admitted.mode === "recover") {
     const { recover } = task;
@@ -936,25 +975,26 @@ async function runTask(
       return {
         end: unknownEnd(`task ${task.id} has no recovery`, "ended"),
         record: null,
+        notAdmitted: null,
       };
     }
-    return { end: await endOf(open, () => recover(ctx)), record: null };
+    return {
+      end: await endOf(open, () => recover(ctx)),
+      record: null,
+      notAdmitted: null,
+    };
   }
   try {
     await beginAction(ctx);
   } catch (error: unknown) {
-    return {
-      end: {
-        state: "waiting",
-        outcome: null,
-        reason: `no attempt began: ${messageOf(error)}`,
-        verdict: "unknown",
-      },
-      record: null,
-    };
+    return { ...notBegun(error), record: null };
   }
   const end = await endOf(open, () => task.act(ctx));
-  return { end, record: (): Promise<void> => finishAction(ctx, end) };
+  return {
+    end,
+    record: (): Promise<void> => finishAction(ctx, end),
+    notAdmitted: null,
+  };
 }
 
 // Opens the action's checkout and control socket, or says why it couldn't.
@@ -1069,11 +1109,11 @@ async function runAction(
     open,
     AbortSignal.any([finished.signal, open.signal]),
   ).catch((): null => null);
-  const { end, record } = await runTask(open, contextOf(open, actionDir));
+  const ran = await runTask(open, contextOf(open, actionDir));
   finished.abort();
   open.signal.removeEventListener("abort", onStop);
   await watching;
-  return await settle(open, end, record);
+  return await settle(open, ran);
 }
 
 export type { ActionSetting, ActionSummary, AdmittedAction };

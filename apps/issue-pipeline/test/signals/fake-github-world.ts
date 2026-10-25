@@ -35,8 +35,24 @@ const COMMENT = z.strictObject({
   editor: z.string().nullable(),
   createdAt: z.string(),
 });
+// A pull request, as the buddy flow tests' fake gh keeps it.
+const PULL = z.strictObject({
+  number: z.number().int().positive(),
+  head: z.string(),
+  base: z.string(),
+  title: z.string(),
+  body: z.string(),
+  author: z.string(),
+  state: z.enum(["OPEN", "CLOSED", "MERGED"]),
+  isDraft: z.boolean(),
+});
 const ISSUE = z.strictObject({
   number: z.number().int().positive(),
+  // The issue's own text and author, which the task lane's trusted
+  // requirements read; the signal tests leave them out.
+  title: z.string().optional(),
+  body: z.string().optional(),
+  author: z.string().optional(),
   pullRequest: z.boolean(),
   labels: z.array(z.string()),
   events: z.array(EVENT),
@@ -112,6 +128,26 @@ const WORLD = z.strictObject({
   post: z.enum(["ok", "lost-after-apply", "lost-before-apply"]),
   nextId: z.number().int().positive(),
   tasks: z.array(TASK_ANSWERS),
+  // The buddy flow tests' additions: the repository's collaborators, its
+  // pull requests, the buddy process the fake stops with SIGTERM when a
+  // poll's first open-issue listing is its `atPoll`th, and a concurrent
+  // writer's comment that GitHub shows right after the first POST whose
+  // body contains every one of `after`.
+  collaborators: z.array(z.string()).optional(),
+  race: z
+    .strictObject({
+      after: z.array(z.string()).min(1),
+      comment: z.strictObject({ author: z.string(), body: z.string() }),
+    })
+    .optional(),
+  pulls: z.array(PULL).optional(),
+  stopBuddy: z
+    .strictObject({
+      pid: z.number().int().positive(),
+      atPoll: z.number().int().positive(),
+      polls: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 
 type World = z.infer<typeof WORLD>;

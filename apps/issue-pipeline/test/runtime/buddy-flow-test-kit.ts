@@ -1,0 +1,459 @@
+// The buddy flow tests' kit: a disposable machine on which the real buddy
+// runs as the operator installs it. Its pipeline root holds this source's
+// build (buddy.mjs, ops.mjs and the session extensions) and prompt pages,
+// and pi's agent folder the installed agent definitions. The repository is
+// a real local bare origin with a pinned project policy; GitHub is the
+// signal tests' fake gh (test/signals/fake-gh.ts) over one world file,
+// whose git database is that origin; the model is fake-pi.ts, playing the
+// sessions of a plan. Nothing here stands in for the runtime, the tasks,
+// the ops or the ledger: tests read back what they wrote to the world, the
+// origin and the run observations.
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import process from "node:process";
+import { z } from "zod";
+import {
+  ACTION_RUN,
+  BUDDY_RUN as BUDDY_RUN_OBSERVATION,
+} from "../../src/runtime/observations.ts";
+import type { FakeIssue, World } from "../signals/fake-github-world.ts";
+import { readWorld, writeWorld } from "../signals/fake-github-world.ts";
+import {
+  baseWorld,
+  LANDING,
+  ORGANIZATION,
+  REPO,
+} from "../signals/signal-test-kit.ts";
+
+const SOURCE = path.resolve(import.meta.dirname, "../..");
+const FAKE_GH = path.join(SOURCE, "test", "signals", "fake-gh.ts");
+const FAKE_PI = path.join(SOURCE, "test", "runtime", "fake-pi.ts");
+const DEVELOPER = "lawd-dev";
+const HUMAN = "autumn";
+const EXECUTABLE = 0o755;
+const PRIVATE = 0o600;
+const ISSUE = 7;
+const MODEL_ID = "fake-model";
+const MODEL = `openai/${MODEL_ID}`;
+const CONTEXT_WINDOW = 272_000;
+const SLUG = REPO.replace("/", "__");
+const ENDED = z.strictObject({
+  buddyRun: z.uuid(),
+  kind: z.enum(["stopped", "failed"]),
+  reason: z.string(),
+});
+const LOGGED = z.strictObject({ login: z.string(), args: z.array(z.string()) });
+// The fields of task-result and coordination records the tests read.
+const RECORD = z.looseObject({
+  kind: z.string(),
+  scope: z.string().optional(),
+  run: z.unknown().optional(),
+  verdict: z.unknown().optional(),
+  receipt: z.unknown().optional(),
+  consumer: z.unknown().optional(),
+});
+const PI_LAUNCH = z.strictObject({
+  args: z.array(z.string()),
+  prompt: z.string(),
+  cwd: z.string(),
+});
+
+type ActionRun = z.infer<typeof ACTION_RUN>;
+type BuddyRun = z.infer<typeof BUDDY_RUN_OBSERVATION>;
+type Logged = z.infer<typeof LOGGED>;
+
+// One session fake pi plays.
+interface PlannedSession {
+  commit: { file: string; content: string; message: string } | null;
+  change: "stop-issue" | "human-leaves" | "posts-fail" | null;
+  awaitAbort: boolean;
+  reply: Record<string, unknown> | null;
+}
+
+// What one buddy run printed and left behind.
+interface BuddyOutcome {
+  status: number | null;
+  stderr: string;
+  ended: z.infer<typeof ENDED>;
+  run: BuddyRun;
+  actions: ActionRun[];
+}
+
+interface Machine {
+  root: string;
+  origin: string;
+  work: string;
+  pipeline: string;
+  world: () => World;
+  change: (edit: (world: World) => void) => void;
+  calls: () => Logged[];
+  // The pi launches fake-pi.ts played, in order.
+  launches: () => z.infer<typeof PI_LAUNCH>[];
+  // Runs the buddy with `sessions` planned until a poll's first listing is
+  // the `stopAtPoll`th, when the fake gh stops it with SIGTERM.
+  runBuddy: (
+    sessions: PlannedSession[],
+    stopAtPoll: number,
+  ) => Promise<BuddyOutcome>;
+  git: (args: string[]) => string;
+  cleanup: () => void;
+}
+
+function git(directory: string, args: string[]): string {
+  const result = spawnSync("git", ["-C", directory, ...args], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `git ${args.join(" ")}: ${result.stdout}\n${result.stderr}`,
+    );
+  }
+  return result.stdout.trim();
+}
+
+function writePrivate(file: string, value: object): void {
+  fs.writeFileSync(file, JSON.stringify(value));
+  fs.chmodSync(file, PRIVATE);
+}
+
+function writeShim(bin: string, name: string, script: string): void {
+  const shim = path.join(bin, name);
+  fs.writeFileSync(
+    shim,
+    `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`,
+  );
+  fs.chmodSync(shim, EXECUTABLE);
+}
+
+// Builds this source into the pipeline root and installs its prompts and
+// agent definitions, as install.ts lays them out.
+function install(pipeline: string, agentDir: string): void {
+  const built = spawnSync(process.execPath, ["build.ts", pipeline], {
+    cwd: SOURCE,
+    encoding: "utf8",
+  });
+  if (built.status !== 0) {
+    throw new Error(`build failed: ${built.stderr}`);
+  }
+  fs.cpSync(path.join(SOURCE, "prompts"), path.join(pipeline, "prompts"), {
+    recursive: true,
+  });
+  const agents = path.join(agentDir, "agents", "issue-pipeline");
+  fs.mkdirSync(agents, { recursive: true });
+  for (const file of fs.readdirSync(path.join(SOURCE, "agents"))) {
+    fs.copyFileSync(path.join(SOURCE, "agents", file), path.join(agents, file));
+  }
+}
+
+// The origin with `main` at one commit, a work clone to change it from,
+// and a pinned project policy whose shared pool has one model session.
+function repository(root: string): {
+  origin: string;
+  work: string;
+  policy: string;
+  revision: string;
+} {
+  const origin = path.join(root, "origin.git");
+  const work = path.join(root, "work");
+  const policy = path.join(root, "policy");
+  git(root, ["init", "--bare", "--initial-branch=main", origin]);
+  git(root, ["clone", "--quiet", origin, work]);
+  git(work, ["config", "user.name", "Flow test"]);
+  git(work, ["config", "user.email", "flow@example.test"]);
+  git(work, ["checkout", "--quiet", "-b", "main"]);
+  fs.writeFileSync(path.join(work, "README.md"), "widgets\n");
+  git(work, ["add", "README.md"]);
+  git(work, ["commit", "--quiet", "-m", "Target"]);
+  git(work, ["push", "--quiet", "origin", "main"]);
+  fs.mkdirSync(policy);
+  git(policy, ["init", "--quiet", "--initial-branch=main"]);
+  git(policy, ["config", "user.name", "Flow test"]);
+  git(policy, ["config", "user.email", "flow@example.test"]);
+  git(policy, ["remote", "add", "origin", origin]);
+  fs.writeFileSync(
+    path.join(policy, ".issue-pipeline.json"),
+    JSON.stringify({
+      commands: { test: "true" },
+      resources: { modelSessions: 1 },
+    }),
+  );
+  git(policy, ["add", ".issue-pipeline.json"]);
+  git(policy, ["commit", "--quiet", "-m", "Pin settings"]);
+  return { origin, work, policy, revision: git(policy, ["rev-parse", "HEAD"]) };
+}
+
+// Issue ISSUE, written by the trusted human, labelled start:implement by
+// them in event 300.
+function startedIssue(): FakeIssue {
+  return {
+    number: ISSUE,
+    title: "Add a widget counter",
+    body: "Count the widgets.",
+    author: HUMAN,
+    pullRequest: false,
+    labels: ["start:implement"],
+    events: [
+      {
+        id: 300,
+        event: "labeled",
+        label: "start:implement",
+        actor: HUMAN,
+        viaApp: false,
+        createdAt: "2026-10-25T10:00:00Z",
+      },
+    ],
+    comments: [],
+  };
+}
+
+// The repository config's runtime section.
+interface ProvisionedRuntime {
+  home: string;
+  providerExtension: string;
+  credentialEnv: string[];
+  modelContextWindows: Record<string, number>;
+}
+
+// The model runtime the operator provisions: a pi-cliproxyapi 0.4.3
+// provider and its reviewed profile in a runtime home of its own. fake-pi.ts
+// answers pi's state from this profile as pi would.
+function provisionRuntime(root: string): ProvisionedRuntime {
+  const home = path.join(root, "runtime-home");
+  const provider = path.join(root, "provider");
+  const profile = path.join(home, ".pi", "agent", "pi-cliproxyapi");
+  fs.mkdirSync(profile, { recursive: true });
+  fs.mkdirSync(provider);
+  fs.writeFileSync(
+    path.join(provider, "package.json"),
+    JSON.stringify({ name: "pi-cliproxyapi", version: "0.4.3" }),
+  );
+  fs.writeFileSync(path.join(provider, "index.ts"), "export default {};\n");
+  fs.writeFileSync(
+    path.join(profile, "config.json"),
+    JSON.stringify({
+      proxy: {
+        endpoint: "http://proxy.invalid/v1",
+        apiKey: "$PIPELINE_MODEL_KEY",
+      },
+      builtinProviders: { openai: { enabled: true, models: [MODEL_ID] } },
+    }),
+  );
+  const model = {
+    id: MODEL_ID,
+    name: MODEL_ID,
+    reasoning: true,
+    contextWindow: CONTEXT_WINDOW,
+    maxTokens: 64_000,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+  fs.writeFileSync(
+    path.join(profile, "discovery-cache.json"),
+    JSON.stringify({
+      savedAt: 0,
+      discovery: {
+        source: "v1-models",
+        upstreamVersion: null,
+        builtinProviders: [
+          { name: "openai", api: "openai-responses", models: [model] },
+        ],
+        customPool: [],
+        serverDiscoveryExcludes: [],
+        upstreamTotal: 1,
+      },
+    }),
+  );
+  return {
+    home,
+    providerExtension: path.join(provider, "index.ts"),
+    credentialEnv: ["PIPELINE_MODEL_KEY"],
+    modelContextWindows: { [MODEL]: CONTEXT_WINDOW },
+  };
+}
+
+// The `kind` records (`<!-- agent-pipeline:KIND` comments) on issue ISSUE
+// in `world`, parsed, oldest first.
+function marked(world: World, kind: string): z.infer<typeof RECORD>[] {
+  const mark = `<!-- agent-pipeline:${kind}\n`;
+  const issue = world.issues.find((item) => item.number === ISSUE);
+  return (issue?.comments ?? []).flatMap((comment) => {
+    const start = comment.body.indexOf(mark);
+    if (start === -1) {
+      return [];
+    }
+    const [json = ""] = comment.body.slice(start + mark.length).split("\n-->");
+    return [RECORD.parse(JSON.parse(json))];
+  });
+}
+
+function readJson(file: string): unknown {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function actionsOf(pipeline: string): ActionRun[] {
+  const dir = path.join(pipeline, "runs", SLUG, `issue-${ISSUE}`, "actions");
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(dir)
+    .map((id) => ACTION_RUN.parse(readJson(path.join(dir, id, "run.json"))))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// A machine whose Developer buddy, hippy, is responsible for Implement on
+// REPO in ORGANIZATION; `edit` adjusts the initial world.
+function machine(edit: (world: World) => void = () => undefined): Machine {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "buddy-flow-"));
+  const pipeline = path.join(root, "pipeline");
+  const agentDir = path.join(root, "agent");
+  const home = path.join(root, "home");
+  const bin = path.join(root, "bin");
+  for (const dir of [pipeline, agentDir, home, bin]) {
+    fs.mkdirSync(dir);
+  }
+  install(pipeline, agentDir);
+  writeShim(bin, "gh", FAKE_GH);
+  writeShim(bin, "pi", FAKE_PI);
+  const { origin, work, policy, revision } = repository(root);
+  const credentials = path.join(root, "credentials.env");
+  fs.writeFileSync(
+    credentials,
+    "ISSUE_PIPELINE_DEV_GITHUB_TOKEN=dev-token\nISSUE_PIPELINE_LANDING_GITHUB_TOKEN=landing-token\n",
+  );
+  fs.chmodSync(credentials, PRIVATE);
+  const repositoryConfig = path.join(root, "repo.json");
+  writePrivate(repositoryConfig, {
+    repo: REPO,
+    baseBranch: "main",
+    cloneUrl: origin,
+    devAccount: DEVELOPER,
+    landingAccount: LANDING,
+    credentialsEnvFile: credentials,
+    allowedUsers: [HUMAN],
+    permissions: { land: false },
+    models: { author: MODEL, developer: MODEL, reviewer: MODEL },
+    runtime: provisionRuntime(root),
+    projectPolicy: { repository: policy, revision },
+  });
+  const buddyConfig = path.join(root, "buddy.json");
+  writePrivate(buddyConfig, {
+    version: 1,
+    name: "hippy",
+    scope: { organization: ORGANIZATION, repositories: [repositoryConfig] },
+    role: "developer",
+    responsibilities: ["implement"],
+    identity: {
+      name: "hippy",
+      account: { provider: "github", login: DEVELOPER },
+      profiles: ["writer"],
+    },
+    pollSeconds: 5,
+    stopPollSeconds: 1,
+  });
+  const worldFile = path.join(root, "world.json");
+  const ghLog = path.join(root, "gh.log");
+  const piLog = path.join(root, "pi.log");
+  const plan = path.join(root, "pi-plan.json");
+  fs.writeFileSync(ghLog, "");
+  fs.writeFileSync(piLog, "");
+  const initial = baseWorld();
+  initial.issues.push(startedIssue());
+  initial.collaborators = [HUMAN];
+  initial.pulls = [];
+  edit(initial);
+  writeWorld(worldFile, initial);
+  const { PATH: inherited = "" } = process.env;
+  const env = {
+    ...process.env,
+    ...Object.fromEntries([
+      ["PATH", `${bin}${path.delimiter}${inherited}`],
+      ["HOME", home],
+      ["ISSUE_PIPELINE_ROOT", pipeline],
+      ["PI_CODING_AGENT_DIR", agentDir],
+      ["FAKE_GH_WORLD", worldFile],
+      ["FAKE_GH_LOG", ghLog],
+      ["FAKE_GH_ORIGIN", origin],
+      ["FAKE_PI_PLAN", plan],
+      ["FAKE_PI_LOG", piLog],
+      ["PIPELINE_MODEL_KEY", "fake-model-key"],
+    ]),
+  };
+  function change(apply: (world: World) => void): void {
+    const current = readWorld(worldFile);
+    apply(current);
+    writeWorld(worldFile, current);
+  }
+  async function runBuddy(
+    sessions: PlannedSession[],
+    stopAtPoll: number,
+  ): Promise<BuddyOutcome> {
+    fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
+    const child = spawn(
+      process.execPath,
+      [path.join(pipeline, "buddy.mjs"), "--config", buddyConfig],
+      { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    if (child.pid === undefined) {
+      throw new Error("the buddy did not start");
+    }
+    const { pid } = child;
+    change((world) => {
+      world.stopBuddy = { pid, atPoll: stopAtPoll, polls: 0 };
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    const status = await new Promise<number | null>((resolve) => {
+      child.on("close", (code) => resolve(code));
+    });
+    let ended: z.infer<typeof ENDED>;
+    try {
+      ended = ENDED.parse(JSON.parse(stdout));
+    } catch (error: unknown) {
+      throw new Error(`buddy exited ${String(status)}: ${stdout}\n${stderr}`, {
+        cause: error,
+      });
+    }
+    const run = BUDDY_RUN_OBSERVATION.parse(
+      readJson(
+        path.join(pipeline, "runs", "buddy-runs", ended.buddyRun, "run.json"),
+      ),
+    );
+    return { status, stderr, ended, run, actions: actionsOf(pipeline) };
+  }
+  return {
+    root,
+    origin,
+    work,
+    pipeline,
+    world: () => readWorld(worldFile),
+    change,
+    calls: () =>
+      fs
+        .readFileSync(ghLog, "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => LOGGED.parse(JSON.parse(line))),
+    launches: () =>
+      fs
+        .readFileSync(piLog, "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
+    runBuddy,
+    git: (args: string[]) => git(origin, args),
+    cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+export type { ActionRun, BuddyOutcome, Machine, PlannedSession };
+export { DEVELOPER, HUMAN, ISSUE, machine, marked };

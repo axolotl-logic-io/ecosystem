@@ -216,6 +216,9 @@ function modeOf(readiness: Readiness): "act" | "recover" {
 }
 
 function loopStateOf(summary: ActionSummary): LoopObservation["state"] {
+  if (summary.notAdmitted !== null) {
+    return summary.notAdmitted;
+  }
   if (summary.ownership === "retained") {
     return "held";
   }
@@ -282,7 +285,7 @@ async function offerSignal(
     state: loopStateOf(summary),
     reason: summary.reason ?? summary.end.reason,
   });
-  return summary.end.state !== "waiting";
+  return summary.notAdmitted === null;
 }
 
 async function viewOf(cfg: Config, number: number): Promise<TaskView | string> {
