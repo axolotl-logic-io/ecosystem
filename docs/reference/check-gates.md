@@ -16,11 +16,7 @@ That runs this gate and then the dashboard's. `npm run check --workspace @ecosys
 - Biome with the existing lint policy.
 - The esbuild build.
 - Node syntax validation for `install.ts` and all nine built programs, including `structured-output.mjs`.
-- The existing `test/build.test.ts` artifact guards, which build into a temporary directory, validate executable artifacts and exercise CLI subprocess boundaries with local fixtures and fake GitHub.
-
-- The existing `test/check-task.test.ts` task-timeout and test typecheck regressions, which read the actual `package.json` scripts and use a temporary fixture with real TypeScript to require a type error and then successful compilation.
-
-Both selected files run in one bounded Node command with file concurrency 2 and per-test timeout 180000 ms. The default script does not select the full test glob. It does **not** prove integration/flow behavior, authority enforcement, retry/recovery, runtime isolation, provider/session behavior or safe merging. Typechecking the test files does not execute their assertions. Label its result **fast default**, never full integration coverage.
+It runs no Node tests. The artifact guards (`test/build.test.ts`) and check-task regressions (`test/check-task.test.ts`) it used to run were deleted with the rest of the suite on 2026-10-25. It does **not** prove integration/flow behavior, authority enforcement, retry/recovery, runtime isolation, provider/session behavior or safe merging. Typechecking the test files does not execute their assertions. Label its result **fast default**, never full integration coverage.
 
 ## Explicit full gate
 
@@ -36,9 +32,9 @@ The script runs the fast gate, then the original command from `apps/issue-pipeli
 node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'
 ```
 
-The full glob selects `test/build.test.ts` and `test/check-task.test.ts` again after the fast gate. Explicit full execution therefore duplicates both bounded files, including the artifact smoke; the second execution is not additional unique coverage. The glob is the original one with `.test.ts` in place of `.test.mjs` (#152); the script runs the fast gate first, as the task's dependency did.
+The glob is the original one with `.test.ts` in place of `.test.mjs` (#152); the script runs the fast gate first, as the task's dependency did. The whole suite was deleted on 2026-10-25, so the glob matches nothing and `node --test` passes with 0 tests. A new `test/**/*.test.ts` file runs here with no change to the scripts. Test files are still typechecked and linted like source.
 
-No test is skipped, marked todo or deleted for this split. Assertions, concurrency 2 and timeout 180000 ms remain intact. This script builds its prerequisites through the fast gate and remains runnable on its own. Do not select it by default, as an installation prerequisite or after landing. Explicit opt-in execution is pre-Land only.
+Concurrency 2 and timeout 180000 ms remain intact. This script builds its prerequisites through the fast gate and remains runnable on its own. Do not select it by default, as an installation prerequisite or after landing. Explicit opt-in execution is pre-Land only.
 
 ## Installation prerequisite
 

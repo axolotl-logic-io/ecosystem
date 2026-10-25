@@ -4,7 +4,7 @@
 # mise is optional: each task calls an npm script you can run directly.
 
 [tasks.check]
-description = "Fast default gate: typecheck, lint, build, syntax, build artifact and check-task guards (not full integration coverage)"
+description = "Fast default gate: typecheck, lint, build and syntax"
 # The steps live in package.json's check script, so they're defined once and
 # run the same without mise (`npm run check`).
 run = "npm run check"
@@ -15,12 +15,8 @@ description = "Expensive opt-in full gate: fast gate plus every Node integration
 # with the flags below:
 #   node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'
 # Each test fails if it runs past --test-timeout, by its title, rather than
-# hanging the run (#372). The slowest test measured took 51.3 s (the
-# typecheck that fails on a type error, test/typecheck-config.test.mjs) in a
-# full `node --test --test-reporter=spec` run beside three more in a copy of
-# the checkout, at 1-minute load averages of up to 130 on 10 cores
-# (2026-10-17). The timeout is over 3 times that. test/bounded-test-kit.ts's
-# waitFor deadline and test/job/job-test-kit.ts's runJob bound sit below it.
+# hanging the run (#372). The suite was deleted on 2026-10-25, so the glob
+# matches nothing until tests are added; it then picks them up unchanged.
 # Bound file-level parallelism independently of the host's core count.
 # Full-flow files also spawn jobs, ops, fake gh and git processes. Node's
 # default (9 files on a 10-core host) oversubscribed those subprocesses:
