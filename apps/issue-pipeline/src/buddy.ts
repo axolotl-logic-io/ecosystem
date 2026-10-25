@@ -61,7 +61,7 @@ function check(config: string): void {
       config: repository.file,
       repo: repository.cfg.repo,
       base: repository.cfg.baseBranch,
-      modelSessions: repository.cfg.resources.modelSessions,
+      modelSessions: repository.modelSessions,
       authorization: repository.authorizationDigest,
     })),
   };

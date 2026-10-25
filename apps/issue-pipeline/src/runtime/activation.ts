@@ -132,7 +132,7 @@ function initialObservation(
     loops,
     caps: buddy.repositories.map((repository) => ({
       repo: repository.cfg.repo,
-      modelSessions: repository.cfg.resources.modelSessions,
+      modelSessions: repository.modelSessions,
       testSlots: repository.cfg.laneSlots ?? null,
     })),
   };

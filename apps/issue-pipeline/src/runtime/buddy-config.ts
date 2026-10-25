@@ -34,6 +34,7 @@ import { loadConfig } from "../config.ts";
 import type { TaskId } from "../domain.ts";
 import { ACCESS_PROFILE, ROLE_ID, TASK_ID } from "../domain.ts";
 import { OpsError } from "../ops-error.ts";
+import { RESOURCE_CAPACITY } from "../project-policy-schema.ts";
 import { TASKS } from "../tasks/index.ts";
 
 const GITHUB_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
@@ -133,11 +134,12 @@ type BuddyConfig = z.infer<typeof BUDDY_CONFIG>;
 type BuddyEnvelope = z.infer<typeof BUDDY_ENVELOPE>;
 
 // One repository in a buddy's scope: its config file, the config as the
-// buddy runs it (with the identity's model choices) and the authorization
-// digest of the pair.
+// buddy runs it (with the identity's model choices), its trusted shared
+// model-session capacity and the authorization digest of the pair.
 interface BuddyRepository {
   file: string;
   cfg: Config;
+  modelSessions: number;
   authorizationDigest: string;
 }
 
@@ -292,14 +294,31 @@ function readBuddyFile(file: string): {
   return { config, tasks };
 }
 
+// The repository's trusted shared model-session capacity
+// (`resources.modelSessions`, pinned by its project policy in committed
+// mode). A buddy has no default: missing or invalid refuses the buddy.
+function modelSessionsOf(file: string, cfg: Config): number {
+  const { resources } = cfg;
+  const parsed = RESOURCE_CAPACITY.safeParse(resources);
+  if (!parsed.success) {
+    return refuse(
+      file,
+      `${cfg.repo}'s config has no valid resources.modelSessions capacity: ${z.prettifyError(parsed.error)}`,
+    );
+  }
+  return parsed.data.modelSessions;
+}
+
 // Throws unless the identity's account is the account the repository
-// config gives the buddy's role: the dev account for a Developer, the
-// landing account for a Gatekeeper.
+// config gives the buddy's role (the dev account for a Developer, the
+// landing account for a Gatekeeper) and the repository has a trusted
+// model-session capacity.
 function assertRepository(
   file: string,
   config: BuddyConfig,
   cfg: Config,
 ): void {
+  modelSessionsOf(file, cfg);
   const { login } = config.identity.account;
   let account = cfg.landingAccount;
   if (config.role === "developer") {
@@ -378,6 +397,7 @@ function loadBuddy(file: string): LoadedBuddy {
       return {
         file: repository,
         cfg,
+        modelSessions: modelSessionsOf(resolved, loaded),
         authorizationDigest: authorizationDigestOf(config, repository, loaded),
       };
     },

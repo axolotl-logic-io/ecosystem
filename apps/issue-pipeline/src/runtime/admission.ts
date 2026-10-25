@@ -27,7 +27,11 @@ import type { SignalScope } from "../signals/inbox.ts";
 import { requalify, stopLatch } from "../signals/inbox.ts";
 import { previousAction } from "../tasks/index.ts";
 import type { AdmittedAction } from "./action.ts";
-import type { BuddyEnvelope, LoadedBuddy } from "./buddy-config.ts";
+import type {
+  BuddyEnvelope,
+  BuddyRepository,
+  LoadedBuddy,
+} from "./buddy-config.ts";
 import { bindBuddyAuthorization } from "./buddy-config.ts";
 import type { BuddyRunId } from "./ids.ts";
 import { newActionRunId } from "./ids.ts";
@@ -43,7 +47,7 @@ type Admission =
 interface Candidate {
   buddy: LoadedBuddy;
   // The repository config's file, and the config as this poll loaded it.
-  repository: { file: string; cfg: Config; authorizationDigest: string };
+  repository: BuddyRepository;
   task: TaskDefinition;
   signal: QualifiedSignal;
   binding: Binding;
@@ -98,7 +102,7 @@ async function reserveFor(
   const reserved = await reserveModelSession(
     cfg,
     execution,
-    cfg.resources.modelSessions,
+    candidate.repository.modelSessions,
   );
   if (reserved.state === "reserved") {
     return { reservation: reserved.reservation };
