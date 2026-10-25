@@ -8,6 +8,7 @@ import { paths } from "../config.ts";
 import { git } from "../github.ts";
 import {
   assertCheckoutReadyForRemoval,
+  assertNonconsumerReadyForRemoval,
   releaseCheckoutSlot,
 } from "../lane-slots.ts";
 import { withCloneLock } from "../locks.ts";
@@ -66,10 +67,21 @@ function snapshotKind(file: string): RecoverySnapshot["kind"] {
   return "working-tree";
 }
 
+// `laneConsumer: false` marks a checkout that never registered as its
+// issue's lane-slot consumer; it is removable with no lane store at all.
 type ClosingJob = JobDirs & {
   key: string;
   recovery?: RecoveryOrigin;
+  laneConsumer?: boolean;
 };
+
+function assertRemovable(cfg: Config, issue: number, job: ClosingJob): void {
+  if (job.laneConsumer === false) {
+    assertNonconsumerReadyForRemoval(cfg, issue, job.repo);
+    return;
+  }
+  assertCheckoutReadyForRemoval(cfg, issue, job.repo);
+}
 
 function preparePatches(
   cfg: Config,
@@ -129,7 +141,7 @@ async function closeJobCheckout(
   const { root, repo } = job;
   let removable = false;
   try {
-    assertCheckoutReadyForRemoval(cfg, issue, repo);
+    assertRemovable(cfg, issue, job);
     const dropped = preparePatches(cfg, issue, job);
     // Prepare every recovery artifact before changing the checkout.
     saveCodeRecovery(cfg, issue, repo, job.key);
@@ -145,7 +157,7 @@ async function closeJobCheckout(
   } finally {
     if (removable) {
       withCloneLock(cfg, () => {
-        assertCheckoutReadyForRemoval(cfg, issue, repo);
+        assertRemovable(cfg, issue, job);
         fs.rmSync(root, { recursive: true, force: true });
         releaseCheckoutSlot(cfg);
       });

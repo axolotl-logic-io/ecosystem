@@ -207,6 +207,25 @@ function assertCheckoutReadyForRemoval(
   });
 }
 
+// The removal guard for a checkout that never registered as a lane-slot
+// consumer (Land, Complete, a read-only recovery, a task with no test slot).
+// With no lane store at all, nothing is registered, so nothing can be
+// pending on it or depend on its metadata; otherwise the full guard holds.
+function assertNonconsumerReadyForRemoval(
+  cfg: Config,
+  issue: number,
+  dir: string,
+): void {
+  if (cfg.laneSlots === undefined) {
+    return;
+  }
+  withCloneLock(cfg, () => {
+    if (fs.existsSync(storeFile(cfg))) {
+      assertCheckoutReadyForRemoval(cfg, issue, dir);
+    }
+  });
+}
+
 // The registered consumers of issue `issue`'s lane slot other than checkout
 // `except`: its other surviving checkouts and every pending setup. The slot
 // stays held while any is left (capacity-by-resource); an unreadable store
@@ -287,6 +306,7 @@ function pruneLaneResources(cfg: Config, now: () => number = Date.now): void {
 export {
   assertCheckoutReady,
   assertCheckoutReadyForRemoval,
+  assertNonconsumerReadyForRemoval,
   checkoutEnvironment,
   pruneLaneResources,
   registeredConsumers,

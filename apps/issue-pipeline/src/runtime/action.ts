@@ -93,6 +93,7 @@ import type {
 import { actionRunFile, observed } from "./observations.ts";
 import {
   claimsTestSlot,
+  holdsLaneSlot,
   laneEnvironment,
   needsPreparation,
   openActionCheckout,
@@ -361,8 +362,10 @@ interface OpenAction {
   launches: ActionLaunches;
   control: ControlSocket;
   checkpoint: { uncertain: string | null };
-  // Whether this action's checkout passed its preparation.
-  prepared: boolean;
+  // This action's checkout preparation: none started, a setup op started
+  // whose success is not confirmed, or prepared. A started preparation is
+  // never retried, and its checkout is retained unless it is prepared.
+  preparation: "none" | "started" | "prepared";
   startedAt: string;
 }
 
@@ -464,7 +467,7 @@ function sessionRefusal(open: OpenAction, spec: SessionSpec): string | null {
   if (spec.commits && task.access !== "writer") {
     return `task ${task.id} has the ${task.access} profile; its sessions cannot commit`;
   }
-  if (needsPreparation(open.cfg, task) && !open.prepared) {
+  if (needsPreparation(open.cfg, task) && open.preparation !== "prepared") {
     return `task ${task.id}'s checkout is not prepared; it starts no session in an unprepared test environment`;
   }
   return null;
@@ -707,16 +710,22 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
     if (!claimsTestSlot(task)) {
       throw new Error(`task ${task.id} holds no test slot to prepare`);
     }
-    if (open.prepared) {
+    if (open.preparation === "prepared") {
       return;
+    }
+    if (open.preparation === "started") {
+      throw new Error(
+        "checkout preparation already started and is not confirmed; it is not retried",
+      );
     }
     if (setupCommand(cfg) === null) {
       assertCheckoutReady(cfg, workItem.number, dirs.repo);
-      open.prepared = true;
+      open.preparation = "prepared";
       return;
     }
     await opBoundaryOf(open, PREPARE_OP);
     const minutes = setupTimeoutMinutes(cfg) + PREPARE_GRACE_MINUTES;
+    open.preparation = "started";
     const reply = await recordedOp(PREPARE_OP, {}, minutes);
     if (!reply.ok) {
       // The end's reason reaches the public ledger, so it names no local
@@ -725,7 +734,7 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
         `checkout preparation failed: ${PREPARE_OP} did not complete; the checkout, its lane slot and its setup barrier stay retained for explicit reconciliation, with no automatic retry`,
       );
     }
-    open.prepared = true;
+    open.preparation = "prepared";
   }
   const launcher: SessionLauncher = {
     open,
@@ -865,6 +874,10 @@ async function preserveCheckout(
     retainCheckout(open);
     return `a rebase is retained in ${dirs.root} for reconciliation`;
   }
+  if (open.preparation === "started") {
+    retainCheckout(open);
+    return `checkout retained at ${dirs.root}: its preparation started and did not complete`;
+  }
   const recovery = {
     stage: setting.task.id,
     outcome: end.outcome ?? end.state,
@@ -874,7 +887,12 @@ async function preserveCheckout(
     const dropped = await closeJobCheckout(
       cfg,
       workItem.number,
-      { ...dirs, key: admitted.id, recovery },
+      {
+        ...dirs,
+        key: admitted.id,
+        recovery,
+        laneConsumer: holdsLaneSlot(cfg, setting.task, admitted.mode),
+      },
       null,
     );
     open.observation.update(
@@ -1212,7 +1230,7 @@ async function openAction(
       launches,
       control,
       checkpoint: { uncertain: null },
-      prepared: false,
+      preparation: "none",
       startedAt: now(),
     };
     return { open };

@@ -258,9 +258,31 @@ function push(
   return { headSha, ...changes };
 }
 
+// Claims action `action`'s one setup start in issue `n`'s run folder, durably
+// and exclusively, before its setup runs; false when it was claimed before.
+// The marker only refuses a replay; it grants no readiness.
+function claimSetupStart(cfg: Config, n: number, action: string): boolean {
+  const dir = paths.runDir(cfg, n);
+  fs.mkdirSync(dir, { recursive: true });
+  const marker = path.join(dir, `setup-${action}.started`);
+  try {
+    fs.writeFileSync(marker, `${new Date().toISOString()}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    return true;
+  } catch (error: unknown) {
+    if (fs.existsSync(marker)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 // Runs configured setup in the issue checkout with its leased environment.
-// Logs output to logName; legacy failures are nonfatal, lane failures retain
-// the checkout and refuse session startup.
+// Logs output to logName. Any nonzero exit throws, with or without
+// laneSlots: a failed setup never counts as prepared. With laneSlots its
+// pending-setup barrier also stays in the lane store.
 function setUpCheckout(
   cfg: Config,
   n: number,
@@ -274,17 +296,23 @@ function setUpCheckout(
     return;
   }
   const log = path.join(paths.runDir(cfg, n), logName);
-  withCheckoutSetup(cfg, n, dir, (env) =>
+  const result = withCheckoutSetup(cfg, n, dir, (env) =>
     shell(setup, dir, log, {
       timeoutMs: commandTimeoutMinutes * MS_PER_MINUTE,
       env,
     }),
   );
+  if (result.code !== 0) {
+    throw new OpsError(
+      `#${n} setup failed (exit ${result.code}); its checkout is not prepared`,
+    );
+  }
 }
 
 export type { BranchChanges, PushRecord, PushResult };
 export {
   branchChanges,
+  claimSetupStart,
   ensureClone,
   ensureWorktree,
   issueWorktrees,

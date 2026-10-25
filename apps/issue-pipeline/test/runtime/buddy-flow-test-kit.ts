@@ -103,12 +103,13 @@ type BuddyChoice =
 // The machine's trusted repository configuration, fixed before any action:
 // whether it grants Land (`permissions.land`), which the shared checking
 // policy digest covers, its optional lane slot pool (`laneSlots`) and the
-// pinned project policy's optional setup command and test command, which
-// otherwise logs the commit it checked (checksRun).
+// pinned project policy's optional setup, teardown and test commands; the
+// test command otherwise logs the commit it checked (checksRun).
 interface MachineSetup {
   landPermission: boolean;
   laneSlots?: number;
   setup?: string;
+  teardown?: string;
   test?: string;
 }
 
@@ -207,7 +208,7 @@ function checksLog(root: string): string {
 // whose test command passes, logging the commit it checked.
 function repository(
   root: string,
-  configured: Pick<MachineSetup, "setup" | "test">,
+  configured: Pick<MachineSetup, "setup" | "teardown" | "test">,
 ): {
   origin: string;
   work: string;
@@ -229,11 +230,16 @@ function repository(
   git(work, ["add", "README.md"]);
   git(work, ["commit", "--quiet", "-m", "Target"]);
   git(work, ["push", "--quiet", "origin", "main"]);
-  const { setup } = configured;
+  const { setup, teardown } = configured;
   const test = configured.test ?? `git rev-parse HEAD >> '${checksLog(root)}'`;
-  let commands: { test: string; setup?: string } = { test };
+  const commands: { test: string; setup?: string; teardown?: string } = {
+    test,
+  };
   if (setup !== undefined) {
-    commands = { test, setup };
+    commands.setup = setup;
+  }
+  if (teardown !== undefined) {
+    commands.teardown = teardown;
   }
   fs.mkdirSync(policy);
   git(policy, ["init", "--quiet", "--initial-branch=main"]);
