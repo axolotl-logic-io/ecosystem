@@ -1,14 +1,15 @@
 // Admission of an approved upgrade plan into issue delivery (#129): the
 // read-only check that issue N may carry a standards upgrade through the
-// existing caller and task chain. The plan must have been filed by an
+// buddy's tasks. The plan must have been filed by an
 // allow-listed person, since neither pipeline account is trusted input
 // (`allow-listed-input`). It must name this repository and the current
 // policy, and be bound to the base branch's current head. It must also be
 // the repository's only open upgrade issue. Admission writes nothing and
-// grants nothing beyond what the chain's own guards already decide.
+// does not produce a qualified start signal or bypass any task guard.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
+import { paths } from "../config.ts";
 import { ghJson, git, isAllowedUser } from "../github.ts";
 import type { PlanMarker } from "./schema.ts";
 import { PLAN_MARKER, PLAN_TAG, POLICY_VERSION } from "./schema.ts";
@@ -136,7 +137,7 @@ function admit(cfg: Config, n: number): Admission {
       `#${others.join(", #")} already carries an open upgrade plan; continue or close it first`,
     );
   }
-  return { issue: n, branch: `standards-upgrade/issue-${n}`, marker };
+  return { issue: n, branch: paths.branch(cfg, n), marker };
 }
 
 export type { Admission };

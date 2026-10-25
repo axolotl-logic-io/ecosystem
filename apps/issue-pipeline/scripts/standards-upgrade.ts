@@ -2,7 +2,7 @@
 
 // The repository standards upgrade's entrypoint (#129,
 // docs/reference/standards-upgrade.md). build.ts bundles it as
-// dist/standards-upgrade.mjs; nothing installs or schedules it.
+// dist/standards-upgrade.mjs, which the installer includes. No buddy schedules it.
 //
 //   node standards-upgrade.mjs assess --config CONFIG --repo OWNER/REPO|URL
 //        [--ref REF] [--npm-registry URL] [--pypi-index URL]
@@ -24,9 +24,9 @@
 // `apply` admits issue N, which an allow-listed person filed from plan.md,
 // into issue delivery: it checks the plan's author, repository, policy,
 // source commit (still the base branch's head) and that no other open issue
-// carries a plan, then prints the branch and the caller's start line for
-// the Implementation task. It reads only; the existing caller and task
-// chain do every write. A plan that fails a check exits 2.
+// carries a plan, then prints the issue branch and the human start-label
+// request for Implement. It reads only; the qualified label and the buddy's
+// task guards remain necessary. A plan that fails a check exits 2.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -165,13 +165,14 @@ function runApply(argv: readonly string[]): void {
   const args = APPLY_ARGS.parse(values);
   const config = path.resolve(args.config);
   const { issue, branch, marker } = admit(loadConfig(config), args.issue);
-  const start = [
-    'node "$ISSUE_PIPELINE_ROOT/caller-jobs.mjs" start --run RUN_DIR',
-    `--config ${JSON.stringify(config)} --issue ${issue}`,
-    `--branch ${branch} --lane LANE --stage implement`,
-  ].join(" ");
   console.log(
-    JSON.stringify({ issue, branch, ...marker, stage: "implement", start }),
+    JSON.stringify({
+      issue,
+      branch,
+      ...marker,
+      task: "implement",
+      next: "A qualified human must apply start:implement to this issue. This assessment grants no execution permission.",
+    }),
   );
 }
 
