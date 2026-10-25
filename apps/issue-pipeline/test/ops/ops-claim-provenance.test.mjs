@@ -70,13 +70,6 @@ const CLAIMED = z.looseObject({
 });
 const FAILED = z.looseObject({ ok: z.boolean(), error: z.string() });
 
-// A refused bound claim writes only its receipt checkpoint (#167).
-/** @param {Record<string, unknown>} saved @returns {void} */
-function onlyReceiptSaved(saved) {
-  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
-  assert.equal(writes().length, 1);
-}
-
 test("a claim records the code merge GitHub reports for the issue's own PR", () => {
   const n = 301;
   claimWorld(
@@ -111,7 +104,9 @@ test("a claim refuses a PR from another branch as the issue's merge", () => {
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.match(failed.error, OTHER_BRANCH);
-  onlyReceiptSaved(saved);
+  // Only the receipt checkpoint before the refusal (#167).
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });
 
 test("a claim refuses a fork's PR of the same branch name", () => {
@@ -126,7 +121,9 @@ test("a claim refuses a fork's PR of the same branch name", () => {
   ]);
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
-  onlyReceiptSaved(saved);
+  // Only the receipt checkpoint before the refusal (#167).
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });
 
 test("a claim fails, never assuming a merge, when GitHub can't say", () => {
@@ -144,7 +141,9 @@ test("a claim fails, never assuming a merge, when GitHub can't say", () => {
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.match(failed.error, UNRESOLVED);
-  onlyReceiptSaved(saved);
+  // Only the receipt checkpoint before the refusal (#167).
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });
 
 test("a claim refuses a merged PR without a merge commit", () => {
@@ -153,7 +152,9 @@ test("a claim refuses a merged PR without a merge commit", () => {
   claimWorld(n, saved, [prView(n, PR, { state: "MERGED", mergeCommit: null })]);
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
-  onlyReceiptSaved(saved);
+  // Only the receipt checkpoint before the refusal (#167).
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });
 
 test("a claim refuses a recorded code merge GitHub no longer confirms", () => {
@@ -167,7 +168,9 @@ test("a claim refuses a recorded code merge GitHub no longer confirms", () => {
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.match(failed.error, UNCONFIRMED);
-  onlyReceiptSaved(saved);
+  // Only the receipt checkpoint before the refusal (#167).
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });
 
 test("a claim adopts the pipeline's own unsaved push and sends a merge back to review", () => {
@@ -248,5 +251,7 @@ test("a claim of a done issue with no saved merge fails", () => {
   claimWorld(n, saved);
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.deepEqual(failed, { ok: false, error: "#310 is done" });
-  onlyReceiptSaved(saved);
+  // Only the receipt checkpoint before the refusal (#167).
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });

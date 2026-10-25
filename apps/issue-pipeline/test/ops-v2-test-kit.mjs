@@ -105,9 +105,9 @@ function everyCommentsRead(n, comments) {
 // The state a bound claim checkpoints before it derives the claimed state
 // (#167): `saved` with its owner's receipt and the branch it binds. A
 // refused claim writes only this.
-/** @param {Record<string, unknown>} saved @returns {Record<string, unknown>} */
+/** @param {{ number?: unknown, [field: string]: unknown }} saved @returns {Record<string, unknown>} */
 function receiptCheckpoint(saved) {
-  const branch = `agent/issue-${String(saved["number"])}`;
+  const branch = `agent/issue-${String(saved.number)}`;
   return { ...saved, branch, execution: ownerReceipt() };
 }
 

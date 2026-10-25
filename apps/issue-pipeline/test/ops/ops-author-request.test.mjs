@@ -30,6 +30,8 @@ const FAILED = z.object({ ok: z.literal(false), error: z.string() });
 const PR = 7;
 const STATE_COMMENT = 1;
 const CLAIM_COMMENT = 2;
+// What an owner whose issue a successor took reads (coordination-records.ts).
+const RELEASED = /released instance cannot request again/u;
 const FIRST_ISSUE = 701;
 const REFUSED_ISSUE = 710;
 const SHA_LENGTH = 40;
@@ -205,6 +207,6 @@ test("explicit Author still loses to another invocation that takes the issue, wi
   bindOpsRequest({ config: kit.CONFIG, root, request });
   loseOwnership();
   const result = FAILED.parse(askOps(request));
-  assert.match(result.error, /released instance cannot request again/u);
+  assert.match(result.error, RELEASED);
   assert.deepEqual(writes(), []);
 });
