@@ -44,7 +44,6 @@ const TIMED_OUT = new RegExp(
 // FIXTURE_PIDS names, as job.json and pi.log give them, then never resolves.
 const FIXTURE = `import fs from "node:fs";
 import { test } from "node:test";
-import type { SpawnSyncReturns } from "node:child_process";
 import { waitFor } from ${JSON.stringify(BOUNDED_KIT)};
 import { READER_STAGE, repliesAt } from ${JSON.stringify(JOB_FIXTURES)};
 import { piCommands, piStarts, setUp, startJob, statusOf } from ${JSON.stringify(JOB_KIT)};
