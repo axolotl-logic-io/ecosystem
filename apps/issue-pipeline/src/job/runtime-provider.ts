@@ -1,5 +1,6 @@
-// The narrowly supported CLIProxy 0.4.3 profile: explicit OpenAI registration
-// from a reviewed cache, with no context-window synthesis or native fallback.
+// The narrowly supported CLIProxy 0.4.3 profile: explicit OpenAI or Anthropic
+// registration from a reviewed cache, with no context-window synthesis or
+// native fallback.
 import { z } from "zod";
 import type { NativePolicy } from "./runtime-policy.ts";
 
@@ -10,6 +11,21 @@ const SAFE_INTEGER = z
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER);
 const SUPPORTED_API = z.enum(["openai-responses", "openai-completions"]);
+// Each builtin provider the profile may register: the APIs CLIProxy serves it
+// through, and the native endpoint a proxy must differ from, since a native
+// fallback can't prove the proxy registered the model.
+const PROVIDERS: Readonly<
+  Record<
+    "openai" | "anthropic",
+    { apis: readonly string[]; nativeHost: string }
+  >
+> = {
+  openai: { apis: SUPPORTED_API.options, nativeHost: "api.openai.com" },
+  anthropic: { apis: ["anthropic-messages"], nativeHost: "api.anthropic.com" },
+};
+const PROVIDER_NAME = z.enum(["openai", "anthropic"]);
+const ANTHROPIC_V1 = /\/v1$/u;
+const TRAILING_SLASHES = /\/+$/u;
 const MODEL_OVERRIDE = z.strictObject({
   id: z.string().optional(),
   name: z.string().optional(),
@@ -32,11 +48,20 @@ const PROFILE_CONFIG = z.strictObject({
     providerPrefix: z.string().optional(),
   }),
   builtinProviders: z.strictObject({
-    openai: z.strictObject({
-      enabled: z.literal(true),
-      models: z.array(z.string().min(1)).min(1),
-      apiOverride: SUPPORTED_API.nullable().optional(),
-    }),
+    openai: z
+      .strictObject({
+        enabled: z.literal(true),
+        models: z.array(z.string().min(1)).min(1),
+        apiOverride: SUPPORTED_API.nullable().optional(),
+      })
+      .optional(),
+    anthropic: z
+      .strictObject({
+        enabled: z.literal(true),
+        models: z.array(z.string().min(1)).min(1),
+        apiOverride: z.literal("anthropic-messages").nullable().optional(),
+      })
+      .optional(),
   }),
   customProviders: z.record(z.string(), z.never()).optional(),
   overrides: z.record(z.string(), MODEL_OVERRIDE).optional(),
@@ -91,30 +116,34 @@ function profileEndpoint(
 ): string {
   const parsed = PROFILE_CONFIG.safeParse(config);
   const catalogue = PROFILE_CACHE.safeParse(cache);
-  if (!(parsed.success && catalogue.success) || policy.provider !== "openai") {
+  const provider = PROVIDER_NAME.safeParse(policy.provider);
+  if (!(parsed.success && catalogue.success && provider.success)) {
     throw new Error(
-      "runtime: provision the supported OpenAI CLIProxy config and discovery cache (no custom providers or window overrides)",
+      "runtime: provision the supported OpenAI or Anthropic CLIProxy config and discovery cache (no custom providers or window overrides)",
     );
   }
-  const { openai } = parsed.data.builtinProviders;
+  const name = provider.data;
+  const { apis, nativeHost } = PROVIDERS[name];
+  const { [name]: registered } = parsed.data.builtinProviders;
   const candidates = catalogue.data.discovery.builtinProviders.filter(
-    (entry) => entry.name === "openai",
+    (entry) => entry.name === name,
   );
   const [cached] = candidates;
   if (
-    !openai.models.includes(policy.id) ||
+    registered === undefined ||
+    !registered.models.includes(policy.id) ||
     candidates.length !== 1 ||
     cached === undefined ||
-    !SUPPORTED_API.safeParse(cached.api).success ||
+    !apis.some((api: string): boolean => api === cached.api) ||
     cached.models.filter((model) => model.id === policy.id).length !== 1
   ) {
     throw new Error(
-      "runtime: selected OpenAI model must be enabled/whitelisted and present in the reviewed discovery cache",
+      `runtime: selected ${name} model must be enabled/whitelisted and present in the reviewed discovery cache`,
     );
   }
   const { endpoint, apiKey } = parsed.data.proxy;
-  const { name } = CREDENTIAL_REFERENCE.exec(apiKey)?.groups ?? {};
-  if (name === undefined || !credentialEnv.includes(name)) {
+  const { name: keyName } = CREDENTIAL_REFERENCE.exec(apiKey)?.groups ?? {};
+  if (keyName === undefined || !credentialEnv.includes(keyName)) {
     throw new Error(
       "runtime: CLIProxy apiKey must reference a declared credential environment variable",
     );
@@ -129,10 +158,15 @@ function profileEndpoint(
   ) {
     throw new Error("runtime: CLIProxy endpoint must be a nonsecret HTTP URL");
   }
-  if (url.hostname === "api.openai.com") {
+  if (url.hostname === nativeHost) {
     throw new Error(
-      "runtime: proxy endpoint must differ from the native OpenAI endpoint; native fallback cannot prove provider registration",
+      `runtime: proxy endpoint must differ from the native ${name} endpoint; native fallback cannot prove provider registration`,
     );
+  }
+  // The Anthropic SDK takes the host root, so CLIProxy registers Anthropic
+  // models without the endpoint's trailing /v1; pi reports that base URL.
+  if (name === "anthropic") {
+    return endpoint.replace(TRAILING_SLASHES, "").replace(ANTHROPIC_V1, "");
   }
   return endpoint;
 }

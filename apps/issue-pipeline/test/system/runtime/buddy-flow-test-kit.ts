@@ -44,8 +44,11 @@ const EXECUTABLE = 0o755;
 const PRIVATE = 0o600;
 const ISSUE = 7;
 const MODEL_ID = "fake-model";
-const MODEL = `openai/${MODEL_ID}`;
 const CONTEXT_WINDOW = 272_000;
+const API_OF = {
+  openai: "openai-responses",
+  anthropic: "anthropic-messages",
+} as const;
 const SLUG = REPO.replace("/", "__");
 const OVERSTAY_MS = 140_000;
 // How long `when` waits for its condition, unless told otherwise, before
@@ -134,6 +137,9 @@ interface MachineSetup {
   setup?: string;
   teardown?: string;
   test?: string;
+  // The builtin provider CLIProxy serves the models through; openai when
+  // absent.
+  provider?: "openai" | "anthropic";
 }
 
 // What one buddy run printed and left behind.
@@ -361,17 +367,20 @@ interface ProvisionedRuntime {
 // The model runtime the operator provisions: a pi-cliproxyapi 0.4.3
 // provider and its reviewed profile in a runtime home of its own. fake-pi.ts
 // answers pi's state from this profile as pi would.
-function provisionRuntime(root: string): ProvisionedRuntime {
+function provisionRuntime(
+  root: string,
+  provider: "openai" | "anthropic",
+): ProvisionedRuntime {
+  const providerDir = path.join(root, "provider");
   const home = path.join(root, "runtime-home");
-  const provider = path.join(root, "provider");
   const profile = path.join(home, ".pi", "agent", "pi-cliproxyapi");
   fs.mkdirSync(profile, { recursive: true });
-  fs.mkdirSync(provider);
+  fs.mkdirSync(providerDir);
   fs.writeFileSync(
-    path.join(provider, "package.json"),
+    path.join(providerDir, "package.json"),
     JSON.stringify({ name: "pi-cliproxyapi", version: "0.4.3" }),
   );
-  fs.writeFileSync(path.join(provider, "index.ts"), "export default {};\n");
+  fs.writeFileSync(path.join(providerDir, "index.ts"), "export default {};\n");
   fs.writeFileSync(
     path.join(profile, "config.json"),
     JSON.stringify({
@@ -379,7 +388,7 @@ function provisionRuntime(root: string): ProvisionedRuntime {
         endpoint: "http://proxy.invalid/v1",
         apiKey: "$PIPELINE_MODEL_KEY",
       },
-      builtinProviders: { openai: { enabled: true, models: [MODEL_ID] } },
+      builtinProviders: { [provider]: { enabled: true, models: [MODEL_ID] } },
     }),
   );
   const model = {
@@ -398,7 +407,7 @@ function provisionRuntime(root: string): ProvisionedRuntime {
         source: "v1-models",
         upstreamVersion: null,
         builtinProviders: [
-          { name: "openai", api: "openai-responses", models: [model] },
+          { name: provider, api: API_OF[provider], models: [model] },
         ],
         customPool: [],
         serverDiscoveryExcludes: [],
@@ -408,9 +417,9 @@ function provisionRuntime(root: string): ProvisionedRuntime {
   );
   return {
     home,
-    providerExtension: path.join(provider, "index.ts"),
+    providerExtension: path.join(providerDir, "index.ts"),
     credentialEnv: ["PIPELINE_MODEL_KEY"],
-    modelContextWindows: { [MODEL]: CONTEXT_WINDOW },
+    modelContextWindows: { [`${provider}/${MODEL_ID}`]: CONTEXT_WINDOW },
   };
 }
 
@@ -518,6 +527,8 @@ function machine(
   const compileCache = path.join(root, "compile-cache");
   writeShim(bin, "pi", FAKE_PI, compileCache);
   const { origin, work, projectPolicy } = repository(root, setup);
+  const provider = setup.provider ?? "openai";
+  const model = `${provider}/${MODEL_ID}`;
   const credentials = path.join(root, "credentials.env");
   fs.writeFileSync(
     credentials,
@@ -536,8 +547,8 @@ function machine(
     permissions: { land: setup.landPermission },
     requireCi: setup.requireCi,
     ...laneSlotsOf(setup),
-    models: { author: MODEL, developer: MODEL, reviewer: MODEL },
-    runtime: provisionRuntime(root),
+    models: { author: model, developer: model, reviewer: model },
+    runtime: provisionRuntime(root, provider),
     projectPolicy,
   });
   const buddyFile = path.join(root, "buddy.json");

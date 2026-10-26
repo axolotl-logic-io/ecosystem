@@ -130,7 +130,11 @@ const NATIVE_STATE = z.object({
     id: z.string(),
     contextWindow: SAFE_INTEGER.positive(),
     baseUrl: z.string(),
-    api: z.enum(["openai-responses", "openai-completions"]),
+    api: z.enum([
+      "openai-responses",
+      "openai-completions",
+      "anthropic-messages",
+    ]),
   }),
   autoCompactionEnabled: z.literal(true),
 });
