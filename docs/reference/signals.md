@@ -1,8 +1,8 @@
 # Signals
 
-A signal is qualified evidence that a buddy may act on a work item. The signal component in `apps/issue-pipeline/src/signals/` reads control labels on issues, accepts qualified label events as records, and delivers three kinds of signal: a start, a stop and a machine result. This page describes how it behaves. The rules come from the [domain runtime contract](../domain-runtime-contract.md#signals) and the decisions in [authority](../decisions/authority.md) and [buddies and tasks](../decisions/buddies-and-tasks.md).
+A signal is qualified evidence that a buddy may act on a work item. The signal component in `apps/issue-pipeline/src/signals/` reads control labels on issues, accepts qualified label events as records, and delivers signals of four kinds: a start, a human PR review, a stop and a machine result. This page describes how it behaves. The rules come from the [domain runtime contract](../domain-runtime-contract.md#signals) and the decisions in [authority](../decisions/authority.md) and [buddies and tasks](../decisions/buddies-and-tasks.md).
 
-**Note:** The component isn't integrated yet. It imports `src/domain.ts` and `src/tasks/index.ts` from the tasks lane, and nothing calls it until the buddy runtime does.
+**Note:** The component isn't integrated yet. It imports `src/domain.ts` and `src/tasks/index.ts` from the tasks lane, and nothing calls it until the buddy runtime does. It accepts only `start:implement` and `agents:stop` so far. [Decided signals](#decided-signals) describes the starts and reviews that the [PR review decisions](../decisions/pr-review.md) add.
 
 ## Public API
 
@@ -21,12 +21,12 @@ The synchronous forms run the same code as the asynchronous ones. There is one s
 
 ## Control labels
 
-Two issue labels are control labels:
+The component reads two issue labels as control labels today:
 
 - `start:implement` requests Implement for the issue's current requirements.
 - `agents:stop` stops all work on the issue.
 
-A label on a pull request grants nothing. A start label doesn't request Author or Safe Refactor.
+A label on a pull request grants nothing. No label requests Safe Refactor, Fix or Land.
 
 To accept a label for the first time, the component needs both of these:
 
@@ -88,7 +88,7 @@ The record holds these fields:
 | `workItem` | The repository and issue number. |
 | `source` | The label and its event's id, node id and time. |
 | `producer` | `{ route: "human", login, userId, organization }` at acceptance. |
-| `request` | `start` with `task: "implement"`, the requirements digest and the target, or `stop`. |
+| `request` | `start` with its task and binding, or `stop`. An Implement start names `task: "implement"`, the requirements digest and the target. |
 | `acceptedBy` | The buddy run that appended the record. |
 
 The component finds records by reading every page of the repository's issue comments, not by label. Removing a label doesn't hide an accepted start or stop.
@@ -136,6 +136,22 @@ An unknown latch is never clear.
 A missing record or a mismatch is unknown, not revoked. Spending isn't rechecked here; the task lane's `beginAction` records the attempt that spends a start.
 
 For a machine result, `requalify` checks that the task lane's `machineSignals` still returns the same result. The synchronous result check belongs to the task lane's checked ledger.
+
+## Decided signals
+
+The [PR review decisions](../decisions/pr-review.md) add two start labels and a review signal. `src/domain.ts` already defines their shapes (`QUALIFIED_SIGNAL`). The poll doesn't deliver them yet.
+
+| Signal | Source | Shape |
+|---|---|---|
+| `start` for Author | `start:author` on the issue | `task: "author"`, the requirements digest and the target |
+| `start` for Verify | `start:verify` on the issue | `task: "verify"`, the linked PR's number, its `head` commit and the target, read when the start is accepted |
+| `review` | A qualified person's submitted review on the issue's linked PR | `review`: GitHub's review id, the PR, the `commit` it was submitted against and its `state`, `APPROVED` or `CHANGES_REQUESTED` |
+
+Every one of them also carries `id`, `workItem`, the human `provenance` and the accepted `recordId`. They follow the same qualification rules as the current labels: a person applied the label or submitted the review directly, and that person is an active member of `scope.organization`.
+
+A review grants nothing on its own. A `CHANGES_REQUESTED` review on the current head wakes Fix, and an `APPROVED` one counts toward Land, as the [stops and labels reference](stops-and-labels.md#human-reviews) describes. A comment-only or dismissed review binds no head. The landing account's reviews are Verify's results, and the development account authored the PR, so neither account's review is a signal.
+
+The rule against retrying Implement stays. An open question asks whether `start:implement` should retry a failed Implement; until it's decided, it doesn't.
 
 ## Tests
 
