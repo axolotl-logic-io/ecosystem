@@ -2,7 +2,7 @@
 
 Control signals come from qualified human events, not from a label's presence alone. People control issue delivery with three start labels, one stop label and their reviews of the issue's pull request (PR). Accepted records, current authority and exact task results decide what may happen; status labels and process observations don't. See [signals](signals.md), [authority](authority.md) and [start-labels](../decisions/pr-review.md#start-labels).
 
-**Note:** The installed pipeline and the current signal component accept only `start:implement` and `agents:stop`. `start:author`, `start:verify` and review signals are the decided design of the [PR review decisions](../decisions/pr-review.md), and run only once that source is landed and installed.
+**Note:** The installed pipeline accepts only `start:implement` and `agents:stop`. `start:author`, `start:verify` and review signals run only once this source is installed.
 
 ## Human controls
 
@@ -15,7 +15,7 @@ Every control label goes on the issue. A label on a PR grants nothing.
 | `start:verify` | Request Verify for the current head of the issue's linked PR |
 | `agents:stop` | Stop the affected work item after the event and the person are qualified |
 
-A task gets a start label only when it can run without another task's result. Fix and Land have no label: other results wake them. A PR is linked to its issue by a closing reference, such as `Closes #187`, in the PR body.
+A task gets a start label only when it can run without another task's result. Fix and Land have no label: other results wake them. The issue's linked PR is the one PR from its branch, `agent/issue-N`. Implement opens it with a closing reference, such as `Closes #187`, in its body, so merging the PR closes the issue too.
 
 The producer must be a qualified person: an active member of the configured organization. Apps, bots, machine label changes and issue assignment grant no authority. Incomplete event pages or unreadable membership evidence hold work rather than treating a control as absent.
 
@@ -34,7 +34,7 @@ A comment-only or dismissed review binds nothing. A review of an earlier head do
 
 An accepted stop is durable after label removal. Removing or reapplying a label doesn't lift it. No continuation signal is defined.
 
-An authenticated Implement attempt spends its start whatever its verdict. Target movement or a new activation doesn't replenish it. `start:implement` doesn't request a new attempt after a failed Implement for the same requirements; that event holds with "retrying requirements Implement already attempted is unsupported". Newly edited requirements need a newly accepted start.
+An authenticated attempt spends its start whatever its verdict. Target movement or a new activation doesn't replenish it. `start:implement` doesn't request a new attempt after a failed Implement for the same requirements; that event holds with "retrying requirements Implement already attempted is unsupported". `start:author` holds the same way for Author. Newly edited requirements need a newly accepted start. A `start:verify` binds the PR head it was accepted for; after a push, Verify waits for a new start for the new head unless the push's own result wakes it.
 
 Whether `start:implement` should retry a failed Implement is an [open question](../decisions/pr-review.md#open-questions). So is whether Implement should wait for an unsettled Author. Until they're decided, retries stay unsupported and Implement doesn't wait for Author.
 

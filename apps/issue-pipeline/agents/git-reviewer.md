@@ -1,6 +1,6 @@
 ---
 name: git-reviewer
-description: Dedicated read-only local Git reviewer with paged evidence and tool-owned delivery records. Not the pipeline's writable hardening or integration identity.
+description: Dedicated read-only local Git reviewer with paged evidence and tool-owned delivery records. Not the pipeline's writable hardening or Fix identity.
 tools: read, grep, find, ls, git_review
 subagentOnlyExtensions: {{ISSUE_PIPELINE_ROOT}}/git-review.mjs
 thinking: high

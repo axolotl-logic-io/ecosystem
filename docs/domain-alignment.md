@@ -94,19 +94,19 @@ Ecosystem #165 renamed the pipeline's code names in source, tests, prompts and d
 
 ### PR review tasks
 
-These mappings apply the 2026-10-26 [PR review decisions](decisions/pr-review.md) to the source at `f979fdd`. The source has the new task IDs, signal shapes and receipt evidence. Author, Verify and Fix are stubs that wait and refuse, and Land still fast-forwards. Nothing here is installed.
+These mappings apply the 2026-10-26 [PR review decisions](decisions/pr-review.md) to the source. The source builds all five tasks and the new signals. Nothing here is installed.
 
-| Removed task | Canonical target | Source state at `f979fdd` |
+| Removed task | Canonical target | Source state |
 | --- | --- | --- |
-| `harden` | Implement's fresh hardening session, phase `hardening` | The `developer-hardening.md` page is routed to Implement; Implement doesn't run the session yet |
-| `sync` | Fix's merge of the base into the PR head | The `sync.md` page is renamed `fix.md` and still holds Sync's text |
-| `integrate` | Verify's full checks and required CI on the PR head | Verify is a stub |
-| `review-security` | Verify's Security review, phase `security-review` | The `security.md` page is renamed `verify.md` and still holds Security's text |
-| `complete` | Land's close of the issue, in the same result as its merge | Land still fast-forwards and doesn't close the issue |
+| `harden` | Implement's fresh hardening session, phase `hardening` | Built; `developer-hardening.md` holds the old `hardening.md` page |
+| `sync` | Fix's merge of the base into the PR head | Built; `fix.md` replaces Sync's page, and the sync rebase helpers are removed |
+| `integrate` | Verify's full checks and required CI on the PR head | Built in `src/ops/verify-checks.ts` and `src/ops/verify-ci.ts` |
+| `review-security` | Verify's review session, phase `security-review`, Security included | Built; `verify.md` is one Verify review page |
+| `complete` | Land's close of the issue, in the same result as its merge | Built in `src/ops/land-task.ts` |
 
 | Surface | Change | Class |
 | --- | --- | --- |
-| `start:implement` only | `start:author`, `start:implement` and `start:verify`, all on the issue | Behavior; public label impact. The signal component accepts only `start:implement` so far. |
+| `start:implement` only | `start:author`, `start:implement` and `start:verify`, all on the issue | Behavior; public label impact |
 | Human signals from labels only | A qualified person's PR review is a `review` signal bound to its head | Structure |
 | Review Security refusal fence in `write-authority.ts` | Removed; only an unsettled or passed Land fences code writes | Behavior |
 | Per-binding attempt ceiling for repeated review | At most `VERIFY_FIX_ROUNDS` (3) Verify-triggered Fix rounds per issue | Behavior |

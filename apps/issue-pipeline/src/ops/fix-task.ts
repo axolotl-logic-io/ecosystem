@@ -28,7 +28,7 @@ import { paths } from "../config.ts";
 import { isRevisionBinding } from "../domain.ts";
 import { head, remoteHead, uncommitted } from "../git-state.ts";
 import { gh, git } from "../github.ts";
-import { saveSyncRecovery } from "../job/code-recovery.ts";
+import { saveMergeRecovery } from "../job/code-recovery.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import { conflictStages, rebaseInProgress, unmergedFiles } from "../rebase.ts";
@@ -137,7 +137,7 @@ function keepConflict(fix: FixRun, reason: string): string {
   const { cfg, number } = fix.open;
   const files = unmergedFiles(fix.wt);
   try {
-    saveSyncRecovery(cfg, number, fix.wt, reason);
+    saveMergeRecovery(cfg, number, fix.wt, reason);
   } catch (error) {
     if (!(error instanceof OpsError && error.message.startsWith(reason))) {
       throw error;

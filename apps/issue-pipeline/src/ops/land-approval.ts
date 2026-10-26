@@ -9,7 +9,6 @@
 // qualified blocks, since it may stand.
 
 import type { Config } from "../config.ts";
-import { buddyOrganization } from "../config.ts";
 import type { TaskResult } from "../domain.ts";
 import { VERIFY_EVIDENCE } from "../domain.ts";
 import type { StandingReview } from "../pr-reviews.ts";
@@ -60,11 +59,10 @@ function peopleVerdict(
   if (people.length === 0) {
     return { blocked: null, approves: false };
   }
-  const organization = buddyOrganization(cfg);
-  if (organization === null) {
+  const organization = cfg.buddyAuthorization?.organization;
+  if (organization === undefined) {
     return {
-      blocked:
-        "the buddy's organization is unreadable, so no reviewer qualifies",
+      blocked: "no buddy is bound, so no reviewer qualifies",
       approves: false,
     };
   }

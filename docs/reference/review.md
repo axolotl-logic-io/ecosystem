@@ -2,7 +2,7 @@
 
 Three parts of issue delivery decide whether a change is good enough to land. Implement hardens its own change before it records a result. Verify checks one exact pull request (PR) head and reports through a GitHub review. Fix answers a review that blocks, or a conflict Land found. None of them is a workflow stage or grants Land permission. See [pr-review](../decisions/pr-review.md) and [task results](task-results.md).
 
-**Note:** This page describes the source for the [PR review decisions](../decisions/pr-review.md). The installed pipeline still runs separate Harden, Sync, Integrate and Review Security tasks. Nothing on this page runs until the source is landed and installed.
+**Note:** The installed pipeline still runs separate Harden, Sync, Integrate and Review Security tasks. Nothing on this page runs until this source is installed.
 
 The loop between Verify and Fix looks like this:
 
@@ -43,8 +43,8 @@ Verify can't commit, rebase or push. Tracked changes that the checks leave behin
 Verify reports its findings on the PR, not only in a hidden record:
 
 - A finding about specific lines is an inline comment on those lines.
-- A finding about the change as a whole goes in the review body.
-- A nit is still posted, marked as non-blocking.
+- A finding about the change as a whole goes in the review body. So does a finding on lines outside the PR's diff, with its `path:line`, because GitHub rejects an inline comment there.
+- Every finding starts with its label: **Security (blocking)**, **Blocking** or **Nit (non-blocking)**. Fix treats a comment that starts with "Nit" or "Non-blocking" as non-blocking.
 
 A nit is a finding that doesn't affect behavior, safety or maintainability, such as a naming preference or comment wording. Fix or a person may take it up later.
 
@@ -81,7 +81,11 @@ Fix does two things in one run:
 
 Fix merges rather than rebases. Commits that were already reviewed keep their identity, and the final merge commit keeps them in history.
 
-Fix's session is an `issue-pipeline-developer` session in phase `fix`, using the `fix.md` page. It commits through [pipeline_commit](sessions.md#pipeline_commit). Fix then pushes through the development account. If Land had marked the PR as a draft, Fix marks it ready for review after its push.
+Fix's session is an `issue-pipeline-developer` session in phase `fix`, using the `fix.md` page. It runs only when the merge conflicts, a request for changes stands on the head, or Verify caused the round. A Land conflict that now merges cleanly is pushed without a session.
+
+The session stages its resolution and concludes the merge with one [pipeline_commit](sessions.md#pipeline_commit). Fix's finish step then checks the checkout is clean, has no conflict markers and contains both the old head and the base. It pushes through the development account and replies on each blocking thread through the same account. If Land had marked the PR as a draft, Fix marks it ready for review after its push.
+
+A blocking thread is the first comment of a request-changes review that still stands on the head. Fix also gives the session each such review's body, but GitHub has no thread to reply to there, so a finding in the body gets a code change and no reply.
 
 Fix's passed result names the new head as the code it produced. Every earlier review and result was for the old head, so Verify becomes ready for the new one.
 
@@ -89,13 +93,21 @@ Fix's passed result names the new head as the code it produced. Every earlier re
 
 A conflict stays in the action checkout for Fix's session. The session stages its resolution, and Fix's guarded finish operation concludes the merge and pushes. A conflict that remains is kept, not sent through another session automatically.
 
-A session failure keeps the conflict. A `cannot-fix` reply preserves recovery evidence before any reset and records a failure. Neither outcome grants another attempt. A changed submodule pointer isn't a text resolution, so Fix keeps its unresolved evidence rather than choose a submodule revision.
+A session failure keeps the conflict. A `cannot` reply, or a session that leaves files unmerged, saves the conflict's numbered stages and a bundle of the checkout's commits in a `merge-*` folder of the issue's recovery folder, aborts the merge and records a failure. Neither outcome grants another attempt. A changed submodule pointer isn't a text resolution, so Fix keeps its unresolved evidence rather than choose a submodule revision.
 
 ### Retained evidence
 
 Recovery preserves staged and working-tree patches and verified Git bundles before destructive checkout cleanup. An unresolved index also records paths, stages, modes and full object IDs in `conflict-stages.json`. An unfinished merge or an uncertain checkpoint keeps the original checkout. See [checkout preservation](checkouts.md).
 
-Read-only reconciliation settles an interrupted Fix from the remote branch and the retained checkout. It never merges, pushes, resets or cleans up. A remote head that contains the base and differs from the bound head is Fix's output. Unpublished merged work stays held for explicit recovery rather than reset to the remote branch.
+Read-only reconciliation settles an interrupted Fix from the remote branch, the PR and its threads. It never merges, pushes, replies, marks the PR ready, resets or cleans up.
+
+| What it reads | Verdict |
+|---|---|
+| The branch is still at the bound head | `failed` |
+| A new head that descends from the bound head and contains the base, a reply from this run on every blocking thread, and a PR that isn't a draft | `passed` |
+| Anything else | `unknown`, held for a person |
+
+The thread replies are the only read-only proof that the finish step completed. A Fix with no blocking threads therefore always holds for a person in recovery. Unpublished merged work stays held for explicit recovery rather than reset to the remote branch.
 
 ## Loop limit
 

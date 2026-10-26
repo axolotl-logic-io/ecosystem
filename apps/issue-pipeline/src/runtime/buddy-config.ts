@@ -465,6 +465,7 @@ function bindBuddyAuthorization(
   const buddyAuthorization: BuddyAuthorization = {
     config: file,
     repository,
+    organization: config.scope.organization,
     run,
     task,
     digest: authorizationDigest,

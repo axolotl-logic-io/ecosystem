@@ -8,7 +8,7 @@ Keep repository policy, operator credentials and buddy configuration separate. T
 
 Issue delivery has five tasks ([delivery-tasks](../decisions/pr-review.md#delivery-tasks)). A Developer buddy's default responsibilities are Author, Implement and Fix, with the writer profile. A Gatekeeper's are Verify, with the reader profile, and Land, with the lander profile. Safe Refactor retains its [standalone entrypoint](safe-refactor.md). Merely configuring a responsibility supplies no causal signal or execution permission.
 
-**Note:** The installed pipeline still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. The five-task source runs only once it is landed and installed.
+**Note:** The installed pipeline still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. The five-task source runs only once it is installed.
 
 To validate configuration without activating a run:
 
@@ -30,7 +30,7 @@ Qualified human events on the issue and its pull request (PR) provide human sign
 - `agents:stop` requests a cooperative work-item stop.
 - A submitted `CHANGES_REQUESTED` or `APPROVED` review on the linked PR binds the head it names.
 
-The current signal component accepts only `start:implement` and `agents:stop`; the others are the decided design. The event must name a qualified human producer in the configured organization. Complete event reads, membership checks and authenticated acceptance records remain necessary. A bot, App, PR label, present label alone or assignment supplies no human authority. Removing a label creates no continuation signal. See [stops and labels](stops-and-labels.md).
+The event must name a qualified human producer in the configured organization. Complete event reads, membership checks and authenticated acceptance records remain necessary. A bot, App, PR label, present label alone or assignment supplies no human authority. Removing a label creates no continuation signal. See [stops and labels](stops-and-labels.md).
 
 A start is spent by its authenticated action attempt, even if the attempt fails or the target later moves. The same unchanged requirements don't receive an automatic Implement retry. Implement doesn't wait for an unsettled Author.
 

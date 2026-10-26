@@ -11,12 +11,12 @@ Each delivery task picks its sessions from this table. The runtime selects the p
 | Author | `issue-pipeline-author` | None | No; it writes requirements | `author.md` |
 | Implement, writing | `issue-pipeline-developer` | None | Yes | `developer.md` |
 | Implement, hardening | `issue-pipeline-developer` | `hardening` | Yes | `developer-hardening.md` |
-| Verify, Security review | `issue-pipeline-reviewer` | `security-review` | No | `verify.md` |
+| Verify, review with its Security | `issue-pipeline-reviewer` | `security-review` | No | `verify.md` |
 | Fix | `issue-pipeline-developer` | `fix` | Yes | `fix.md` |
 
-Land starts no model. Verify's full checks and required CI are deterministic; only its Security review is a session. A model name or agent prompt grants neither role nor account authority.
+Land starts no model. Verify's full checks and required CI are deterministic; one read-only session reviews the head's diff, its Security included, and its findings become the review. A model name or agent prompt grants neither role nor account authority.
 
-**Note:** These are the source's sessions for the [PR review decisions](../decisions/pr-review.md). The installed pipeline still runs Harden, Sync and Review Security sessions, with the `hardening`, `sync` and `security-review` phases. In the source, Author, Verify and Fix are still being built, and so is Implement's hardening session. Until they are, the `fix.md` and `verify.md` pages still hold the older Sync and Security text.
+**Note:** These are the source's sessions for the [PR review decisions](../decisions/pr-review.md). The installed pipeline still runs the older Harden, Sync and Review Security sessions until this source is installed.
 
 Implement's hardening runs in a fresh session that doesn't read the writing session's conversation ([implement-hardens](../decisions/pr-review.md#implement-hardens)). Implement records its result only after the hardening session ends.
 

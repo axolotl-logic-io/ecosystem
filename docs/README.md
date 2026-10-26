@@ -2,7 +2,7 @@
 
 These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Decisions record the rules; reference pages describe how the code behaves today and how to recover when something goes wrong.
 
-The [PR review decisions](decisions/pr-review.md) replaced the separate-duties tasks with five delivery tasks: Author, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, or a task is still being built, the page says so in a note.
+The [PR review decisions](decisions/pr-review.md) replaced the separate-duties tasks with five delivery tasks: Author, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, the page says so in a note.
 
 ## Practices
 

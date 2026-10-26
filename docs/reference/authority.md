@@ -9,10 +9,11 @@ The repository configuration names distinct `devAccount` and `landingAccount` lo
 | Operation | Account |
 |---|---|
 | Code commits, issue-branch pushes, Fix pushes and permitted recovery pushes | Development |
-| Opening the PR, marking it a draft or ready, and permitted source-branch effects | Development |
+| Opening the PR, Fix marking it ready, and permitted source-branch effects | Development |
+| Fix's replies on review threads | Development |
 | Authenticated pipeline records, authority reads and issue lifecycle | Landing |
 | Verify's PR reviews and their comments | Landing |
-| Land's merge of the PR and its close of the issue | Landing |
+| Land's merge of the PR, its close of the issue, and marking a conflicting PR a draft | Landing |
 
 GitHub doesn't let a PR's author approve or request changes on it. The development account opens and pushes the PR, so Verify's reviews and Land's merge come from the landing account ([no-separate-duties](../decisions/pr-review.md#no-separate-duties)). Only the landing account records attempts and results, for Developer tasks as well as Gatekeeper ones.
 
@@ -26,7 +27,7 @@ A safe login read can retry transient failures; the operation it guards is not r
 
 ## Human controls
 
-A qualified issue-label application event can request `start:author`, `start:implement`, `start:verify` or `agents:stop`. A qualified person's submitted review on the issue's linked PR is a signal too. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal don't supply equivalent authority. The current signal component accepts only `start:implement` and `agents:stop`.
+A qualified issue-label application event can request `start:author`, `start:implement`, `start:verify` or `agents:stop`. A qualified person's submitted review on the issue's linked PR is a signal too. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal don't supply equivalent authority.
 
 An accepted Author or Implement start binds the work item's trusted requirements. A Verify start binds the linked PR's head. An authenticated Implement attempt spends its requirements regardless of its result or a later target change. Applying the start label again doesn't retry it. Unknown or conflicting evidence holds work. See [stops and labels](stops-and-labels.md).
 

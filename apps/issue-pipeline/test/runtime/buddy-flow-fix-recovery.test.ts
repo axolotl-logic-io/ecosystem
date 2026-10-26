@@ -71,7 +71,7 @@ function recovered(box: Machine): string[][] {
   }
   return fs
     .readdirSync(dir)
-    .filter((name) => name.startsWith("sync-"))
+    .filter((name) => name.startsWith("merge-"))
     .map((name) => fs.readdirSync(path.join(dir, name)).sort());
 }
 

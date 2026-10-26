@@ -2,7 +2,7 @@
 
 Land delivers an approved PR head onto the configured base. It merges the item's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both effects. Land is a Gatekeeper task with the lander access profile. See [land-merges-the-pr](../decisions/pr-review.md#land-merges-the-pr) and the [domain runtime contract](../domain-runtime-contract.md).
 
-**Note:** This page describes the Land of the [PR review decisions](../decisions/pr-review.md). The installed pipeline still lands with a fast-forward push and closes the issue in a separate Complete task. Nothing on this page runs until the source is landed and installed.
+**Note:** The installed pipeline still lands with a fast-forward push and closes the issue in a separate Complete task. Nothing on this page runs until this source is installed.
 
 ## Land prerequisites
 
@@ -46,7 +46,9 @@ Land passes only after fresh reads find the PR merged at exactly the checked hea
 
 ## Conflicts
 
-An approved PR can still conflict with its base. Land then doesn't merge. It marks the PR as a draft, through the development account, and records a refused result that says why. The refused result names the PR, the head and the base it conflicts with.
+An approved PR can still conflict with its base. Land then doesn't merge. It marks the PR as a draft, through the landing account, and records a refused result that says why. The refused result names the PR, the head and the base it conflicts with.
+
+Land treats a head that doesn't contain the current base as a conflict too, even when GitHub reports it mergeable. It checks for a conflict before it reads CI, so an approved, conflicting PR goes to Fix whatever its CI says. A merge that GitHub refuses at the same head, because the base moved and now conflicts or is missing from the head, is handled the same way.
 
 That result wakes [Fix](review.md#fix). Fix merges the base into the head, pushes and marks the PR ready for review again. A refused Land leaves code writable for Fix; only an unsettled or passed Land fences code writes. See [write authority](authority.md#controlled-writes).
 
@@ -54,15 +56,15 @@ A conflict doesn't spend Verify's loop limit. Fix rounds that Land caused don't 
 
 ## Uncertain effects
 
-Read-only recovery settles the original attempt, with its original identity and binding. It reads the PR's merged state and the issue's state. It never merges or closes twice.
+Read-only recovery, the `land-reconcile` operation, settles the original attempt, with its original identity and binding. It reads the PR's merged state and the issue's state. It never merges or closes twice.
 
 | PR | Issue | Settlement |
 |---|---|---|
 | Merged at the checked head | Closed | Passed |
-| Merged at the checked head | Open | Unknown; hold, because recovery never closes the issue itself |
-| Open and unchanged | Any state | Failed; no merge observed |
-| Merged at another head, or closed without a merge | Any state | Unknown; hold |
-| Unreadable or contradictory | Any state | Unknown; retain the turn |
+| Merged at the checked head | Open | Unknown; hold until a person closes the issue, because recovery never closes it itself |
+| An open draft at the checked head | Any state | Refused, with conflict evidence for Fix |
+| Open and not a draft, closed without a merge, merged at another head, or no PR | Any state | Failed; this run merged nothing |
+| Unreadable | Any state | Unknown; retain the turn |
 
 Current recording authorization and ownership remain required. A lost response isn't permission to resend a merge or a close that GitHub may have accepted.
 

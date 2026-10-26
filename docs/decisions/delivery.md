@@ -1,6 +1,6 @@
 # Delivery decisions
 
-These decisions cover how a change gets from a hardened branch onto the configured base: hardening, Security, what an approval covers and landing order. [Review](../reference/review.md), [merge](../reference/merge.md) and [sync](../reference/sync.md) reference describe the current behavior.
+These decisions cover how a change gets from a hardened branch onto the configured base: hardening, Security, what an approval covers and landing order. [Review](../reference/review.md) and [merge](../reference/merge.md) reference describe the current behavior; Sync is now part of [Fix](../reference/review.md#fix).
 
 ## security-before-merge
 

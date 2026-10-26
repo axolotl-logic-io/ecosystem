@@ -21,9 +21,9 @@ Everything lives under `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeli
 | `runs/SLUG/issue-N/actions/ACTION_ID/sessions/KEY.jsonl` | Each model session's transcript |
 | `runs/SLUG/issue-N/actions/ACTION_ID/context.jsonl` | Bounded measures of each ended session |
 | `runs/SLUG/issue-N/dropped/` | Uncommitted-change patches and their manifests |
-| `runs/SLUG/issue-N/recovery/` | Verified code bundles and Sync recovery folders |
+| `runs/SLUG/issue-N/recovery/` | Verified code bundles and Fix's `merge-*` recovery folders |
 | `runs/SLUG/issue-N/setup-ACTION_ID.started`, `setup-ACTION_ID.log` | An action's setup start marker and setup log |
-| `runs/SLUG/issue-N/integrate-*/` | Integrate's detached check checkout, kept only when it must be retained |
+| `runs/SLUG/issue-N/verify-checkout-*/` | Verify's detached check checkout, kept only when it must be retained |
 | `runs/SLUG/issue-N/verify-*/` | Check command logs, one folder per checked commit |
 | `runs/SLUG/issue-N/pushes.jsonl`, `pushed.json` | The pipeline's own pushes |
 | `runs/SLUG/issue-N/coordination-uncertain.json` | The journal of an uncertain coordination write |
@@ -63,7 +63,7 @@ The runtime releases the issue's execution only when nothing holds it. Each of t
 
 A lane slot is one reusable test environment from a fixed local pool. The optional operator config `laneSlots`, an integer from 1 through 399, sets the pool size. Without `laneSlots` there is no pool, no slot variable and no setup barrier.
 
-Implement, Harden, Sync, Integrate and Review Security declare the `test-slot` resource. Land and Complete don't. See [reservations](reservations.md) for the other resources.
+Implement, Verify and Fix declare the `test-slot` resource. Author and Land don't. See [reservations](reservations.md) for the other resources.
 
 ### Slot allocation
 
@@ -82,7 +82,7 @@ With `laneSlots` set, a `test-slot` action's model sessions receive `ISSUE_PIPEL
 
 ### Task-owned setup
 
-Each task prepares its own test environment. Implement, Harden, Sync and Review Security call the action's `prepare` step before their first model session. With `laneSlots` or `commands.setup` configured, a `test-slot` task's sessions are refused until its checkout is prepared.
+Each task prepares its own test environment. Implement, Verify and Fix call the action's `prepare` step before their first model session. Implement's hardening session shares the writing session's prepared checkout and slot, so setup runs once for both. With `laneSlots` or `commands.setup` configured, a `test-slot` task's sessions are refused until its checkout is prepared.
 
 The `prepare-checkout` op runs the configured setup. It refuses unless all of these hold:
 
@@ -94,7 +94,7 @@ The op creates `setup-ACTION_ID.started` exclusively before it runs setup, so a 
 
 A setup that fails, times out or loses its reply ends the action. The pipeline keeps the checkout, the issue's execution and, with `laneSlots`, the slot and the barrier. No session starts and nothing retries the setup. No pipeline command clears a pending barrier or replays a started setup; reconcile it explicitly.
 
-Integrate runs setup and the configured checks in a detached checkout under `integrate-*/`, a worktree of the metadata clone. A failed or unfinished setup keeps that folder and, with `laneSlots`, its barrier, and the action holds the issue. Checks that change tracked files keep the folder with a `tracked.patch` and fail the run.
+Verify runs setup and the configured checks in a detached checkout under `verify-checkout-*/`, a worktree of the metadata clone. A failed or unfinished setup keeps that folder and, with `laneSlots`, its barrier, and the action holds the issue. Checks that change tracked files keep the folder with a `tracked.patch` and fail the run.
 
 A pending barrier keeps its lease even after the registered checkout is gone.
 
@@ -118,10 +118,10 @@ Configured commands run through `shell-supervisor.mjs` in process groups that th
 
 1. Stop new work for the issue, for example with `agents:stop`.
 2. Read the action's `run.json` for its reason, ownership, `preserved.checkout` and `preserved.patches`.
-3. Copy the retained checkout and the issue's `dropped/`, `recovery/` and `integrate-*/` evidence outside `$ISSUE_PIPELINE_ROOT`.
+3. Copy the retained checkout and the issue's `dropped/`, `recovery/` and `verify-checkout-*/` evidence outside `$ISSUE_PIPELINE_ROOT`.
 4. Decide explicitly which saved work to keep. Patches without a manifest need manual reconciliation, since their branch can't be inferred.
 5. Remove the retained checkout only after no consumer still uses it.
 
-Land, Complete and Sync have read-only recovery. When one of their attempts is unsettled, a new action run in `recover` mode settles that original attempt from reads alone. It records no new attempt, takes no lane slot and runs no setup. An unsettled attempt of any other task stays held for explicit reconciliation.
+Verify, Fix and Land have read-only recovery. When one of their attempts is unsettled, a new action run in `recover` mode settles that original attempt from reads alone. It records no new attempt, takes no lane slot and runs no setup. An unsettled attempt of any other task stays held for explicit reconciliation.
 
 There is no restart-at-stage command. See [recover after a source defect](operations.md#recover-after-a-source-defect) and [recovery boundaries](stops-and-labels.md#recovery-boundaries).

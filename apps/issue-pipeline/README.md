@@ -30,7 +30,7 @@ Issue delivery has five tasks, set by the [PR review decisions](../../docs/decis
 
 Safe Refactor retains its explicit standalone entrypoint.
 
-**Note:** In this source, Author, Verify and Fix are stubs that wait and refuse to act, Implement doesn't run its hardening session yet, and Land still fast-forwards. The signal component accepts only `start:implement` and `agents:stop`. The installed release still runs the older Harden, Sync, Integrate, Review Security and Complete tasks.
+**Note:** The installed release still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. This source's five tasks run only once it is installed.
 
 Qualified human events provide the human signals: the `start:author`, `start:implement`, `start:verify` and `agents:stop` labels on the issue, and a qualified person's review of the issue's linked PR. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
 
@@ -99,11 +99,12 @@ This is the **Git execution boundary**, not an OS/filesystem/keyring/network san
 ## Two GitHub identities and operator credentials
 
 Development (`devAccount`) owns code/docs
-commits, source branch pushes and PR create/edit/reopen/close/ready/draft.
-Review/merge (`landingAccount`) owns every comment,
+commits, source branch pushes, PR create/edit/reopen/close/ready and Fix's
+replies on review threads.
+Review/merge (`landingAccount`) owns every other comment,
 saved state, claim, label, authority read and task record. It also submits
-Verify's PR reviews and makes Land's PR merge and issue close, because GitHub
-doesn't let a PR's author review it. The installed release still lands with an
+Verify's PR reviews and makes Land's PR merge, its draft of a conflicting PR
+and its issue close, because GitHub doesn't let a PR's author review it. The installed release still lands with an
 explicit-target fast-forward push. Closing a PR uses development; its accompanying comment uses the landing account.
 Neither bot is a trusted human, even if included in `allowedUsers`. Human issue
 and comment authors require both that explicit allow-list and a fresh collaborator

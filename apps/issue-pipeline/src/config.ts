@@ -36,11 +36,13 @@ interface JobCheckout {
 // The trusted buddy authorization an ops request runs under, once
 // src/runtime/buddy-config.ts's bindBuddyAuthorization validated it: the
 // buddy file and the repository config it was matched against, the buddy
-// run and task, and the authorization digest, which is the action's own and
-// never part of the shared checking policy. Internal, never loaded from JSON.
+// run and task, the organization whose active members qualify as people,
+// and the authorization digest, which is the action's own and never part
+// of the shared checking policy. Internal, never loaded from JSON.
 interface BuddyAuthorization {
   config: string;
   repository: string;
+  organization: string;
   run: string;
   task: string;
   digest: string;
@@ -176,11 +178,6 @@ const VARIABLES: Readonly<Record<Account, string>> = {
   landing: "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN",
 };
 const TOKEN = /^\S+$/u;
-// The one field of a bound buddy's trusted file that buddyOrganization
-// reads; src/runtime/buddy-config.ts owns and checks the whole file.
-const BUDDY_SCOPE = z.looseObject({
-  scope: z.looseObject({ organization: z.string().min(1) }),
-});
 const NON_OWNER_PERMISSION_RANGE = 0o100;
 
 function credential(cfg: Config, identity: Account): string {
@@ -212,23 +209,5 @@ function credential(cfg: Config, identity: Account): string {
   return selected;
 }
 
-// The organization whose active members a bound buddy action qualifies as
-// people, from the buddy file bindBuddyAuthorization validated whole before
-// any op ran; null when no buddy is bound or its file can't be read now.
-// Ops in the tasks' import graph read it here: the buddy loader itself
-// depends on the tasks.
-function buddyOrganization(cfg: Config): string | null {
-  const bound = cfg.buddyAuthorization;
-  if (bound === undefined) {
-    return null;
-  }
-  try {
-    const raw: unknown = JSON.parse(fs.readFileSync(bound.config, "utf8"));
-    return BUDDY_SCOPE.parse(raw).scope.organization;
-  } catch {
-    return null;
-  }
-}
-
 export type { Account, BuddyAuthorization, Config, JobCheckout };
-export { buddyOrganization, credential, loadConfig, paths, withCheckout };
+export { credential, loadConfig, paths, withCheckout };

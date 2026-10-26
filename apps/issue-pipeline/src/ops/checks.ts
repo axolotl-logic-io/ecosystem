@@ -231,8 +231,8 @@ function changedFiles(dir: string, from: string, sha: string): string[] {
 // Runs every check at `sha`, checked out in `dir`, whose change touches
 // `changed`, and leaves `dir`'s tracked files as it found them.
 // With keepTracked, tracked changes the checks made stay in the checkout for
-// the caller to retain as evidence (read-only Integration, #185); verify
-// discards them as before.
+// the caller to retain as evidence (Verify's checks of a PR head); without
+// it they are discarded.
 function runChecks(
   cfg: Config,
   n: number,
