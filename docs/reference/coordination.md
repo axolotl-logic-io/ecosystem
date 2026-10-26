@@ -6,7 +6,9 @@ A buddy run activates its configured task loops. Each task owns its sensors, mat
 
 Keep repository policy, operator credentials and buddy configuration separate. The [runtime reference](runtime-runs.md#buddy-configuration) defines the strict buddy file, organization scope, role, responsibilities, identity and access profiles. Repository `resources.modelSessions` supplies the shared capacity; there is no buddy-level capacity override.
 
-Developer tasks include Implement, Harden and Sync. Gatekeeper tasks include Integrate, Review Security, Land and Complete. Author has no implicit request, and Safe Refactor retains its [standalone entrypoint](safe-refactor.md). Merely configuring a responsibility supplies no causal signal or execution permission.
+Issue delivery has five tasks ([delivery-tasks](../decisions/pr-review.md#delivery-tasks)). A Developer buddy's default responsibilities are Author, Implement and Fix, with the writer profile. A Gatekeeper's are Verify, with the reader profile, and Land, with the lander profile. Safe Refactor retains its [standalone entrypoint](safe-refactor.md). Merely configuring a responsibility supplies no causal signal or execution permission.
+
+**Note:** The installed pipeline still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. The five-task source runs only once it is landed and installed.
 
 To validate configuration without activating a run:
 
@@ -20,14 +22,19 @@ node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 
 The runtime independently checks the current buddy grant, qualified cause, work-item stop state, fenced issue execution and any required shared resource reservation. An unavailable resource waits; unknown or conflicting authority holds. Local run files cannot grant permission.
 
-Only qualified issue-label application events provide initial human signals:
+Qualified human events on the issue and its pull request (PR) provide human signals:
 
+- `start:author` requests Author for the issue's current requirements.
 - `start:implement` requests Implement for its requirements binding.
+- `start:verify` requests Verify for the current head of the issue's linked PR.
 - `agents:stop` requests a cooperative work-item stop.
+- A submitted `CHANGES_REQUESTED` or `APPROVED` review on the linked PR binds the head it names.
 
-The event must name a qualified human producer in the configured organization. Complete event reads, membership checks and authenticated acceptance records remain necessary. A bot, App, PR label, present label alone or assignment supplies no human authority. Removing a label creates no continuation signal.
+The current signal component accepts only `start:implement` and `agents:stop`; the others are the decided design. The event must name a qualified human producer in the configured organization. Complete event reads, membership checks and authenticated acceptance records remain necessary. A bot, App, PR label, present label alone or assignment supplies no human authority. Removing a label creates no continuation signal. See [stops and labels](stops-and-labels.md).
 
-A start is spent by its authenticated action attempt, even if the attempt fails or the target later moves. The same unchanged requirements do not receive an automatic Implement retry. Results drive downstream task readiness; they do not grant Land permission.
+A start is spent by its authenticated action attempt, even if the attempt fails or the target later moves. The same unchanged requirements don't receive an automatic Implement retry. Implement doesn't wait for an unsettled Author.
+
+Results drive the rest of the loop. A new PR head wakes Verify. A refused Verify, a person's request-changes review or Land's conflict wakes Fix. An approved head wakes Land. These results don't grant Land permission; Land still checks its own prerequisites.
 
 ## Keep concurrent work apart
 
@@ -51,4 +58,4 @@ A stop prevents new substantive work in its scope. A credentialed write, rebase 
 
 A failed or uncertain checkpoint keeps the work and required ownership/resources. Retain binary-safe staged and working patches, verified Git bundles, stopped-rebase state, journals and consumer records. Do not reset a checkout, clear evidence or release resources merely to permit another action.
 
-Read-only recovery settles the original action; it does not begin a replacement attempt. Missing own-Land proof, a Security rejection or an uncertain effect remains a hold. There is no label-removal restart, automatic retry or undefined continuation command.
+Read-only recovery settles the original action; it does not begin a replacement attempt. A review loop at its limit or an uncertain effect remains a hold. There is no label-removal restart, automatic retry or undefined continuation command.

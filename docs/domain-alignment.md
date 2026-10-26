@@ -4,6 +4,8 @@ This draft maps inspected differences to the accepted [shared glossary](../GLOSS
 
 On 2026-10-22 Autumn retired Stage in favor of tasks, defined roles as sets of tasks, introduced actors, accounts and identities, and limited merge to a Git merge. Later that day she renamed actor to buddy, and the [buddy and task decisions](decisions/buddies-and-tasks.md) settled the role assignments and most open contracts. [Tasks, buddies and landing](#tasks-buddies-and-landing) maps those decisions onto the installed release, `42a8771`. Older sections keep their original evidence and say where the decisions supersede them.
 
+On 2026-10-26 Autumn replaced the separate-duties tasks with five delivery tasks and a review loop on the pull request (PR), in the [PR review decisions](decisions/pr-review.md). [PR review tasks](#pr-review-tasks) maps them onto the source.
+
 ## Scope and evidence
 
 The inventory covers ecosystem's issue pipeline, the local Pi dash extension, the status-report skill, and the issue-pipeline and test-assessment plans. It records known change surfaces, not a complete symbol-by-symbol audit.
@@ -80,7 +82,7 @@ These mappings apply the 2026-10-22 decisions to the installed release `42a8771`
 
 ### Code names (#165) and persisted names (#166)
 
-Ecosystem #165 renamed the pipeline's code names in source, tests, prompts and docs. #166 then renamed the names saved, configured or sent on the wire, with the compatibility rule in the [operations reference](reference/operations.md#renamed-names-166): read old and new, write new, never rewrite history. The names that remain are listed with their reason.
+Ecosystem #165 renamed the pipeline's code names in source, tests, prompts and docs. #166 then renamed the names saved, configured or sent on the wire, with the compatibility rule in the [operations reference](reference/operations.md): read old and new, write new, never rewrite history. The names that remain are listed with their reason.
 
 | Kind | Renamed | Kept, and why |
 | --- | --- | --- |
@@ -89,6 +91,29 @@ Ecosystem #165 renamed the pipeline's code names in source, tests, prompts and d
 | Orchestrator | Prose that means the caller says caller. | The retained legacy scheduler: `src/orchestrator/`, `orchestrate.ts`, `orchestrate.mjs`, `orchestratorIntervalSeconds`, `mergeWindow`. It is not the caller. |
 | Stage | Prose that means a task says task. | Stage as the installed technical name: `Stage`, `STAGES`, stage jobs, `--stage`, the saved `stage`, `stoppedStage`, `resumeStage`, stage caps. Replacing them is the *Structure* change above ("the tasks that may proceed"), not a rename. |
 | Coordination | The request record's `identity` is `binding` in record version 2 (#166). | Version 1 records stay readable. |
+
+### PR review tasks
+
+These mappings apply the 2026-10-26 [PR review decisions](decisions/pr-review.md) to the source at `f979fdd`. The source has the new task IDs, signal shapes and receipt evidence. Author, Verify and Fix are stubs that wait and refuse, and Land still fast-forwards. Nothing here is installed.
+
+| Removed task | Canonical target | Source state at `f979fdd` |
+| --- | --- | --- |
+| `harden` | Implement's fresh hardening session, phase `hardening` | The `developer-hardening.md` page is routed to Implement; Implement doesn't run the session yet |
+| `sync` | Fix's merge of the base into the PR head | The `sync.md` page is renamed `fix.md` and still holds Sync's text |
+| `integrate` | Verify's full checks and required CI on the PR head | Verify is a stub |
+| `review-security` | Verify's Security review, phase `security-review` | The `security.md` page is renamed `verify.md` and still holds Security's text |
+| `complete` | Land's close of the issue, in the same result as its merge | Land still fast-forwards and doesn't close the issue |
+
+| Surface | Change | Class |
+| --- | --- | --- |
+| `start:implement` only | `start:author`, `start:implement` and `start:verify`, all on the issue | Behavior; public label impact. The signal component accepts only `start:implement` so far. |
+| Human signals from labels only | A qualified person's PR review is a `review` signal bound to its head | Structure |
+| Review Security refusal fence in `write-authority.ts` | Removed; only an unsettled or passed Land fences code writes | Behavior |
+| Per-binding attempt ceiling for repeated review | At most `VERIFY_FIX_ROUNDS` (3) Verify-triggered Fix rounds per issue | Behavior |
+| Fast-forward Land with a strict-descendant lease | `gh pr merge --merge --match-head-commit`, then the issue close | Structure; the [merge glossary entry](../GLOSSARY.md#merge) now covers Land's merge commit |
+| Task result without a cause | `TaskResult.cause` repeats the attempt's cause | Structure |
+
+The open questions in the decision keep current behavior. `start:implement` doesn't retry a failed Implement for the same requirements, and Implement doesn't wait for Author.
 
 ## Signals and label controls
 

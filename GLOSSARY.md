@@ -20,11 +20,11 @@ A role holds no identity, credentials or authority. It does not establish author
 
 ### Developer
 
-The role responsible for the Author, Implementation, Safe Refactor, Hardening and Sync tasks. Use Developer instead of Implementor wherever they name the same role. Implementation is the task, not the role's name.
+The role responsible for the Author, Implement and Fix tasks, and for Safe Refactor when it is explicitly assigned. Use Developer instead of Implementor wherever they name the same role. Implement is the task, not the role's name.
 
 ### Gatekeeper
 
-The role responsible for the Integration, Security, Land and Completion tasks. It verifies and lands what the Developer writes.
+The role responsible for the Verify and Land tasks. It verifies and lands what the Developer writes.
 
 ### Account
 
@@ -46,7 +46,7 @@ A task stands on its own. The buddy does not own the task's sensors, inbox, sign
 
 A buddy run activates its configured tasks' action loops. Work discovery uses the tasks' declared sensors within the configured scope.
 
-Buddies whose duties must stay independent have decoupled identities. Security and Hardening are performed by separate buddies with separate identities and accounts. [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) record the current buddies.
+A task doesn't have to be split because one side writes and the other checks ([no-separate-duties](docs/decisions/pr-review.md#no-separate-duties)). The Developer and the Gatekeeper still use separate GitHub accounts, because GitHub doesn't let a pull request's author approve or request changes on it. [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) record the current buddies.
 
 ### Executing buddy
 
@@ -88,7 +88,7 @@ Starting a fresh run from a checkpoint is not resumption of the original run. Co
 
 ### Session
 
-A model's retained conversation and context. A session supports model-assisted actions; its lifetime is separate from the buddy run that activates task loops. A Hardening run never shares a session with the Implementation run whose revision it hardens.
+A model's retained conversation and context. A session supports model-assisted actions; its lifetime is separate from the buddy run that activates task loops. Implement's hardening runs in a fresh session that never shares the conversation of the session that wrote the change.
 
 Session identity, run identity and checkpoint identity are not interchangeable.
 
@@ -102,7 +102,7 @@ Dependencies and authorization conditions determine what may proceed. A task lis
 
 A specific current result, condition or permission that a task requires before it may proceed. Dependencies identify these prerequisites, not blanket completion of all work of the same kind.
 
-For example, landing revision R of change A requires a current passing Security result bound to R and the target state, and separate authorization to land it. Unrelated security work on change B does not block A. If A gets a new revision, the earlier result does not satisfy the prerequisite for it; retain it as historical evidence. A passing check is evidence, not permission.
+For example, landing revision R of change A requires an approving review that stands on R, and separate authorization to land it. A review of change B does not count for A. If A gets a new revision, the earlier result does not satisfy the prerequisite for it; retain it as historical evidence. A passing check is evidence, not permission.
 
 ### Workflow run
 
@@ -150,29 +150,45 @@ A result differs from an outcome: an outcome belongs to a run, while a result be
 
 What a result applies to. For a task that checks or changes a revision, the binding is that revision, the target state and the policy.
 
-A result is current while its binding still matches the revision, target state and policy in question. Otherwise it is stale and remains historical evidence only. Bindings for Author and the first Implementation, which run before any revision exists, are still open.
+A result is current while its binding still matches the revision, target state and policy in question. Otherwise it is stale and remains historical evidence only. Author and Implement run before any revision exists, so they bind the issue's trusted requirements instead. Verify, Fix and Land bind the pull request's head revision.
 
 ### Merge
 
 A Git merge, and only that: a commit that joins histories, such as a pull request's merge commit.
 
-Do not use merge for landing, for the work around it, or for accounts, queues or labels. GitHub reports a pull request as merged even after a fast-forward, squash or rebase; quote that as GitHub's external state, not as a domain claim.
+Land's pull request merge commit and Fix's merge of the base into the head branch are both Git merges. Do not use merge for landing itself, for the work around it, or for accounts, queues or labels. GitHub reports a pull request as merged even after a fast-forward, squash or rebase; quote that as GitHub's external state, not as a domain claim.
+
+### Verify
+
+The Gatekeeper task that checks one exact pull request head and reports through a GitHub review. It runs the repository's full checks, the required CI and the Security review of that head. It posts inline and general review comments, then approves when it finds nothing or only nits, and requests changes otherwise. A Security finding always blocks.
+
+Verify's review binds the head's commit, so it covers exactly what Verify checked. A new head needs a new Verify.
+
+### Nit
+
+A review finding that doesn't affect behavior, safety or maintainability, such as a naming preference or comment wording. A nit doesn't block approval. Verify still posts it, marked as non-blocking.
+
+### Fix
+
+The Developer task that answers a change that didn't pass review. A request-changes review on the current head, from Verify or a qualified person, wakes it, and so does Land finding a conflict. In one run, Fix merges the pull request's base branch into its head branch and answers every blocking comment with a code change and a thread reply. Its result is a new head, which Verify then checks.
+
+Fix replaces going back to Implement. It is not a rebase: commits that were already reviewed keep their identity.
+
+### Review loop
+
+The cycle in which Verify reviews a head, Fix answers it and Verify reviews the new head. An issue gets at most three Fix rounds that Verify triggered. After the third, if Verify still requests changes, the issue holds for a person. Rounds that a person's review or Land's conflict triggered don't count.
 
 ### Land
 
-The task that moves a target to include a revision. Its result is that revision R landed on the target at commit M. Landing may use a fast-forward or a merge.
+The task that moves a target to include a revision. Land merges the pull request with a merge commit, pinned to the exact head it checked, and then closes the issue. Its result covers both, and names the merge commit M.
 
 The landing account is the account that approves the exact revision and lands it. The landing order is the order in which revisions land on a target; it grants no permission to land.
-
-### Sync
-
-The task that rebases a revision onto a target state it doesn't yet contain and resolves the conflicts. Its result is a new revision that contains the target state, which needs its own Hardening result. Sync is not a merge.
 
 ### Safe Refactor
 
 The Developer task that improves an existing revision's design without changing behavior under its explicitly selected preservation contract. It uses findings, practices and this glossary to choose cohesive changes, not merely reduce metric scores. Unsupported changes are deferred with reasons.
 
-Safe Refactor does not replace Hardening or independent Security and grants no Land authority. Changed source needs a newly bound revision and fresh downstream results. The initial standalone implementation returns unsigned reports, not authenticated workflow Results or Receipts; the [Safe Refactor reference](docs/reference/safe-refactor.md) describes its limits.
+Safe Refactor does not replace Implement's hardening or Verify, and grants no Land authority. Changed source needs a newly bound revision and fresh downstream results. The initial standalone implementation returns unsigned reports, not authenticated workflow Results or Receipts; the [Safe Refactor reference](docs/reference/safe-refactor.md) describes its limits.
 
 ### Refactoring primitive
 
@@ -184,20 +200,17 @@ An operation can produce edits, checks and a checkpoint. Ending that operation d
 
 The workflow that develops and delivers an issue's intended change. Its tasks are flat; the table is not an executable sequence. Author is optional. Independent work may proceed concurrently where the dependency and authorization rules permit it.
 
-| Task | Prerequisites | Result |
+| Task | Becomes ready when | Result |
 | --- | --- | --- |
-| Author | Authoring requested | Authored requirements |
-| Implementation | Requirements | A revision of the change |
-| Hardening | A revision | A Hardening result for that revision, which may first produce a new revision |
-| Sync | Revision R; target state T that R doesn't contain | A new revision R′ that contains T |
-| Integration | A current Hardening result for revision R; target state T that R contains | An integration result for R on T |
-| Security | A current integration result for R on T | A Security result for R, T and the policy |
-| Land | Current Hardening, Integration and Security results for the same R and T; authorization | R landed on the target at M |
-| Completion | The Land result | Work-item completion |
+| Author | `start:author` | Gherkin requirements |
+| Implement | `start:implement` | A hardened pull request head |
+| Verify | A head with no Verify result, or `start:verify` | A submitted review on that exact head |
+| Fix | A blocking review on the current head, or Land finding a conflict | A new head that answers the review and contains the base |
+| Land | An approved head that is ready to merge | The pull request merged and the issue closed |
 
-When Sync produces a new revision, the earlier Hardening result stays bound to the old one. Land's prerequisite is then unmet and Hardening runs for the new revision; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
+When Fix produces a new head, every earlier review and result stays bound to the old one. Verify becomes ready for the new head; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
 
-The Developer performs Author, Implementation, Safe Refactor, Hardening and Sync. Safe Refactor is explicitly assigned; it adds no automatic dispatch or fixed workflow position. The Gatekeeper performs Integration, Security, Land and Completion. The complete dependency graph, branch and join rules, and historical compatibility still need design. This intended model does not describe every historical or installed version.
+The Developer performs Author, Implement and Fix, and Safe Refactor when it is explicitly assigned; Safe Refactor adds no automatic dispatch or fixed workflow position. The Gatekeeper performs Verify and Land. The [PR review decisions](docs/decisions/pr-review.md) record this model. This intended model does not describe every historical or installed version.
 
 ### Run state
 
@@ -209,7 +222,7 @@ A run is running; waiting, when a prerequisite or hold is unmet; stopped, when i
 
 What a run achieved or why it ended. Outcome is distinct from run state and work-item completion.
 
-For example, a Land run may end successfully while its work item still awaits Completion.
+For example, an Implement run may end successfully while its work item still awaits Verify and Land.
 
 ### Work-item completion
 
@@ -247,7 +260,7 @@ A message representing a condition or occurrence detected by a sensor, carrying 
 
 A human-produced signal qualifies only when its producer is a current member of the configured organization. A machine-produced signal qualifies through the applicable authentication, provenance and binding rules. Signals encapsulate this distinction so tasks do not each invent producer-specific authority checks. Verify the applicable authority at run start and before privileged effects that rely on it. Unknown evidence grants no permission.
 
-An issue having `start:implement` can supply a signal matched to starting Implement. `agents:stop` supplies a signal matched to preventing new task runs and gracefully stopping active runs at the next safe boundary, preserving work and recording checkpoints. For a label-based signal, verify the application event and its producer; label presence alone does not establish authority.
+An issue having `start:author`, `start:implement` or `start:verify` can supply a signal matched to starting that task. A qualified person's review of the issue's pull request is a signal too, bound to the head it reviewed. `agents:stop` supplies a signal matched to preventing new task runs and gracefully stopping active runs at the next safe boundary, preserving work and recording checkpoints. For a label-based signal, verify the application event and its producer; label presence alone does not establish authority.
 
 Removing a label is never a signal. Removing a start label does not cancel accepted work. Removing `agents:stop` does not authorize continuation. The signal for continuation remains undefined.
 

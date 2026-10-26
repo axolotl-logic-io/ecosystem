@@ -18,13 +18,25 @@ node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 
 ## Tasks and signals
 
-The canonical task IDs are `author`, `implement`, `harden`, `sync`, `integrate`, `review-security`, `land`, `complete` and `refactor-safely`. Developer and Gatekeeper are roles, not saved stages. Author has no implicit request. Safe Refactor retains its explicit standalone entrypoint.
+Issue delivery has five tasks, set by the [PR review decisions](../../docs/decisions/pr-review.md). The canonical task IDs are `author`, `implement`, `verify`, `fix`, `land` and `refactor-safely`. Developer and Gatekeeper are roles, not saved stages.
 
-Qualified issue-label application events provide the initial human signals: `start:implement` and `agents:stop`. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
+| Task | Role and access | Binds | Becomes ready when |
+| --- | --- | --- | --- |
+| Author | Developer, writer | Requirements | `start:author` |
+| Implement | Developer, writer | Requirements | `start:implement` |
+| Verify | Gatekeeper, reader | The PR head | A head with no Verify result, or `start:verify` |
+| Fix | Developer, writer | The PR head | A request for changes on the head, or Land finding a conflict |
+| Land | Gatekeeper, lander | The PR head | An approved head that is ready to merge |
 
-An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. Unchanged requirements do not get an automatic Implement retry. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
+Safe Refactor retains its explicit standalone entrypoint.
 
-Sync can precede Harden when the revision does not contain the target; its output needs fresh Harden. Integrate requires the exact hardened revision and target containment. Independent read-only Security follows current Integration. Land additionally needs literal repository and buddy Land grants, the proper role/account/profile and every current exact-binding prerequisite. Complete uses the authenticated Land's original candidate, pre-Land target and policy with current trusted-input and provenance checks.
+**Note:** In this source, Author, Verify and Fix are stubs that wait and refuse to act, Implement doesn't run its hardening session yet, and Land still fast-forwards. The signal component accepts only `start:implement` and `agents:stop`. The installed release still runs the older Harden, Sync, Integrate, Review Security and Complete tasks.
+
+Qualified human events provide the human signals: the `start:author`, `start:implement`, `start:verify` and `agents:stop` labels on the issue, and a qualified person's review of the issue's linked PR. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
+
+An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. Unchanged requirements don't get an Implement retry from `start:implement`, and Implement doesn't wait for Author. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
+
+Implement writes the change and hardens it in a fresh session before it records its result. Verify runs the full checks, the required CI and the Security review of the exact head. It then submits a review through the landing account: an approval for nothing or only nits, and a request for changes otherwise. A Security finding always blocks. Fix merges the base into the PR head, answers every blocking comment with code and a thread reply, and pushes. An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`), then holds for a person. See [Hardening, Verify and Fix](../../docs/reference/review.md).
 
 ## Ownership, resources and preservation
 
@@ -34,29 +46,29 @@ Authenticated coordination and create-only epoch refs fence issue execution. Con
 
 Model-session slots belong to one shared repository/base/resource pool. Live cap mismatches hold the pool. Holders release only after all registered consumers durably finish; pending setups and retained checkouts can retain resources. Resize only after the pool drains. Land separately takes the target's integration turn before recording its attempt; an uncertain Land retains that turn.
 
-Stops are cooperative and scoped to the buddy or work item. Do not kill an in-flight credentialed write, rebase or Land. Evidence-only settlement remains subject to its recording authority and ownership; it cannot smuggle a new substantive effect past a stop. No undefined restart or continuation operation is supplied.
+Stops are cooperative and scoped to the buddy or work item. Do not kill an in-flight credentialed write, merge, rebase, review submission or Land. Evidence-only settlement remains subject to its recording authority and ownership; it cannot smuggle a new substantive effect past a stop. No undefined restart or continuation operation is supplied.
 
 Before removing an owned checkout, preserve staged and working changes as independent binary-safe patches and local commits as verified bundles. A stopped rebase, failed preservation, uncertain checkpoint, unresolved journal or surviving consumer retains the required checkout, evidence, ownership or reservation. Never discard work merely to make another action eligible. Read-only recovery settles the original action instead of replaying its mutation.
 
-## Exact-target Land and Complete
+## Land through the PR
 
-The only target mutation is an immutable full candidate SHA pushed to the configured literal base ref. The old target must be a strict ancestor, and an explicit old-object-ID lease rejects target movement. There is no REST merge, alternate target, admin bypass or unchecked merge commit.
+Land merges the item's PR with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both. It needs an approval standing on the current head, from Verify or a qualified person, and no standing request for changes. The head must contain the base, required CI must be green on it, and the trusted repository must grant `permissions.land`.
 
-Before that write, authenticated intent binds the candidate, PR/source identity, original target, policy and exact pre-Land check/Security evidence. A lost acknowledgement does not permit another push. Read-only reconciliation needs the original intent and exact matching evidence; PR or target equality alone cannot invent an own-Land receipt.
+The landing account merges with `gh pr merge PR --merge --match-head-commit HEAD`, so GitHub refuses the merge if the head moved. There is no squash, rebase, direct base push or admin bypass. A conflicting PR isn't merged: Land marks it a draft and records why, and Fix becomes ready. To stop the base moving between Land's checks and its merge, require branches to be up to date before merging on the base.
 
-Complete needs authenticated passed Land proof and the original pre-Land binding, with current input, provenance and ancestry checks. It cannot acquire retrospective clearance, adopt an external merge or validate a different current target as the old candidate. Preserve landed truth even when completion is blocked. No suite, code repair, fresh Security model or second Land runs after Land. Authorized evidence checkpoints and completion bookkeeping are separate.
+Before the merge, the authenticated attempt records Land's intent. A lost acknowledgement doesn't permit another merge. Read-only reconciliation reads the PR's merged state and the issue's state, and never merges or closes twice. No suite, code repair or second Land runs after Land. See [Land](../../docs/reference/merge.md).
 
 External actors can still change PRs, inputs, permissions and refs. These guards are not an atomic transaction over GitHub and Git, an operating-system sandbox or permission to deploy a repository whose source base is named `main`.
 
 ## Standalone tools
 
-[Safe Refactor](../../docs/reference/safe-refactor.md) provides an explicit non-mutating check and a narrowly assigned tool-mediated writer. Its reports and checkpoints grant no Harden, Security or Land result. Buddy tasks do not silently schedule it.
+[Safe Refactor](../../docs/reference/safe-refactor.md) provides an explicit non-mutating check and a narrowly assigned tool-mediated writer. Its reports and checkpoints grant no Implement, Verify or Land result. Buddy tasks do not silently schedule it.
 
 [Standards upgrade](../../docs/reference/standards-upgrade.md) assesses a repository read-only. Its `apply` command validates the issue/plan and prints a human `start:implement` handoff, not a stage-launch command or execution grant.
 
 ## Read-only Git subagent
 
-`agents/git-reviewer.md` is a dedicated supervisor-usable agent, not a replacement for the shared writable `issue-pipeline-reviewer`. Install includes its explicit `subagentOnlyExtensions` path to `git-review.mjs`; naming a tool without loading that extension is insufficient. The agent has exactly `read`, `grep`, `find`, `ls`, `git_review`, no shell/write/commit tool. Supervisors must launch it with resource discovery disabled and without unrelated extensions/MCP servers that would add command execution authority. Existing hardening, integration, security authority and prepared bundles are unchanged.
+`agents/git-reviewer.md` is a dedicated supervisor-usable agent, not a replacement for the shared writable `issue-pipeline-reviewer`. Install includes its explicit `subagentOnlyExtensions` path to `git-review.mjs`; naming a tool without loading that extension is insufficient. The agent has exactly `read`, `grep`, `find`, `ls`, `git_review`, no shell/write/commit tool. Supervisors must launch it with resource discovery disabled and without unrelated extensions/MCP servers that would add command execution authority. Existing hardening, Verify and Security authority and prepared bundles are unchanged.
 
 The trusted supervisor provisions `PI_GIT_REVIEW_ROOTS` **in the child session environment** as a nonempty JSON array of absolute local repository roots. It must narrow this per task, not accept a repository's or reviewer's assertion of authority. Missing/malformed authority fails closed. Task text is not environment configuration. Use `cwd` equal to a canonical allowed repository root (subdirectory cwd is not supported):
 
@@ -89,7 +101,10 @@ This is the **Git execution boundary**, not an OS/filesystem/keyring/network san
 Development (`devAccount`) owns code/docs
 commits, source branch pushes and PR create/edit/reopen/close/ready/draft.
 Review/merge (`landingAccount`) owns every comment,
-saved state, claim, label, authority read and explicit-target fast-forward push. Closing a PR uses development; its accompanying comment uses the landing account.
+saved state, claim, label, authority read and task record. It also submits
+Verify's PR reviews and makes Land's PR merge and issue close, because GitHub
+doesn't let a PR's author review it. The installed release still lands with an
+explicit-target fast-forward push. Closing a PR uses development; its accompanying comment uses the landing account.
 Neither bot is a trusted human, even if included in `allowedUsers`. Human issue
 and comment authors require both that explicit allow-list and a fresh collaborator
 check; revoking either stops trust.

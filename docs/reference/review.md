@@ -1,39 +1,110 @@
-# Harden, Integrate and Review Security
+# Hardening, Verify and Fix
 
-These tasks establish different results. Harden improves a revision. Integrate checks it deterministically. Review Security independently evaluates the exact checked candidate. None is a workflow stage or a substitute for Land permission. See [buddies and tasks](../decisions/buddies-and-tasks.md) and [task results](task-results.md).
+Three parts of issue delivery decide whether a change is good enough to land. Implement hardens its own change before it records a result. Verify checks one exact pull request (PR) head and reports through a GitHub review. Fix answers a review that blocks, or a conflict Land found. None of them is a workflow stage or grants Land permission. See [pr-review](../decisions/pr-review.md) and [task results](task-results.md).
 
-## Harden
+**Note:** This page describes the source for the [PR review decisions](../decisions/pr-review.md). The installed pipeline still runs separate Harden, Sync, Integrate and Review Security tasks. Nothing on this page runs until the source is landed and installed.
 
-Harden belongs to the Developer buddy. It starts a fresh `issue-pipeline-developer` session in phase `hardening`, without the Implement session's conversation. It works from the revision, trusted requirements and checks. It tries to break the change, adds regression and edge-case tests, and fixes design and correctness defects, including documentation.
+The loop between Verify and Fix looks like this:
 
-The session commits through [pipeline_commit](sessions.md#pipeline_commit). It never synchronizes the base; [Sync](sync.md) owns that. A revision missing the target waits for Sync before fresh Harden. The session must not weaken requirements, assertions, coverage, checking commands, lint or types to obtain a pass.
+```
+Implement ──► Verify ──approve──► Land ──merge commit──► issue closed
+                ▲  │                │
+                │  request changes  conflict
+                │  ▼                ▼
+                └─ Fix ◄────────────┘
+```
 
-The action checkpoints and pushes its work through guarded operations. Its passed result identifies the exact attested code, trusted inputs, policy and target. Code produced by Harden is named in the receipt. A model's statement that checks passed is not deterministic verification proof; Integrate supplies that separate result.
+## Hardening
 
-A failed or interrupted session does not become completed Harden and grants no automatic check-fix loop. Retired `maxCiFixes` controls are not read. Preserve uncommitted work, local commits and checkpoints for authorized recovery rather than starting another session from a reset.
+Hardening is part of Implement, not a task of its own ([implement-hardens](../decisions/pr-review.md#implement-hardens)). After the writing session, Implement starts a fresh `issue-pipeline-developer` session in phase `hardening`. That session doesn't read the writing session's conversation. It works from the revision, the trusted requirements and the checks.
 
-## Integrate
+The hardening session tries to break the change. It adds regression and edge-case tests, and it fixes design and correctness defects, including documentation. It must not weaken requirements, assertions, coverage, checking commands, lint or types to get a pass.
 
-Integrate belongs to the independent Gatekeeper. It uses the reader profile, starts no model, and requires a current Harden pass for R on exact T, with R already containing T. It cannot rebase, repair code, commit or publish a branch.
+The session commits through [pipeline_commit](sessions.md#pipeline_commit). Implement then pushes the branch and opens the PR through the development account. Its passed result names the hardened head as the code it produced. A model's statement that checks passed isn't verification; Verify supplies that.
 
-The guarded `integrate-task` operation runs configured checks in a fresh detached checkout of R. Setup, test, lint, typecheck, lockfile and migration checks follow the effective policy. Each command remains bounded. The result records actual check outcomes; a model reply or successful output filter cannot replace exit status.
+A failed or interrupted hardening session doesn't become a passed Implement. It grants no automatic check-fix loop. Preserve uncommitted work, local commits and checkpoints for authorized recovery rather than starting another session from a reset.
 
-A check failure records failure. Tracked changes left by checks fail the run and retain their checkout and patch rather than publishing them. A changed revision, target, trusted-inputs hash or policy invalidates the result. A passed binding never reruns merely because a buddy restarts.
+## Verify
 
-Record the exact gate and scope. This repository's [fast default](check-gates.md) excludes pipeline Node tests and is not full effect, recovery or authority acceptance. Typechecking a test does not execute it.
+Verify belongs to the Gatekeeper and uses the reader profile. It binds the item PR's current head, with its trusted inputs, policy and observed base. It becomes ready for a head that has no Verify result, or when a qualified person applies `start:verify` to the issue.
 
-## Review Security
+Verify runs three checks on that exact head:
 
-Review Security belongs to the Gatekeeper, with an identity and account independent from Harden. It starts one fresh `issue-pipeline-reviewer` session in phase `security-review`, without commit authority or a GitHub token. Reader tool declarations do not prove an enforced filesystem or network sandbox.
+- the repository's full checks, `commands.test`, in a fresh checkout of the head;
+- the required CI for the head;
+- the Security review of the head.
 
-Security must inspect the exact hardened and integrated revision on the observed target. Its checkout head and tree must remain consistent with that binding before and after the session. A dirty or changed local tree cannot produce a pass for an unchanged remote commit. Code, trusted-input, target or policy changes require fresh bound prerequisites rather than copying clearance.
+The Security review is one fresh `issue-pipeline-reviewer` session in phase `security-review`, using the `verify.md` page. It has no commit authority and no GitHub token. It covers four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`.
 
-The verdict covers four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`. It is not a second general design review. A finding records refusal before Land. A refused code and trusted-inputs subject remains fenced across target or policy changes; removing a label or restarting the buddy cannot reroll Security.
+Verify can't commit, rebase or push. Tracked changes that the checks leave behind fail the run, and Verify keeps the checkout and its patch rather than publishing them.
 
-Security clearance alone grants no Land permission. Land also requires current Harden and Integrate results, policy-required exact-head CI, explicit repository permission and the Gatekeeper's standing grant. See [Land and Complete](merge.md).
+### Review comments
+
+Verify reports its findings on the PR, not only in a hidden record:
+
+- A finding about specific lines is an inline comment on those lines.
+- A finding about the change as a whole goes in the review body.
+- A nit is still posted, marked as non-blocking.
+
+A nit is a finding that doesn't affect behavior, safety or maintainability, such as a naming preference or comment wording. Fix or a person may take it up later.
+
+### The verdict
+
+Verify submits its review through the landing account against the head's commit. The review then binds to exactly what Verify checked. GitHub doesn't let a PR's author approve or request changes on it, which is why the development account can't submit it.
+
+| Findings | Review | Verdict |
+|---|---|---|
+| None, or only nits | `APPROVE` | `passed` |
+| Anything that must change | `REQUEST_CHANGES` | `refused` |
+| Any Security finding | `REQUEST_CHANGES` | `refused` |
+| Verify couldn't judge the head | None | `failed` |
+| The review's submission is uncertain | Unknown | `unknown` |
+
+A Security finding always blocks, as [security-before-merge](../decisions/delivery.md#security-before-merge) requires. A failing check or red required CI is a blocking finding too.
+
+The result's evidence records the submitted review, the counts of blocking findings and nits, and whether a Security finding was among them. See [Verify and Land evidence](task-results.md#verify-and-land-evidence).
+
+A Verify result binds one head. A new head, from Fix or from a person's push, has no Verify result, so Verify becomes ready again. A passed Verify doesn't rerun for the same head.
+
+## Fix
+
+Fix belongs to the Developer and uses the writer profile. It binds the item PR's current head. It has no start label; one of these wakes it ([fix-answers-reviews](../decisions/pr-review.md#fix-answers-reviews)):
+
+- Verify's request-changes review on the current head;
+- a qualified person's request-changes review on the current head;
+- Land's refused result for a PR that conflicts with its base.
+
+Fix does two things in one run:
+
+1. It catches the PR's head branch up with its base branch. For a PR that merges branch A into branch B, Fix merges B into A, and resolves any conflict in the same run.
+2. It answers every blocking comment on the current head with a code change, and replies on each thread with what changed.
+
+Fix merges rather than rebases. Commits that were already reviewed keep their identity, and the final merge commit keeps them in history.
+
+Fix's session is an `issue-pipeline-developer` session in phase `fix`, using the `fix.md` page. It commits through [pipeline_commit](sessions.md#pipeline_commit). Fix then pushes through the development account. If Land had marked the PR as a draft, Fix marks it ready for review after its push.
+
+Fix's passed result names the new head as the code it produced. Every earlier review and result was for the old head, so Verify becomes ready for the new one.
+
+### Conflicts
+
+A conflict stays in the action checkout for Fix's session. The session stages its resolution, and Fix's guarded finish operation concludes the merge and pushes. A conflict that remains is kept, not sent through another session automatically.
+
+A session failure keeps the conflict. A `cannot-fix` reply preserves recovery evidence before any reset and records a failure. Neither outcome grants another attempt. A changed submodule pointer isn't a text resolution, so Fix keeps its unresolved evidence rather than choose a submodule revision.
+
+### Retained evidence
+
+Recovery preserves staged and working-tree patches and verified Git bundles before destructive checkout cleanup. An unresolved index also records paths, stages, modes and full object IDs in `conflict-stages.json`. An unfinished merge or an uncertain checkpoint keeps the original checkout. See [checkout preservation](checkouts.md).
+
+Read-only reconciliation settles an interrupted Fix from the remote branch and the retained checkout. It never merges, pushes, resets or cleans up. A remote head that contains the base and differs from the bound head is Fix's output. Unpublished merged work stays held for explicit recovery rather than reset to the remote branch.
+
+## Loop limit
+
+An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`). A Fix round counts when its cause is a refused Verify result. After the third, if Verify still requests changes, the issue holds for a person ([review-loop-limit](../decisions/pr-review.md#review-loop-limit)).
+
+Fix rounds that a person's review or Land's conflict triggered don't count, because a person or the base branch caused them. The limit replaces the attempt ceiling for this loop only. Each task still has at most three attempts for one binding.
 
 ## Failure and recovery
 
-To investigate a failure, read the authenticated task result and [action observations](runtime-runs.md), then preserve the associated checkout and recovery evidence. A failed result, unknown effect or unanswered product question needs its supported resolution; none silently starts another model session.
+To investigate a failure, read the authenticated task result and the [action observations](runtime-runs.md). Preserve the associated checkout and recovery evidence. A failed result, an unknown effect or an unanswered product question needs its supported resolution; none silently starts another model session.
 
-A Security rejection applies to the candidate before Land. If historical code already landed without current proof, retain that fact and investigate through read-only reconciliation or separately authorized remediation. Do not run a post-Land suite or Security review to manufacture pre-Land permission.
+A request-changes review isn't a failure. It's Verify's normal refusal, and Fix answers it. A loop held at its limit waits for a person; no label or restart lifts the limit.
