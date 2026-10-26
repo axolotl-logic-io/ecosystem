@@ -1,7 +1,7 @@
 // One ops.mjs child of the stage job, run to its end: it starts in a process
 // group of its own, gets its request on stdin, and is stopped, its whole
-// group, once its time is up (commands-leave-no-processes, #371). While it
-// runs, the job holds a handle to it, so that a stop can end its group too.
+// group, once its time is up (#371). While it runs, the job holds a handle to
+// it, so that a stop can end its group too.
 
 import { spawn } from "node:child_process";
 import process from "node:process";

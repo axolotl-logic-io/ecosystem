@@ -1,9 +1,9 @@
-// Implement: requested by `start:implement`. It binds the work item's
-// current trusted requirements and target, and any Implement attempt of the
-// same requirements prevents another, whatever the target or a new start.
-// It doesn't wait for Author. Its action is the Developer's writing session,
+// Implement: requested by `start:implement`. It binds the work item's current
+// trusted requirements and target, and any Implement attempt of the same
+// requirements prevents another, whatever the target or a new start. It
+// doesn't wait for Author. Its action is the Developer's writing session,
 // then a fresh hardening session that tries to break the change, then the
-// branch push and the development account's ready PR (`implement-hardens`).
+// branch push and the development account's ready PR.
 
 import type { Config } from "../config.ts";
 import type {

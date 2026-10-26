@@ -1,15 +1,14 @@
 // Verify: the Gatekeeper's check of one exact PR head, reported as a GitHub
-// review the landing account submits against that head's commit
-// (`verify-reviews-the-pr`). It runs the repository's full checks, the
-// required CI and the Security review of the head; it approves when it
-// finds nothing or only nits and requests changes otherwise, and a Security
-// finding always blocks. It binds a revision: the item PR's head. It becomes
-// ready for a head with no Verify result, once the Implement or Fix result
-// that produced that head wakes it, or for a `start:verify` naming exactly
-// that head, which also retries a run of that head that failed to judge
-// it. Its result mirrors its review (domain.ts VERIFY_EVIDENCE):
-// passed for an approval, refused for a request for changes, failed when it
-// could not judge. It never writes code.
+// review the landing account submits against that head's commit. It runs the
+// repository's full checks, the required CI and the Security review of the
+// head; it approves when it finds nothing or only nits and requests changes
+// otherwise, and a Security finding always blocks. It binds a revision: the
+// item PR's head. It becomes ready for a head with no Verify result, once the
+// Implement or Fix result that produced that head wakes it, or for a
+// `start:verify` naming exactly that head, which also retries a run of that
+// head that failed to judge it. Its result mirrors its review (domain.ts
+// VERIFY_EVIDENCE): passed for an approval, refused for a request for
+// changes, failed when it could not judge. It never writes code.
 //
 // Its action is one read-only Reviewer session on the action's checkout,
 // which must be exactly the head, clean, before and after it; then its

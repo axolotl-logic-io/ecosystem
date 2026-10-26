@@ -1,6 +1,6 @@
 # Checkouts
 
-This page describes where the pipeline keeps clones, action checkouts and run files, what an action preserves when it ends, and how test environments and commands are cleaned up. The rules are in [operations decisions](../decisions/operations.md#worktrees-and-branches).
+This page describes where the pipeline keeps clones, action checkouts and run files, what an action preserves when it ends, and how test environments and commands are cleaned up.
 
 ## Layout
 

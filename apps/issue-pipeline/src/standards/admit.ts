@@ -1,11 +1,11 @@
 // Admission of an approved upgrade plan into issue delivery (#129): the
 // read-only check that issue N may carry a standards upgrade through the
-// buddy's tasks. The plan must have been filed by an
-// allow-listed person, since neither pipeline account is trusted input
-// (`allow-listed-input`). It must name this repository and the current
-// policy, and be bound to the base branch's current head. It must also be
-// the repository's only open upgrade issue. Admission writes nothing and
-// does not produce a qualified start signal or bypass any task guard.
+// buddy's tasks. The plan must have been filed by an allow-listed person,
+// since neither pipeline account is trusted input. It must name this
+// repository and the current policy, and be bound to the base branch's
+// current head. It must also be the repository's only open upgrade issue.
+// Admission writes nothing and does not produce a qualified start signal or
+// bypass any task guard.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";

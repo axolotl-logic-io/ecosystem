@@ -1,6 +1,6 @@
 # Authority
 
-Authority comes from qualified human controls, trusted buddy configuration, authenticated ownership and exact-bound task evidence. A prompt, historical stage, hidden marker or local process grants none of these. The rules are in [authority decisions](../decisions/authority.md) and the [domain runtime contract](../domain-runtime-contract.md).
+Authority comes from qualified human controls, trusted buddy configuration, authenticated ownership and exact-bound task evidence. A prompt, historical stage, hidden marker or local process grants none of these. The [domain runtime contract](../domain-runtime-contract.md) sets out the interfaces.
 
 ## GitHub accounts
 
@@ -15,7 +15,7 @@ The repository configuration names distinct `devAccount` and `landingAccount` lo
 | Verify's PR reviews and their comments | Landing |
 | Land's merge of the PR, its close of the issue, and marking a conflicting PR a draft | Landing |
 
-GitHub doesn't let a PR's author approve or request changes on it. The development account opens and pushes the PR, so Verify's reviews and Land's merge come from the landing account ([no-separate-duties](../decisions/pr-review.md#no-separate-duties)). Only the landing account records attempts and results, for Developer tasks as well as Gatekeeper ones.
+GitHub doesn't let a PR's author approve or request changes on it. The development account opens and pushes the PR, so Verify's reviews and Land's merge come from the landing account. Only the landing account records attempts and results, for Developer tasks as well as Gatekeeper ones.
 
 Neither machine account qualifies as a human producer, even if its name appears in a trusted-input list. Neither account's PR review is a human review signal.
 

@@ -1,15 +1,14 @@
-// Fix answers a PR head that didn't pass review (`fix-answers-reviews`):
-// after a real Implement, Verify's request for changes, a person's, or
-// Land's conflict with a moved base wakes the Developer's Fix, which merges
-// the base into the PR's head, never rebasing it, answers every blocking
-// comment with a commit and a reply in its thread, pushes through the
-// development account and marks a draft PR ready. A request for changes
-// from someone outside the organization is neither shown to the session
-// nor answered. After three Fix rounds of
-// Verify's own, a further request for changes holds for a person
-// (`review-loop-limit`). Built buddy/ops, Git and ledger are real; only
-// GitHub and the model fake. A person's review reaches Fix as the signal
-// inbox's review signal (src/signals/inbox.ts).
+// Fix answers a PR head that didn't pass review: after a real Implement,
+// Verify's request for changes, a person's, or Land's conflict with a moved
+// base wakes the Developer's Fix, which merges the base into the PR's head,
+// never rebasing it, answers every blocking comment with a commit and a reply
+// in its thread, pushes through the development account and marks a draft PR
+// ready. A request for changes from someone outside the organization is
+// neither shown to the session nor answered. After three Fix rounds of
+// Verify's own, a further request for changes holds for a person. Built
+// buddy/ops, Git and ledger are real; only GitHub and the model fake. A
+// person's review reaches Fix as the signal inbox's review signal
+// (src/signals/inbox.ts).
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";

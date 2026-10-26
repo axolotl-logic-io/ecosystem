@@ -1,7 +1,7 @@
 // The reviews and review comments on the item's PR, as GitHub reports them
-// now, for the review loop's tasks (docs/decisions/pr-review.md): Verify
-// reads its own earlier reviews, Fix the blocking comments it answers, Land
-// the approvals and requests for changes that stand on the head it merges.
+// now, for the review loop's tasks: Verify reads its own earlier reviews,
+// Fix the blocking comments it answers, Land the approvals and requests for
+// changes that stand on the head it merges.
 // Each listing is one complete, paged observation by the landing account;
 // one that can't be read whole is unknown, never empty. Who may count as a
 // qualified reviewer is not decided here: a review names its author as

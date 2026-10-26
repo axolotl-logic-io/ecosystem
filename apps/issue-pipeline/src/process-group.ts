@@ -1,9 +1,9 @@
-// How the pipeline ends a process tree: through the process group its
-// leader started (`spawn` with `detached: true`, whose pid is the group's
-// id), so the leader's children end with it (commands-leave-no-processes,
-// #371). `endGroup` sends SIGTERM to the whole group, waits for it to exit
-// and sends SIGKILL to what is left after the grace. A group that is
-// already gone counts as ended, so none of these has an error case.
+// How the pipeline ends a process tree: through the process group its leader
+// started (`spawn` with `detached: true`, whose pid is the group's id), so
+// the leader's children end with it (#371). `endGroup` sends SIGTERM to the
+// whole group, waits for it to exit and sends SIGKILL to what is left after
+// the grace. A group that is already gone counts as ended, so none of these
+// has an error case.
 
 import { spawnSync } from "node:child_process";
 import process from "node:process";

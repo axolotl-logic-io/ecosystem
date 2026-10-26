@@ -1,8 +1,8 @@
 # Ecosystem docs
 
-These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Decisions record the rules; reference pages describe how the code behaves today and how to recover when something goes wrong.
+These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Reference pages describe how the code behaves today and how to recover when something goes wrong.
 
-The [PR review decisions](decisions/pr-review.md) replaced the separate-duties tasks with five delivery tasks: Author, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, the page says so in a note.
+Issue delivery has five tasks: Author, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, the page says so in a note.
 
 ## Practices
 
@@ -17,22 +17,6 @@ The [PR review decisions](decisions/pr-review.md) replaced the separate-duties t
 [Domain alignment inventory](domain-alignment.md): the source cutover, historical differences and remaining acceptance gaps.
 
 [Domain runtime contract](domain-runtime-contract.md): canonical task, signal, authorization, resource and recovery interfaces.
-
-## Decisions
-
-[Authority](decisions/authority.md): which GitHub accounts, records, inputs and sessions the pipeline trusts, and for what.
-
-[Delivery](decisions/delivery.md): hardening, Security review, what an approval covers and landing order.
-
-[Sessions](decisions/sessions.md): what the Developer owns and where role prompts come from.
-
-[Code and tests](decisions/code-and-tests.md): what the pipeline's tests pin and how its commands clean up.
-
-[Operations](decisions/operations.md): who assigns work, the model runtime, rate limits and checkouts.
-
-[Buddies and tasks](decisions/buddies-and-tasks.md): the buddies and their roles, access per task, bindings and ready tasks, runs and retries, capacity, observation and standing permission.
-
-[PR review](decisions/pr-review.md): the five delivery tasks, start labels, the Verify and Fix review loop and Land through the PR.
 
 ## Reference
 

@@ -6,7 +6,7 @@ A buddy run activates its configured task loops. Each task owns its sensors, mat
 
 Keep repository policy, operator credentials and buddy configuration separate. The [runtime reference](runtime-runs.md#buddy-configuration) defines the strict buddy file, organization scope, role, responsibilities, identity and access profiles. Repository `resources.modelSessions` supplies the shared capacity; there is no buddy-level capacity override.
 
-Issue delivery has five tasks ([delivery-tasks](../decisions/pr-review.md#delivery-tasks)). A Developer buddy's default responsibilities are Author, Implement and Fix, with the writer profile. A Gatekeeper's are Verify, with the reader profile, and Land, with the lander profile. Safe Refactor retains its [standalone entrypoint](safe-refactor.md). Merely configuring a responsibility supplies no causal signal or execution permission.
+Issue delivery has five tasks. A Developer buddy's default responsibilities are Author, Implement and Fix, with the writer profile. A Gatekeeper's are Verify, with the reader profile, and Land, with the lander profile. Safe Refactor retains its [standalone entrypoint](safe-refactor.md). Merely configuring a responsibility supplies no causal signal or execution permission.
 
 **Note:** The installed pipeline still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. The five-task source runs only once it is installed.
 

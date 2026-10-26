@@ -238,7 +238,7 @@ The assessment holds only the read side of the configured credentials, through t
 
 Repository code may run only inside the assessment sandbox, without operator credentials or access to the operator's home. This is a separate isolation boundary from the read-only `apply` checks. The new `apply` subprocess tests prove the human handoff, stale-head refusal and unreadable-collaborator hold; they do not constitute a fresh assessment-sandbox isolation proof. Historical tests that were removed are not current acceptance evidence.
 
-Filing the upgrade issue needs a person. Under [`allow-listed-input`](../decisions/authority.md#allow-listed-input), neither pipeline account counts as trusted input, so an issue filed by the development account couldn't drive Implementation. An allow-listed collaborator files `plan.md` instead.
+Filing the upgrade issue needs a person. Only allow-listed input is trusted, and neither pipeline account is on the allow list, so an issue filed by the development account couldn't drive Implementation. An allow-listed collaborator files `plan.md` instead.
 
 The plan never asks for a settings change. Requiring a check, archiving or changing access are owner actions that need separate administrative authority.
 

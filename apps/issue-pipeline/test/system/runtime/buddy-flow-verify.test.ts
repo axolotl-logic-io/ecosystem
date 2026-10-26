@@ -3,7 +3,7 @@
 // a Gatekeeper's Verify, woken by that result, runs the project's check on
 // exactly the PR head, reads its required CI, reviews it in one read-only
 // Reviewer session and submits one GitHub review of that head through the
-// landing account (docs/decisions/pr-review.md `verify-reviews-the-pr`).
+// landing account.
 // The built buddy.mjs runs the real tasks, ops, ledger and Git; only gh
 // (fake-gh.ts) and pi (fake-pi.ts) are fakes.
 //

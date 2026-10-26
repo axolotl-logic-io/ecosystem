@@ -1,7 +1,7 @@
 // What `shell` (process.ts) and the shell supervisor (shell-supervisor.ts)
 // say to each other: the request the supervisor takes as its one argument,
 // and the report it prints as JSON on stdout once the command has ended and
-// its process group is empty (commands-leave-no-processes, #371).
+// its process group is empty (#371).
 
 import { z } from "zod";
 

@@ -1,12 +1,12 @@
 # Land
 
-Land delivers an approved PR head onto the configured base. It merges the item's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both effects. Land is a Gatekeeper task with the lander access profile. See [land-merges-the-pr](../decisions/pr-review.md#land-merges-the-pr) and the [domain runtime contract](../domain-runtime-contract.md).
+Land delivers an approved PR head onto the configured base. It merges the item's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both effects. Land is a Gatekeeper task with the lander access profile. See the [domain runtime contract](../domain-runtime-contract.md).
 
 **Note:** The installed pipeline still lands with a fast-forward push and closes the issue in a separate Complete task. Nothing on this page runs until this source is installed.
 
 ## Land prerequisites
 
-Land binds the item PR's current head as its revision, together with the trusted inputs, the policy and the observed base. It needs a passed Verify of that head whoever approves it, because Verify runs the Security review, and [security-before-merge](../decisions/delivery.md#security-before-merge) still holds. It may then act only when all five of these hold for that head:
+Land binds the item PR's current head as its revision, together with the trusted inputs, the policy and the observed base. It needs a passed Verify of that head whoever approves it, because Verify runs the Security review, and a Security review must pass before any merge. It may then act only when all five of these hold for that head:
 
 1. An approving review from the landing account, which is that passed Verify, or from a qualified person.
 2. No request-changes review from either that still stands on the head.

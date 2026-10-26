@@ -212,10 +212,9 @@ function killedLine(killed: ShellKilled | null): string {
 
 // Runs `command` with `bash -lc` in `cwd`, within `timeoutMs`, through the
 // shell supervisor, which ends every process the command left in its group
-// (commands-leave-no-processes, #371). Writes everything it printed to
-// `logPath`, if given, and never throws: a command that timed out, ended by
-// a signal, or never ran because the supervisor is missing, gives
-// TIMED_OUT_CODE.
+// (#371). Writes everything it printed to `logPath`, if given, and never
+// throws: a command that timed out, ended by a signal, or never ran because
+// the supervisor is missing, gives TIMED_OUT_CODE.
 function shell(
   command: string,
   cwd: string,

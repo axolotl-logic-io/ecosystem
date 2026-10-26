@@ -1,9 +1,9 @@
-// Human signal qualification (`signal-authority`): the producer must be a
-// person, not a configured pipeline account, a bot or a GitHub App, and a
-// current active member of the explicitly configured organization, checked
-// by durable user id. Every check is a fresh read. A reader that can't prove
-// its own active membership qualifies nobody, and an unreadable answer is
-// unknown, never "not a member".
+// Human signal qualification: the producer must be a person, not a configured
+// pipeline account, a bot or a GitHub App, and a current active member of the
+// explicitly configured organization, checked by durable user id. Every check
+// is a fresh read. A reader that can't prove its own active membership
+// qualifies nobody, and an unreadable answer is unknown, never "not a
+// member".
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { wire } from "../discovery/wire.ts";

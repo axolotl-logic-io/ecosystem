@@ -1,10 +1,9 @@
-// The control-label sensor (`label-signals`): which open issues carry a
-// control label, and which application event explains a label an issue
-// carries now. A label is a condition: the latest `labeled` event for it,
-// with no later `unlabeled` event, explains it. Removing a label is never a
-// signal, and a label nobody's event explains is contradictory evidence.
-// The labels go on the issue (`start-labels`); pull requests' labels grant
-// nothing.
+// The control-label sensor: which open issues carry a control label, and
+// which application event explains a label an issue carries now. A label is a
+// condition: the latest `labeled` event for it, with no later `unlabeled`
+// event, explains it. Removing a label is never a signal, and a label
+// nobody's event explains is contradictory evidence. The labels go on the
+// issue; pull requests' labels grant nothing.
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { wire } from "../discovery/wire.ts";

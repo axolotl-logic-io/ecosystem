@@ -1,9 +1,8 @@
 // Author and Verify starts through the real inbox, fake gh and a local bare
-// origin (`start-labels`): start:author requests Author for the issue's
-// current requirements and never re-requests requirements Author attempted;
-// start:verify requests Verify for the current head of the issue's linked
-// PR. Each start is spent only by an attempt of its own task, and Implement
-// never waits for Author.
+// origin: start:author requests Author for the issue's current requirements
+// and never re-requests requirements Author attempted; start:verify requests
+// Verify for the current head of the issue's linked PR. Each start is spent
+// only by an attempt of its own task, and Implement never waits for Author.
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {

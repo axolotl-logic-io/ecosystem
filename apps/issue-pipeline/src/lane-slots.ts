@@ -222,8 +222,8 @@ function assertNonconsumerReadyForRemoval(
 
 // The registered consumers of issue `issue`'s lane slot other than checkout
 // `except`: its other surviving checkouts and every pending setup. The slot
-// stays held while any is left (capacity-by-resource); an unreadable store
-// throws, since an unknown consumer state holds too.
+// stays held while any is left; an unreadable store throws, since an unknown
+// consumer state holds too.
 function registeredConsumers(
   cfg: Config,
   issue: number,

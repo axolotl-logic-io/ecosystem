@@ -1,6 +1,6 @@
 # Task results
 
-A task result records what one action found for one exact binding. Tasks read these records fresh when they match signals, check prerequisites and perform controlled effects. A result is not a workflow stage, a checkout checkpoint or permission to replay its action. See [buddies and tasks](../decisions/buddies-and-tasks.md), [pr-review](../decisions/pr-review.md) and the [domain runtime contract](../domain-runtime-contract.md).
+A task result records what one action found for one exact binding. Tasks read these records fresh when they match signals, check prerequisites and perform controlled effects. A result is not a workflow stage, a checkout checkpoint or permission to replay its action. See the [domain runtime contract](../domain-runtime-contract.md).
 
 **Note:** This page describes the source for the five delivery tasks. The installed pipeline still records Harden, Sync, Integrate, Review Security and Complete results until that source is installed.
 

@@ -1,6 +1,6 @@
 # Operations
 
-The installed runtime activates configured buddies and their task loops. Source delivery does not install, activate or deploy either application. The operator separately authorizes a drained cutover. See [operations decisions](../decisions/operations.md).
+The installed runtime activates configured buddies and their task loops. Source delivery does not install, activate or deploy either application. The operator separately authorizes a drained cutover.
 
 ## Programs
 

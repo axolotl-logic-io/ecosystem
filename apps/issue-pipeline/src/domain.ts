@@ -7,8 +7,7 @@
 import { z } from "zod";
 import type { Config } from "./config.ts";
 
-// The five delivery tasks and Safe Refactor (docs/decisions/pr-review.md
-// `delivery-tasks`).
+// The five delivery tasks and Safe Refactor.
 const TASK_IDS = [
   "author",
   "implement",
@@ -18,15 +17,15 @@ const TASK_IDS = [
   "refactor-safely",
 ] as const;
 // Author and Implement bind the trusted requirements; every other task binds
-// a revision (`requirements-bindings`): for Verify, Fix and Land the item
-// PR's head, which is the item branch's head.
+// a revision: for Verify, Fix and Land the item PR's head, which is the item
+// branch's head.
 const REQUIREMENTS_TASKS = ["author", "implement"] as const;
 const REVISION_TASKS = ["verify", "fix", "land", "refactor-safely"] as const;
-// The tasks a start label requests on the issue (`start-labels`).
+// The tasks a start label requests on the issue.
 const START_TASKS = ["author", "implement", "verify"] as const;
 // At most this many Fix rounds that Verify's request-changes triggered, per
 // work item; after them a further request-changes holds the item for a
-// person (`review-loop-limit`).
+// person.
 const VERIFY_FIX_ROUNDS = 3;
 
 const TASK_ID = z.enum(TASK_IDS);
@@ -89,9 +88,9 @@ const PR_REVIEW = z.strictObject({
   state: REVIEW_STATE,
 });
 
-// A start requests one task for the issue (`start-labels`): Author or
-// Implement for the requirements and target read when it was accepted,
-// Verify for the head of the issue's linked PR read then.
+// A start requests one task for the issue: Author or Implement for the
+// requirements and target read when it was accepted, Verify for the head of
+// the issue's linked PR read then.
 const START_SIGNAL = z.discriminatedUnion("task", [
   z.strictObject({
     kind: z.literal("start"),
@@ -120,9 +119,8 @@ const QUALIFIED_SIGNAL = z.discriminatedUnion("kind", [
   START_SIGNAL,
   // A qualified person's submitted review of the issue's linked PR, accepted
   // as a record like a label: CHANGES_REQUESTED on the current head wakes
-  // Fix, APPROVED on it counts toward Land (`fix-answers-reviews`,
-  // `land-merges-the-pr`). The landing account's reviews are Verify's
-  // results, never review signals.
+  // Fix, APPROVED on it counts toward Land. The landing account's reviews are
+  // Verify's results, never review signals.
   z.strictObject({
     kind: z.literal("review"),
     id: SIGNAL_ID,

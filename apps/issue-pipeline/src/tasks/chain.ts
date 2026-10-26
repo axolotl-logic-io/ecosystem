@@ -138,9 +138,8 @@ function unsettledRun(view: TaskView, task: TaskId): TaskResult | undefined {
 
 // How many of the item's Fix runs Verify's request-changes caused: each Fix
 // attempt, whatever its binding or verdict, whose cause is a refused Verify
-// result of the item. A person's review or Land's conflict causes rounds
-// that don't count (`review-loop-limit`); the domain's VERIFY_FIX_ROUNDS
-// bounds this count.
+// result of the item. A person's review or Land's conflict causes rounds that
+// don't count; the domain's VERIFY_FIX_ROUNDS bounds this count.
 function verifyFixRounds(view: TaskView): number {
   const refusedVerify = new Set(
     view.results

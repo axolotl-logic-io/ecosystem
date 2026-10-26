@@ -2,9 +2,9 @@
 
 This draft maps inspected differences to the accepted [shared glossary](../GLOSSARY.md). It is an implementation-planning artifact, not a migration tool or claim of completed alignment. The initial inventory changed no implementation. Autumn subsequently authorized dash source-language alignment; its progress is recorded below. No installation, activation, saved authority or pipeline execution policy changed as part of this work.
 
-On 2026-10-22 Autumn retired Stage in favor of tasks, defined roles as sets of tasks, introduced actors, accounts and identities, and limited merge to a Git merge. Later that day she renamed actor to buddy, and the [buddy and task decisions](decisions/buddies-and-tasks.md) settled the role assignments and most open contracts. [Tasks, buddies and landing](#tasks-buddies-and-landing) maps those decisions onto the installed release, `42a8771`. Older sections keep their original evidence and say where the decisions supersede them.
+Tasks replace Stage, and a role is a set of tasks. Buddies, accounts and identities name who acts, and merge means only a Git merge. [Tasks, buddies and landing](#tasks-buddies-and-landing) maps that model onto the installed release, `42a8771`. Older sections keep their original evidence and say where the current model supersedes them.
 
-On 2026-10-26 Autumn replaced the separate-duties tasks with five delivery tasks and a review loop on the pull request (PR), in the [PR review decisions](decisions/pr-review.md). [PR review tasks](#pr-review-tasks) maps them onto the source.
+Five delivery tasks and a review loop on the pull request (PR) replace the separate-duties tasks. [PR review tasks](#pr-review-tasks) maps them onto the source.
 
 ## Scope and evidence
 
@@ -22,7 +22,7 @@ Read the owning repository's current instructions and recheck source versions be
 
 ## Current alignment
 
-Autumn accepted **Workflow run** instead of Pipeline run and a dependency-based **Workflow**, not an inherently serial chain. Work can branch, run concurrently, join results and repeat checks where its dependency and authorization rules permit. Stage identities remain flat; the complete execution graph remains to be designed. Exact-candidate Security before an authorized Merge remains required. The 2026-10-22 decisions restate this as flat tasks, with a Security result for the exact revision before Land.
+Autumn accepted **Workflow run** instead of Pipeline run and a dependency-based **Workflow**, not an inherently serial chain. Work can branch, run concurrently, join results and repeat checks where its dependency and authorization rules permit. Stage identities remain flat; the complete execution graph remains to be designed. Exact-candidate Security before an authorized Merge remains required. The current model restates this as flat tasks, with a Security result for the exact revision before Land.
 
 Autumn also accepted specific prerequisites: actions wait for the particular results, conditions and permissions they need, not unrelated work with the same stage label. Bind evidence to the relevant change/version and authorization scope. A passing Security check for change A does not authorize Merge, does not satisfy a check for a changed version of A, and need not wait for unrelated security work on change B. The concrete dependency representation remains open.
 
@@ -40,7 +40,7 @@ The local source path, package identity, extension symlink and `--pipeline-dash`
 
 ## Tasks, buddies and landing
 
-These mappings apply the 2026-10-22 decisions to the installed release `42a8771`. They are migration items, not completed changes. Saved state, labels, CLI flags and configuration keys are public or persisted, so each rename needs a compatibility decision before it changes.
+These mappings apply the buddy and task model to the installed release `42a8771`. They are migration items, not completed changes. Saved state, labels, CLI flags and configuration keys are public or persisted, so each rename needs a compatibility decision before it changes.
 
 ### Stages and tasks
 
@@ -65,17 +65,17 @@ These mappings apply the 2026-10-22 decisions to the installed release `42a8771`
 | Merge queue, `--merge-queue` | Landing order | Terminology; CLI impact | An order, not permission. |
 | `mergeAccount`, "merge account" | Landing account | Terminology; config impact | |
 | `maxSyncs` | A Sync limit | Terminology; config impact | Since #186 it counts Sync runs of one issue without landing. |
-| The Sync task job, `src/roles/sync/sync.ts` | The Sync task, separate from Integration and performed by the Developer | Done in #186 | `sync-is-a-task`. The merge stage no longer synchronizes. |
+| The Sync task job, `src/roles/sync/sync.ts` | The Sync task, separate from Integration and performed by the Developer | Done in #186 | The merge stage no longer synchronizes. |
 | Merge commits and `git merge` | Unchanged | None | These are Git merges. |
 
 ### Roles, buddies and accounts
 
 | Installed surface | Canonical target | Class | Notes |
 | --- | --- | --- | --- |
-| Job roles `reader`, `writer`, `merger`, `STAGE_ROLES`, `jobRoles` | Access profiles within an identity: reader, writer and lander | Terminology and structure; config impact | They are credential and access classes, not roles. Each task names the profile it needs (`least-privilege-per-task`). |
-| `devAccount`, `mergeAccount`, `models.*`, `runtime`, `jobRoles` tokens and network | Accounts and identities | Structure; config impact | `devAccount` is in Hippy's identity and `mergeAccount` in Lawd's (`identity-schema`). |
+| Job roles `reader`, `writer`, `merger`, `STAGE_ROLES`, `jobRoles` | Access profiles within an identity: reader, writer and lander | Terminology and structure; config impact | They are credential and access classes, not roles. Each task names the least-privileged profile it needs. |
+| `devAccount`, `mergeAccount`, `models.*`, `runtime`, `jobRoles` tokens and network | Accounts and identities | Structure; config impact | `devAccount` is in Hippy's identity and `mergeAccount` in Lawd's. |
 | Developer and Reviewer sharing `axolotl-logic-hippy` | Separate identities that share an account | Structure | Allowed in general. |
-| Reviewer running both Hardening and Security | Hardening by Hippy, the Developer, in a fresh session; Security by Lawd, the Gatekeeper | Structure and behavior | Moves the installed `review` stage to the development account. No third account is needed (`two-buddies`, `hardening-stays-independent`). Since #179 the source supports it behind the job flag `--hardening-buddy hippy`; nothing passes the flag until #186. |
+| Reviewer running both Hardening and Security | Hardening by Hippy, the Developer, in a fresh session; Security by Lawd, the Gatekeeper | Structure and behavior | Moves the installed `review` stage to the development account. No third account is needed. Since #179 the source supports it behind the job flag `--hardening-buddy hippy`; nothing passes the flag until #186. |
 | Dash Agent runs pane, `agentRuns` config | Buddy runs, with each run's account shown | Terminology; config impact | Model-free runs, such as landing, belong in the same view. |
 | GitHub event `actor` in the retired `src/discovery/` reader | Account, as external data | None | Not a buddy. The reader had no importer after E7 and #166 deleted it. |
 | Candidate, exact candidate, version | Revision | Terminology | The `REVISION` schema in `src/merge-provenance.ts` and `ReviewedTarget` in `src/reviewed-target.ts` broadly match revision and target state. `REVISION` still accepts historical receipts with no policy and a null code commit. |
@@ -87,14 +87,14 @@ Ecosystem #165 renamed the pipeline's code names in source, tests, prompts and d
 | Kind | Renamed | Kept, and why |
 | --- | --- | --- |
 | Merge meaning land | Code (#165): `reconcileLand`, `landAuthorization`, `landBranch`, `src/ops/land-guard.ts`, `landing-order.ts`, `land-recovery.ts`, `landed-review.ts`, `confirm-landed.ts`, `src/land-provenance.ts`, `src/roles/merge/land.ts`; comments, test titles, prompts and docs. Persisted and wire (#166): saved state v3 `landed`, `codeLanded`, `landingAttempt`, `landingReturn`; `landingAccount`, `landingConfirmation`, `jobRoles.lander`; `--landing-order`; the ops `land`, `confirm-landed`, `reconcile-land` (`src/ops/land.ts`, `landing-attempt.ts`) and their `landed`/`codeLanded`/`landingOrder` keys; the `agent:landed` label; the `lander` role; `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`; the `landing` account selector. | **Stage:** the `merge` stage, its folder `src/roles/merge/` and `mergeRole`. **Git or GitHub:** merge commits, merge bases, unmerged files, GitHub's `MERGED` and merge API (`pr-merge.ts`, `mergedPr`). **Not landing:** `mergedRole` combines role settings. **Old names kept readable:** v2 state keys, `mergeAccount` and the other old config keys, `--merge-queue`, the old op names, `agent:merged`, the `merger` role. |
-| Implementor | `src/roles/implementation/`, `implementationRole`; prose says Developer or Implementation (#165). `models.developer`, the `developer` model and usage role, `developer-` session keys, the `issue-pipeline-developer` agent definition (#166). | `models.implementor` and the `implementor` role stay readable. The decision ID `implementor-owns-the-change`. |
+| Implementor | `src/roles/implementation/`, `implementationRole`; prose says Developer or Implementation (#165). `models.developer`, the `developer` model and usage role, `developer-` session keys, the `issue-pipeline-developer` agent definition (#166). | `models.implementor` and the `implementor` role stay readable. |
 | Orchestrator | Prose that means the caller says caller. | The retained legacy scheduler: `src/orchestrator/`, `orchestrate.ts`, `orchestrate.mjs`, `orchestratorIntervalSeconds`, `mergeWindow`. It is not the caller. |
 | Stage | Prose that means a task says task. | Stage as the installed technical name: `Stage`, `STAGES`, stage jobs, `--stage`, the saved `stage`, `stoppedStage`, `resumeStage`, stage caps. Replacing them is the *Structure* change above ("the tasks that may proceed"), not a rename. |
 | Coordination | The request record's `identity` is `binding` in record version 2 (#166). | Version 1 records stay readable. |
 
 ### PR review tasks
 
-These mappings apply the 2026-10-26 [PR review decisions](decisions/pr-review.md) to the source. The source builds all five tasks and the new signals. Nothing here is installed.
+These mappings cover the five delivery tasks and the review loop in the source. The source builds all five tasks and the new signals. Nothing here is installed.
 
 | Removed task | Canonical target | Source state |
 | --- | --- | --- |
@@ -113,15 +113,15 @@ These mappings apply the 2026-10-26 [PR review decisions](decisions/pr-review.md
 | Fast-forward Land with a strict-descendant lease | `gh pr merge --merge --match-head-commit`, then the issue close | Structure; the [merge glossary entry](../GLOSSARY.md#merge) now covers Land's merge commit |
 | Task result without a cause | `TaskResult.cause` repeats the attempt's cause | Structure |
 
-The open questions in the decision keep current behavior. `start:implement` doesn't retry a failed Implement for the same requirements, and Implement doesn't wait for Author.
+`start:implement` doesn't retry a failed Implement for the same requirements, and Implement doesn't wait for Author.
 
 ## Signals and label controls
 
-Autumn's factory alignment discussion introduced [Signal](../GLOSSARY.md#signal), with [signal authority](decisions/authority.md#signal-authority) and [label semantics](decisions/authority.md#label-signals). These are intended contracts; this documentation change implements no execution behavior.
+The glossary defines [Signal](../GLOSSARY.md#signal), with its authority and label semantics. These are intended contracts; this documentation change implements no execution behavior.
 
 The inspected source still uses assignment-based permission in `src/assignment/grant.ts` and `src/job/assignment.ts`, with fresh checks in `src/execution.ts`. The sweep in `scripts/sweep/plan.ts` filters issues by buddy account assignments. Replace that permission model with configured scope and responsibilities and shared signal-provenance checks; GitHub issue assignments are not required in the target model.
 
-Tasks follow the [actor pattern](decisions/buddies-and-tasks.md#tasks-as-actors): they declare sensors, receive signals in an inbox and match signals to actions. A [buddy run](decisions/buddies-and-tasks.md#buddy-run-lifecycle) activates all its configured tasks' action loops, rather than executing one task. Stops propagate through affected loops, actions and their child work, within the stop's scope. Existing one-job and model-launch records need explicit mapping; do not relabel them as buddy runs by assumption. Signals encapsulate human or machine provenance; they are not necessarily requests. Inbox persistence, delivery guarantees, duplicate handling and actor-instance boundaries remain open.
+Tasks follow the actor pattern: they declare sensors, receive signals in an inbox and match signals to actions. A buddy run activates all its configured tasks' action loops, rather than executing one task. Stops propagate through affected loops, actions and their child work, within the stop's scope. Existing one-job and model-launch records need explicit mapping; do not relabel them as buddy runs by assumption. Signals encapsulate human or machine provenance; they are not necessarily requests. Inbox persistence, delivery guarantees, duplicate handling and actor-instance boundaries remain open.
 
 Required behavior includes qualifying human-produced `start:implement` and `agents:stop` application events by their producer's current organization membership, qualifying machine-produced signals through their authenticated evidence and bindings, retaining accepted-signal provenance, and stopping gracefully through one shared control. Label removal must never act as a signal, including cancellation or continuation. Unknown provenance or membership grants no permission. Continuation and the retry coverage of accepted requests remain open; do not infer them from label absence.
 
@@ -155,7 +155,7 @@ Evidence includes `apps/issue-pipeline/src/config-schema.ts`, `src/config-legacy
 | Issue-pipeline job invocation, `--job-id`, latest `job.json`, `jobs.jsonl` | Workflow runs and run records | Structure; public/persisted impact | Dash now exposes source invocation IDs as workflow-run IDs without rewriting them. Upstream identifier/attempt-history migration remains open. Latest-record paths are not complete run history. Preserve old evidence rather than rewriting it in place. |
 | Pipeline launch records with `kind: session` or `ops` | Buddy runs or other execution records, with explicit parent linkage | Structure | Inspect which launches are actual runs and which are operation records. Distinguish run identity from local launch key and session-file path. Do not invent historical child IDs. |
 | Pi/subagent run IDs and conversation/session IDs | Separate run and session identities | Structure | Verify external runtime semantics. A retained conversation can serve multiple runs; an existing resume command does not prove canonical run resumption. |
-| Relaunch/resume/re-attempt dashboard templates and caller restarts | Retry | Terminology and behavior review | Every workflow restart is a retry, a new linked run (`runs-and-retries`). Inspect runtime semantics only for externally managed execution. Make request templates accurate without silently adding retry authority. |
+| Relaunch/resume/re-attempt dashboard templates and caller restarts | Retry | Terminology and behavior review | Every workflow restart is a retry, a new linked run. Inspect runtime semantics only for externally managed execution. Make request templates accurate without silently adding retry authority. |
 
 Primary source entry points are `src/job/args.ts`, `src/job/launch-record.ts`, `src/job/status.ts`, `src/job/role-context.ts`, dash's `loadWorkflowRuns()` and `loadAgentRuns()`, and the status-report source guide. Inspect their consumers and tests before settling replacement schemas.
 
@@ -168,7 +168,7 @@ The inspected checkout declares four stages in `src/stages.ts`: `author`, `imple
 | Author | Author, optional | Preserve authored and direct requirements modes. Optional Author is installed in `42a8771`. |
 | Implement | Implementation | Align stage naming separately from the Developer role. |
 | Review / Hardening phase | Hardening | Preserve code/design/test responsibilities and applicable verification. |
-| Merge / Integration phase | Sync and Integration | Done in #186 (`sync-is-a-task`): the Developer's Sync writes, and the Gatekeeper's Integration only checks. |
+| Merge / Integration phase | Sync and Integration | Done in #186: the Developer's Sync writes, and the Gatekeeper's Integration only checks. |
 | Merge / Security phase | Security | Assess the exact candidate before target mutation under the accepted plan's policy/target binding. Preserve historical result-phase evidence and recovery. |
 | Merge's target mutation | Land (formerly Merge) | Keep only the guarded target-changing operation here. Do not let the new name grant a writer or repeat an uncertain operation. |
 | Finish/close and exact-result processing | Completion | Separate delivered-result verification and work-item completion from merge success. Preserve closed-but-incomplete recovery. |
@@ -253,13 +253,13 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 
 ## Open decisions
 
-- Canonical serialized identifiers. Run states are settled (`runs-and-retries`); task-result verdicts are passed, failed, refused or unknown (`bindings-and-ready-tasks`).
-- Bindings for Author and the first Implementation, including which target changes make their results stale, and which binding parts apply to each task (`bindings-and-ready-tasks`).
+- Canonical serialized identifiers. Run states are settled; task-result verdicts are passed, failed, refused or unknown.
+- Bindings for Author and the first Implementation, including which target changes make their results stale, and which binding parts apply to each task.
 - Identity/linkage for historical jobs, launches and externally managed Pi runs/sessions.
 - Configuration and CLI migration, historical readers, supported upgrade direction and removal of transitional readers.
 - Task prerequisite, result and recovery design, and ownership relative to current pipeline changes. Ecosystem #150, #151, #132, #133, #118–#121 and #167–#175 carry the approved re-scope.
 - Compatibility for renamed labels, saved state, CLI flags and configuration keys.
-- Observation schemas, freshness bounds and explicit coverage representation. Sources are settled (`observation-sources`).
-- Configured capacity provenance. Capacity is counted by resource and released by registered consumers (`capacity-by-resource`).
+- Observation schemas, freshness bounds and explicit coverage representation. Sources are settled.
+- Configured capacity provenance. Capacity is counted by resource and released by registered consumers.
 - Dash's destination and tooling/install integration inside ecosystem; the decision to add it there is accepted and tracked by `add-pipeline-dash-to-ecosystem`.
 - Whether glossary work should move to its own shared plan; it is currently tracked in `~/brain/plans/stryker-test-assessment.md`.

@@ -18,7 +18,7 @@ node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 
 ## Tasks and signals
 
-Issue delivery has five tasks, set by the [PR review decisions](../../docs/decisions/pr-review.md). The canonical task IDs are `author`, `implement`, `verify`, `fix`, `land` and `refactor-safely`. Developer and Gatekeeper are roles, not saved stages.
+Issue delivery has five tasks. The canonical task IDs are `author`, `implement`, `verify`, `fix`, `land` and `refactor-safely`. Developer and Gatekeeper are roles, not saved stages.
 
 | Task | Role and access | Binds | Becomes ready when |
 | --- | --- | --- | --- |

@@ -1,15 +1,13 @@
 // Accepted-signal records. Each accepted human signal, a control label's
 // event or a person's submitted PR review, is one append-only hidden comment
-// on its issue, written once by the landing account and never edited
-// (`authenticated-authority-records`, `state-comment-on-the-issue`). It
-// retains its source, the producer's login, durable user id and
-// organization, and what it requests: a start's binding read at
-// acceptance, or the review's PR, commit and state. So later checks never
-// depend on the label remaining. Readers trust only landing-authored,
-// never-edited comments whose author and editor come from one verified
-// read. A forged, edited, malformed or conflicting record holds, as does a
-// record of an earlier version; an incomplete listing is unknown, never
-// "no records".
+// on its issue, written once by the landing account and never edited. It
+// retains its source, the producer's login, durable user id and organization,
+// and what it requests: a start's binding read at acceptance, or the review's
+// PR, commit and state. So later checks never depend on the label remaining.
+// Readers trust only landing-authored, never-edited comments whose author and
+// editor come from one verified read. A forged, edited, malformed or
+// conflicting record holds, as does a record of an earlier version; an
+// incomplete listing is unknown, never "no records".
 import { z } from "zod";
 import { currentComments } from "../comment-authority.ts";
 import { COMMENT, type IssueComment } from "../comments.ts";

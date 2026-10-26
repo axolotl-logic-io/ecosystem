@@ -1,7 +1,6 @@
 // The issue pipeline's Biome config. It extends the root biome.jsonc, which
-// holds the lint policy for all of the repo's code (`practices-cover-all-code`
-// in docs/decisions/code-and-tests.md). The pipeline passes it, and `npm run check`
-// runs it (#223). Globs here resolve from this folder.
+// holds the lint policy for all of the repo's code. The pipeline passes it,
+// and `npm run check` runs it (#223). Globs here resolve from this folder.
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "extends": "//",

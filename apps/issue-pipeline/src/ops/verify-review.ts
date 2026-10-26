@@ -1,10 +1,9 @@
 // The GitHub review Verify submits on one exact PR head through the landing
-// account, and how a later read finds it again (`verify-reviews-the-pr`).
-// A finding about lines the PR's diff shows becomes an inline comment on
-// them; every other finding goes in the review body. Each finding says
-// whether it blocks: a nit doesn't, and a Security finding always does. The
-// review approves when nothing blocks and requests changes otherwise, and
-// it binds the head through its `commit_id`.
+// account, and how a later read finds it again. A finding about lines the
+// PR's diff shows becomes an inline comment on them; every other finding goes
+// in the review body. Each finding says whether it blocks: a nit doesn't, and
+// a Security finding always does. The review approves when nothing blocks and
+// requests changes otherwise, and it binds the head through its `commit_id`.
 //
 // The body ends with a mark naming the Verify run that submitted it and
 // what it counted, so a read-only reconciliation finds exactly that run's

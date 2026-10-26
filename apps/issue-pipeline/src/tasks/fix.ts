@@ -1,6 +1,6 @@
-// Fix: the Developer's answer to a change that didn't pass review
-// (`fix-answers-reviews`). It binds a revision, the item PR's head R, and
-// becomes ready for exactly that head when one of these wakes it:
+// Fix: the Developer's answer to a change that didn't pass review. It binds a
+// revision, the item PR's head R, and becomes ready for exactly that head
+// when one of these wakes it:
 //
 //   - Verify's latest result for R refused: its request for changes;
 //   - a qualified person's accepted review requesting changes on R;
@@ -9,12 +9,11 @@
 // In one run its ops merge target T into R's branch with a merge commit,
 // never a rebase; one Developer session (phase `fix`) resolves any conflict
 // and answers every blocking review comment with code; then the branch is
-// pushed through the development account, each blocking thread gets a
-// reply, and a draft PR is marked ready (ops/fix-task.ts). At most
-// VERIFY_FIX_ROUNDS of an item's Fix rounds may be Verify's; a further
-// request for changes from Verify holds the item for a person
-// (`review-loop-limit`). An unsettled run is reconciled read-only and never
-// pushed again.
+// pushed through the development account, each blocking thread gets a reply,
+// and a draft PR is marked ready (ops/fix-task.ts). At most VERIFY_FIX_ROUNDS
+// of an item's Fix rounds may be Verify's; a further request for changes from
+// Verify holds the item for a person. An unsettled run is reconciled
+// read-only and never pushed again.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";

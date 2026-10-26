@@ -25,7 +25,8 @@ const MARK = "<!-- agent-pipeline:task-result\n";
 const END = "\n-->";
 const MARK_END_PATTERN = /-->/gu;
 const ESCAPED_MARK_END = "--\\u003e";
-// Each task's attempts per binding (`runs-and-retries` rule 5).
+// Each task's attempts per binding. At the limit the task stops for a
+// person; a new binding starts a new budget.
 const TASK_ATTEMPTS = 3;
 const VERSION = 2;
 

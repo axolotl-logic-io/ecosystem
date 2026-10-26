@@ -1,6 +1,6 @@
 # Domain runtime implementation contract
 
-This page records the shared interfaces and ownership for the glossary-alignment refactor. Autumn accepted the plan on 2026-10-25. The latest [authority decisions](decisions/authority.md) and [buddy lifecycle decisions](decisions/buddies-and-tasks.md) govern the implementation. On 2026-10-26 the [PR review decisions](decisions/pr-review.md) replaced the separate-duties tasks with five delivery tasks, and this contract follows them. This is a source contract, not installed behavior.
+This page records the shared interfaces and ownership for the glossary-alignment refactor. It follows the five delivery tasks that replaced the separate-duties tasks. This is a source contract, not installed behavior.
 
 ## Domain boundaries
 

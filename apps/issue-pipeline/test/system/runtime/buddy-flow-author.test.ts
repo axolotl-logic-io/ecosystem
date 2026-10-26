@@ -1,12 +1,11 @@
-// Author on its own start (`start-labels`): `start:author` on the issue
-// wakes the Developer's Author for the current requirements, whose one
-// read-only Author session writes the issue's behaviour as Gherkin; the
-// landing account posts it as the pipeline's author comment. That comment
-// is no trusted input, so the requirements Implement binds stay those the
-// issue's author wrote, and Implement doesn't wait for Author. Questions
-// instead of Gherkin refuse, and the spent start never retries Author. The
-// signal inbox delivers the start (src/signals/inbox.ts); only gh
-// (fake-gh.ts) and pi (fake-pi.ts) are fakes.
+// Author on its own start: `start:author` on the issue wakes the Developer's
+// Author for the current requirements, whose one read-only Author session
+// writes the issue's behaviour as Gherkin; the landing account posts it as
+// the pipeline's author comment. That comment is no trusted input, so the
+// requirements Implement binds stay those the issue's author wrote, and
+// Implement doesn't wait for Author. Questions instead of Gherkin refuse, and
+// the spent start never retries Author. The signal inbox delivers the start
+// (src/signals/inbox.ts); only gh (fake-gh.ts) and pi (fake-pi.ts) are fakes.
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";

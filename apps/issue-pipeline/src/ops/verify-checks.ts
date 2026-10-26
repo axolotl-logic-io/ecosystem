@@ -1,8 +1,8 @@
-// Verify's full checks (`verify-reviews-the-pr`): the configured checks on
-// exactly the bound head, in a fresh detached checkout of the shared clone
-// that no branch or push can reach. They never commit, rebase, push or
-// write a PR. Tracked changes the checks leave are evidence: their patch
-// and checkout are retained, and the checks don't count.
+// Verify's full checks: the configured checks on exactly the bound head, in a
+// fresh detached checkout of the shared clone that no branch or push can
+// reach. They never commit, rebase, push or write a PR. Tracked changes the
+// checks leave are evidence: their patch and checkout are retained, and the
+// checks don't count.
 //
 // A setup that fails or does not finish never counts as checked: its
 // detached checkout is retained whole, with or without laneSlots, and with

@@ -1,6 +1,6 @@
 # Hardening, Verify and Fix
 
-Three parts of issue delivery decide whether a change is good enough to land. Implement hardens its own change before it records a result. Verify checks one exact pull request (PR) head and reports through a GitHub review. Fix answers a review that blocks, or a conflict Land found. None of them is a workflow stage or grants Land permission. See [pr-review](../decisions/pr-review.md) and [task results](task-results.md).
+Three parts of issue delivery decide whether a change is good enough to land. Implement hardens its own change before it records a result. Verify checks one exact pull request (PR) head and reports through a GitHub review. Fix answers a review that blocks, or a conflict Land found. None of them is a workflow stage or grants Land permission. See [task results](task-results.md).
 
 **Note:** The installed pipeline still runs separate Harden, Sync, Integrate and Review Security tasks. Nothing on this page runs until this source is installed.
 
@@ -16,7 +16,7 @@ Implement ──► Verify ──approve──► Land ──merge commit──�
 
 ## Hardening
 
-Hardening is part of Implement, not a task of its own ([implement-hardens](../decisions/pr-review.md#implement-hardens)). After the writing session, Implement starts a fresh `issue-pipeline-developer` session in phase `hardening`. That session doesn't read the writing session's conversation. It works from the revision, the trusted requirements and the checks.
+Hardening is part of Implement, not a task of its own. After the writing session, Implement starts a fresh `issue-pipeline-developer` session in phase `hardening`. That session doesn't read the writing session's conversation. It works from the revision, the trusted requirements and the checks.
 
 The hardening session tries to break the change. It adds regression and edge-case tests, and it fixes design and correctness defects, including documentation. It must not weaken requirements, assertions, coverage, checking commands, lint or types to get a pass.
 
@@ -60,7 +60,7 @@ Verify submits its review through the landing account against the head's commit.
 | Verify couldn't judge the head | None | `failed` |
 | The review's submission is uncertain | Unknown | `unknown` |
 
-A Security finding always blocks, as [security-before-merge](../decisions/delivery.md#security-before-merge) requires. A failing check or red required CI is a blocking finding too.
+A Security finding always blocks. A failing check or red required CI is a blocking finding too.
 
 The result's evidence records the submitted review, the counts of blocking findings and nits, and whether a Security finding was among them. See [Verify and Land evidence](task-results.md#verify-and-land-evidence).
 
@@ -68,7 +68,7 @@ A Verify result binds one head. A new head, from Fix or from a person's push, ha
 
 ## Fix
 
-Fix belongs to the Developer and uses the writer profile. It binds the item PR's current head. It has no start label; one of these wakes it ([fix-answers-reviews](../decisions/pr-review.md#fix-answers-reviews)):
+Fix belongs to the Developer and uses the writer profile. It binds the item PR's current head. It has no start label; one of these wakes it:
 
 - Verify's request-changes review on the current head;
 - a qualified person's request-changes review on the current head;
@@ -111,7 +111,7 @@ Two things show that this run pushed the head. The finish step records the head 
 
 ## Loop limit
 
-An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`). A Fix round counts when its cause is a refused Verify result. After the third, if Verify still requests changes, the issue holds for a person ([review-loop-limit](../decisions/pr-review.md#review-loop-limit)).
+An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`). A Fix round counts when its cause is a refused Verify result. After the third, if Verify still requests changes, the issue holds for a person.
 
 Fix rounds that a person's review or Land's conflict triggered don't count, because a person or the base branch caused them. The limit replaces the attempt ceiling for this loop only. Each task still has at most three attempts for one binding.
 

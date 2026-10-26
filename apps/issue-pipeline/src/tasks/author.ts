@@ -1,12 +1,12 @@
 // Author: the Developer's Gherkin requirements for the issue, requested by
-// `start:author` for the issue's current trusted requirements
-// (`start-labels`). Like Implement, any attempt of those requirements
-// prevents another; neither task waits for the other. Its action is one
-// read-only Author session, whose Gherkin, or questions that only the
-// issue's author can answer, its op posts on the issue as the pipeline's
-// author comment (ops/author-post.ts). That comment never counts toward the
-// trusted requirements. Gherkin passes; questions refuse, so the issue
-// waits for its author's answer and a new start.
+// `start:author` for the issue's current trusted requirements. Like
+// Implement, any attempt of those requirements prevents another; neither task
+// waits for the other. Its action is one read-only Author session, whose
+// Gherkin, or questions that only the issue's author can answer, its op posts
+// on the issue as the pipeline's author comment (ops/author-post.ts). That
+// comment never counts toward the trusted requirements. Gherkin passes;
+// questions refuse, so the issue waits for its author's answer and a new
+// start.
 
 import type { Config } from "../config.ts";
 import type {

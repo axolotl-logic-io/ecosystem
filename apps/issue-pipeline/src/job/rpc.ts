@@ -1,11 +1,10 @@
-// One `pi --mode rpc` process run to its end: it sends the prompt only
-// after optional native-policy verification, reads LF-framed JSON, correlates
+// One `pi --mode rpc` process run to its end: it sends the prompt only after
+// optional native-policy verification, reads LF-framed JSON, correlates
 // responses to the commands it sent, and closes stdin, which shuts pi down,
 // once the run has settled or pi refused the prompt. While it runs, the
-// caller holds a handle that sends commands (abort, steer) and kills it.
-// pi starts in a process group of its own, and a kill or a timeout ends the
-// whole group, so the tools pi started end with it
-// (commands-leave-no-processes, #371).
+// caller holds a handle that sends commands (abort, steer) and kills it. pi
+// starts in a process group of its own, and a kill or a timeout ends the
+// whole group, so the tools pi started end with it (#371).
 
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";

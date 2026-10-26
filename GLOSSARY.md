@@ -46,7 +46,7 @@ A task stands on its own. The buddy does not own the task's sensors, inbox, sign
 
 A buddy run activates its configured tasks' action loops. Work discovery uses the tasks' declared sensors within the configured scope.
 
-A task doesn't have to be split because one side writes and the other checks ([no-separate-duties](docs/decisions/pr-review.md#no-separate-duties)). The Developer and the Gatekeeper still use separate GitHub accounts, because GitHub doesn't let a pull request's author approve or request changes on it. [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) record the current buddies.
+A task doesn't have to be split because one side writes and the other checks. The Developer and the Gatekeeper still use separate GitHub accounts, because GitHub doesn't let a pull request's author approve or request changes on it.
 
 ### Executing buddy
 
@@ -210,7 +210,7 @@ The workflow that develops and delivers an issue's intended change. Its tasks ar
 
 When Fix produces a new head, every earlier review and result stays bound to the old one. Verify becomes ready for the new head; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
 
-The Developer performs Author, Implement and Fix, and Safe Refactor when it is explicitly assigned; Safe Refactor adds no automatic dispatch or fixed workflow position. The Gatekeeper performs Verify and Land. The [PR review decisions](docs/decisions/pr-review.md) record this model. This intended model does not describe every historical or installed version.
+The Developer performs Author, Implement and Fix, and Safe Refactor when it is explicitly assigned; Safe Refactor adds no automatic dispatch or fixed workflow position. The Gatekeeper performs Verify and Land. This intended model does not describe every historical or installed version.
 
 ### Run state
 
@@ -264,7 +264,7 @@ An issue having `start:author`, `start:implement` or `start:verify` can supply a
 
 Removing a label is never a signal. Removing a start label does not cancel accepted work. Removing `agents:stop` does not authorize continuation. The signal for continuation remains undefined.
 
-These are intended contracts, not claims about installed behavior. [Signal authority decisions](docs/decisions/authority.md#signal-authority) record their authority rules.
+These are intended contracts, not claims about installed behavior.
 
 ### Sensor
 
@@ -352,7 +352,7 @@ Generate matching Markdown and JSON reports from the same assessment data, with 
 
 ## Definitions still required
 
-[Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks and their bindings, including Author's and the first Implementation's; repeated checks and task order; run states and retries; the capacity unit, slot release and shared reservations; observation sources, freshness and coverage; who lands and installs; and additive record versions. These contracts remain open:
+These contracts remain open:
 
 - Which binding parts apply to each task, and the remaining prerequisite and result schemas.
 - Observation schemas.

@@ -1,10 +1,9 @@
-// Review signals through the real inbox, fake gh and a local bare origin
-// (`fix-answers-reviews`, `land-merges-the-pr`): a qualified person's
-// standing approval or request for changes on the issue's linked PR is
-// accepted once as an append-only record and delivered as a review. A
-// machine's, a non-member's or a comment-only review grants nothing and
-// holds nothing. A review that was dismissed or superseded, a reviewer who
-// left the organization and a stop each make an accepted review inert.
+// Review signals through the real inbox, fake gh and a local bare origin: a
+// qualified person's standing approval or request for changes on the issue's
+// linked PR is accepted once as an append-only record and delivered as a
+// review. A machine's, a non-member's or a comment-only review grants nothing
+// and holds nothing. A review that was dismissed or superseded, a reviewer
+// who left the organization and a stop each make an accepted review inert.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { z } from "zod";

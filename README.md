@@ -57,7 +57,7 @@ The operator can configure the pipeline to work on ecosystem's own issues as
 well as other repositories. Tasks develop and review pipeline fixes; the
 operator coordinates installation separately from landing them.
 
-The [pipeline docs](docs/README.md) hold its decisions and reference. The sessions'
+The [pipeline docs](docs/README.md) hold its reference. The sessions'
 behavioral prompts ship with the pipeline in
 `apps/issue-pipeline/prompts/`. The operator configures each buddy's scope,
 role, identity and task responsibilities; there is no shared stage cursor.

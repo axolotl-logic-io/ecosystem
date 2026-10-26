@@ -1,10 +1,10 @@
-// Credentialed code writes and writer sessions share one fresh fence. Code
-// of a work item stays writable only while no Land may already have
-// delivered it: a Land run that is unsettled or passed closes it, since its
-// outcome may be on the target. A Land that settled without merging, such
-// as one that found the PR conflicting and marked it a draft, leaves it
-// open for Fix (`fix-answers-reviews`). Records or saved state that hold
-// throw. Otherwise the item's PR, if it has one, must be open.
+// Credentialed code writes and writer sessions share one fresh fence. Code of
+// a work item stays writable only while no Land may already have delivered
+// it: a Land run that is unsettled or passed closes it, since its outcome may
+// be on the target. A Land that settled without merging, such as one that
+// found the PR conflicting and marked it a draft, leaves it open for Fix.
+// Records or saved state that hold throw. Otherwise the item's PR, if it has
+// one, must be open.
 
 import { listComments } from "./comments.ts";
 import type { Config } from "./config.ts";

@@ -1,6 +1,6 @@
 # Sessions
 
-A session is one model invocation inside an action. It is not a task, a buddy, an account or a workflow stage. Tasks choose their session specifications; the runtime owns credential isolation, launch records, interruption and guarded commit requests. See [session decisions](../decisions/sessions.md) and the [domain runtime contract](../domain-runtime-contract.md).
+A session is one model invocation inside an action. It is not a task, a buddy, an account or a workflow stage. Tasks choose their session specifications; the runtime owns credential isolation, launch records, interruption and guarded commit requests. See the [domain runtime contract](../domain-runtime-contract.md).
 
 ## Task sessions
 
@@ -16,9 +16,9 @@ Each delivery task picks its sessions from this table. The runtime selects the p
 
 Land starts no model. Verify's full checks and required CI are deterministic; one read-only session reviews the head's diff, its Security included, and its findings become the review. A model name or agent prompt grants neither role nor account authority.
 
-**Note:** These are the source's sessions for the [PR review decisions](../decisions/pr-review.md). The installed pipeline still runs the older Harden, Sync and Review Security sessions until this source is installed.
+**Note:** These are the source's sessions for the five delivery tasks. The installed pipeline still runs the older Harden, Sync and Review Security sessions until this source is installed.
 
-Implement's hardening runs in a fresh session that doesn't read the writing session's conversation ([implement-hardens](../decisions/pr-review.md#implement-hardens)). Implement records its result only after the hardening session ends.
+Implement's hardening runs in a fresh session that doesn't read the writing session's conversation. Implement records its result only after the hardening session ends.
 
 A qualified `start:author` requests Author, and `start:implement` requests Implement. Implement doesn't wait for an unsettled Author. Safe Refactor uses its [standalone tool](safe-refactor.md), whose reports grant no Verify or Land result.
 

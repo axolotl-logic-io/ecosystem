@@ -1,10 +1,10 @@
-// Implement hardens its own change (`implement-hardens`): after the writing
-// session, a second Developer session, in a pi process and session file of
-// its own and with the hardening prompt page, examines the branch without
-// the writing session's conversation, and only then does the development
-// account open the PR. A hardening that can't finish fails Implement before
-// any PR, and no start retries Implement for the same requirements. Only gh
-// (fake-gh.ts) and pi (fake-pi.ts) are fakes.
+// Implement hardens its own change: after the writing session, a second
+// Developer session, in a pi process and session file of its own and with the
+// hardening prompt page, examines the branch without the writing session's
+// conversation, and only then does the development account open the PR. A
+// hardening that can't finish fails Implement before any PR, and no start
+// retries Implement for the same requirements. Only gh (fake-gh.ts) and pi
+// (fake-pi.ts) are fakes.
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";

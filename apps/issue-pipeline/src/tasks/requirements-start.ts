@@ -1,8 +1,8 @@
-// How the tasks a start label requests for the issue's trusted
-// requirements, Author and Implement, read their start (`start-labels`):
-// only a start of the task itself, for the requirements current now, is
-// ready; and any attempt of those requirements prevents another, whatever
-// the target or a later start (docs/reference/stops-and-labels.md). Pure.
+// How the tasks a start label requests for the issue's trusted requirements,
+// Author and Implement, read their start: only a start of the task itself,
+// for the requirements current now, is ready; and any attempt of those
+// requirements prevents another, whatever the target or a later start
+// (docs/reference/stops-and-labels.md). Pure.
 
 import type {
   Binding,

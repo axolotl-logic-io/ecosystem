@@ -1,6 +1,6 @@
 # Signals
 
-A signal is qualified evidence that a buddy may act on a work item. The signal component in `apps/issue-pipeline/src/signals/` reads control labels on issues, accepts qualified label events as records, and delivers signals of four kinds: a start, a human PR review, a stop and a machine result. This page describes how it behaves. The rules come from the [domain runtime contract](../domain-runtime-contract.md#signals) and the decisions in [authority](../decisions/authority.md) and [buddies and tasks](../decisions/buddies-and-tasks.md).
+A signal is qualified evidence that a buddy may act on a work item. The signal component in `apps/issue-pipeline/src/signals/` reads control labels on issues, accepts qualified label events as records, and delivers signals of four kinds: a start, a human PR review, a stop and a machine result. This page describes how it behaves. The rules come from the [domain runtime contract](../domain-runtime-contract.md#signals).
 
 **Note:** The installed pipeline accepts only `start:implement` and `agents:stop` until this source is installed.
 
@@ -21,7 +21,7 @@ The synchronous forms run the same code as the asynchronous ones. There is one s
 
 ## Control labels
 
-The component reads four issue labels as control labels ([start-labels](../decisions/pr-review.md#start-labels)):
+The component reads four issue labels as control labels:
 
 - `start:author` requests Author for the issue's current requirements.
 - `start:implement` requests Implement for the issue's current requirements.

@@ -4,13 +4,12 @@
 // afresh, accepts newly qualified human label events and PR reviews as
 // append-only records, and delivers qualified signals: accepted stops,
 // pending accepted starts, accepted reviews that still stand and the task
-// lane's authenticated machine results. requalify checks one delivered
-// signal again before an action or privileged effect relies on it, and
-// stopLatch reports an issue's persistent stop; requalifyHumanNow and
-// stopLatchNow are their synchronous forms for ops mutation guards, with the
-// same rules. Unknown evidence never throws and never reads as absence; it
-// is reported as a hold (`signal-authority`, `label-signals`,
-// `start-labels`, `fix-answers-reviews`).
+// lane's authenticated machine results. requalify checks one delivered signal
+// again before an action or privileged effect relies on it, and stopLatch
+// reports an issue's persistent stop; requalifyHumanNow and stopLatchNow are
+// their synchronous forms for ops mutation guards, with the same rules.
+// Unknown evidence never throws and never reads as absence; it is reported as
+// a hold.
 import { z } from "zod";
 import { rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";

@@ -1,6 +1,6 @@
 # Stops and labels
 
-Control signals come from qualified human events, not from a label's presence alone. People control issue delivery with three start labels, one stop label and their reviews of the issue's pull request (PR). Accepted records, current authority and exact task results decide what may happen; status labels and process observations don't. See [signals](signals.md), [authority](authority.md) and [start-labels](../decisions/pr-review.md#start-labels).
+Control signals come from qualified human events, not from a label's presence alone. People control issue delivery with three start labels, one stop label and their reviews of the issue's pull request (PR). Accepted records, current authority and exact task results decide what may happen; status labels and process observations don't. See [signals](signals.md) and [authority](authority.md).
 
 **Note:** The installed pipeline accepts only `start:implement` and `agents:stop`. `start:author`, `start:verify` and review signals run only once this source is installed.
 
@@ -36,7 +36,7 @@ An accepted stop is durable after label removal. Removing or reapplying a label 
 
 An authenticated attempt spends its start whatever its verdict. Target movement or a new activation doesn't replenish it. `start:implement` doesn't request a new attempt after a failed Implement for the same requirements; that event holds with "retrying requirements Implement already attempted is unsupported". `start:author` holds the same way for Author. Newly edited requirements need a newly accepted start. A `start:verify` binds the PR head it was accepted for; after a push, Verify waits for a new start for the new head unless the push's own result wakes it. A new `start:verify` for a head whose Verify failed to judge it requests a new attempt, up to the binding's three attempts. A passed or refused Verify of the head stands.
 
-Whether `start:implement` should retry a failed Implement is an [open question](../decisions/pr-review.md#open-questions). So is whether Implement should wait for an unsettled Author. Until they're decided, retries stay unsupported and Implement doesn't wait for Author.
+`start:implement` doesn't retry a failed Implement, and Implement doesn't wait for an unsettled Author.
 
 ## Local interruption
 

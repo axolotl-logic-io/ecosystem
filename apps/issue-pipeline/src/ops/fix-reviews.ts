@@ -1,14 +1,13 @@
 // What Fix answers on its PR, as GitHub reports it now (pr-reviews.ts): the
 // reviews that request changes on exactly the head it fixes, each one's
 // standing, and the blocking threads they opened. Only the landing account
-// (Verify) and a qualified person direct Fix (`fix-answers-reviews`): a
-// request from anyone else, or from someone who can't be qualified now,
-// is neither given to the session nor answered. A thread whose first
-// comment starts by calling itself a nit or non-blocking blocks nothing;
-// Verify marks its nits so (`verify-reviews-the-pr`). Fix replies in each
-// blocking thread through the development account, and each reply carries
-// a hidden mark naming its run, so a later read finds what a run answered;
-// a mark in anyone else's comment proves nothing.
+// (Verify) and a qualified person direct Fix: a request from anyone else, or
+// from someone who can't be qualified now, is neither given to the session
+// nor answered. A thread whose first comment starts by calling itself a nit
+// or non-blocking blocks nothing; Verify marks its nits so. Fix replies in
+// each blocking thread through the development account, and each reply
+// carries a hidden mark naming its run, so a later read finds what a run
+// answered; a mark in anyone else's comment proves nothing.
 
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";

@@ -1,14 +1,12 @@
-// Whether a PR head is approved for Land, read fresh from GitHub
-// (docs/decisions/pr-review.md `land-merges-the-pr`). The head needs a
-// passed Verify of the revision, whatever approves it, since its Security
-// review must pass before the merge (`verify-reviews-the-pr`,
-// security-before-merge). It then needs an approval that still stands on
-// it, from the landing account through that Verify or from a qualified
-// person, and no request for changes from either. The landing account's approval counts only as
-// the very review its passed Verify result submitted. A person's review
-// counts only while they are a person and an active member of the buddy's
-// organization, qualified now; one whose request for changes can't be
-// qualified blocks, since it may stand.
+// Whether a PR head is approved for Land, read fresh from GitHub. The head
+// needs a passed Verify of the revision, whatever approves it, since its
+// Security review must pass before the merge. It then needs an approval that
+// still stands on it, from the landing account through that Verify or from a
+// qualified person, and no request for changes from either. The landing
+// account's approval counts only as the very review its passed Verify result
+// submitted. A person's review counts only while they are a person and an
+// active member of the buddy's organization, qualified now; one whose request
+// for changes can't be qualified blocks, since it may stand.
 
 import type { Config } from "../config.ts";
 import type { TaskResult } from "../domain.ts";

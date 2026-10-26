@@ -1,17 +1,16 @@
-// Land: the Gatekeeper's merge of the item's PR at the exact head it
-// checked (docs/decisions/pr-review.md `land-merges-the-pr`). It binds the
-// current revision R, the PR's head, on target T, and needs all of these on
-// R: a passed Verify of R, whose Security review must pass before any
-// merge, an approval from the landing account (that Verify) or from a
+// Land: the Gatekeeper's merge of the item's PR at the exact head it checked.
+// It binds the current revision R, the PR's head, on target T, and needs all
+// of these on R: a passed Verify of R, whose Security review must pass before
+// any merge, an approval from the landing account (that Verify) or from a
 // qualified person, no request for changes from either, a PR GitHub reports
 // mergeable whose head contains T, green required CI, and the trusted
 // repository grant (`permissions.land`). An approved PR that conflicts with
 // T, or doesn't contain it, goes to Fix instead: Land marks it a draft and
-// records why. It takes the target's integration turn before its attempt
-// is recorded and keeps it while the run is unsettled. A pass is never
-// permission: every check is made again in the ops child
-// (ops/land-task.ts). An unsettled run is reconciled from reads, never
-// merged again, and its issue closed only if a merged PR left it open.
+// records why. It takes the target's integration turn before its attempt is
+// recorded and keeps it while the run is unsettled. A pass is never
+// permission: every check is made again in the ops child (ops/land-task.ts).
+// An unsettled run is reconciled from reads, never merged again, and its
+// issue closed only if a merged PR left it open.
 
 import type { Config } from "../config.ts";
 import type {
