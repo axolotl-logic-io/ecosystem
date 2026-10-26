@@ -31,7 +31,7 @@ Follow John Ousterhout's *A Philosophy of Software Design*:
 - Regexes are top-level, named and use the `u` flag.
 - Parameter and return types are explicit; interfaces use property-style signatures; exports come last in a file; keys from an index signature are read by destructuring.
 - No ternaries. No `void` on promises.
-- `noSecrets` flags long camelCase identifiers in strings, so a `describe` names the behaviour or command, not a long function name.
+- `noSecrets` flags long camelCase identifiers in strings, so a `describe` names the behavior or command, not a long function name.
 
 ## Tests
 
@@ -45,11 +45,11 @@ Tests are sorted by the ISTQB (CTFL v4.0) test levels. A test lives in `test/<le
 | System integration | the program against real GitHub or a real model; opt-in, not in `check:full` | `system-integration/` |
 | Acceptance | an issue's Gherkin scenarios, one test each, run against the system | `acceptance/` |
 
-- **A flake is a failure** (`flakes-are-failures`). Fix the cause or the measurement; never rerun until it passes. A passing repeat adds no evidence, and no test may depend on timing.
+- **A flake is a failure**. Fix the cause or the measurement; never rerun until it passes. A passing repeat adds no evidence, and no test may depend on timing.
 - **Fix a known flake first, on its own,** before other work that would trip on it. A flake left open costs a run in every branch that meets it.
-- **Test a feature or reproduce a bug, not an implementation.** A test checks behaviour that a user or caller relies on, or reproduces a bug that was fixed. It doesn't pin private helpers, call order, internal state or wording that nothing relies on.
+- **Test a feature or reproduce a bug, not an implementation.** A test checks behavior that a user or caller relies on, or reproduces a bug that was fixed. It doesn't pin private helpers, call order, internal state or wording that nothing relies on.
 - **No tautological tests.** A test that can't fail while the code is wrong proves nothing: one that checks a mock returns what it was given, compares a value with itself, or re-proves the language or framework. Delete it, or rewrite it to check an outcome.
-- **Tests don't need frequent maintenance.** A refactor that keeps behaviour breaks no test. A test that breaks on most changes to its subject is testing the implementation; rewrite it against the outcome.
+- **Tests don't need frequent maintenance.** A refactor that keeps behavior breaks no test. A test that breaks on most changes to its subject is testing the implementation; rewrite it against the outcome.
 - **No timed waits; mock time.** A test never sleeps or polls on a timer for something to happen. It awaits the event itself, such as a promise, a process exit, a file change or a FIFO. Code that waits or reads the clock takes its clock or delay as a parameter, so tests pass a fake one. A subprocess, which fake timers can't reach, gets short durations through its configuration. A deadline may only fail a test, never pace it.
 - **Fake services are long-lived servers.** A fake external service, such as GitHub, runs as one server per test machine, and the program reaches it the way it reaches the real one. Don't start a process for each call.
 - **Tests clean up.** A test stops every process it starts and puts a deadline on every wait.
