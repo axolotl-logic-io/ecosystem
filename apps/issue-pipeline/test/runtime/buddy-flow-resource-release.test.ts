@@ -3,6 +3,9 @@
 // origin and the project's own shell commands. Only gh (fake-gh.ts) and pi
 // (fake-pi.ts) are fakes.
 //
+// - A setup that fails in Verify's detached checks checkout keeps that
+//   checkout, its pending-setup barrier on the issue's lease and the issue,
+//   even once the action's own checkout is removed.
 // - Without laneSlots, a failed setup still starts no session, is never
 //   replayed and keeps the checkout and the issue.
 // - A person's stop while setup runs lets the setup finish but starts no
@@ -30,9 +33,20 @@ const COUNTS: PlannedSession = {
   awaitAbort: false,
   reply: { outcome: "done", summary: "Counted the widgets." },
 };
+const REVIEWS: PlannedSession = {
+  commit: null,
+  change: null,
+  changeFirst: false,
+  awaitAbort: false,
+  reply: { summary: "Read the whole diff.", findings: [] },
+};
+// Implement acts on the first poll; the second stops.
+const DEVELOPER_POLLS = 2;
 const HELD_POLLS = 3;
 const PARTIAL = "warm.partial";
 const SETUP_EXIT = 3;
+const VERIFY_PARENT = /\/verify-checkout-[^/]+$/u;
+const CONSUMERS = /the lane slot still has registered consumers/u;
 const PREPARATION_INCOMPLETE = /its preparation started and did not complete/u;
 const PREPARATION_FAILED = /checkout preparation failed/u;
 const TEARDOWN_REFUSED = /commands\.teardown is configured/u;
@@ -42,6 +56,9 @@ function recording(name: string): string {
   return `printf '%s\\t%s\\t%s\\n' ${name} "$ISSUE_PIPELINE_LANE_SLOT" "$PWD" >> "$ISSUE_PIPELINE_ROOT/../commands.log"`;
 }
 const RECORD_SETUP = recording("setup");
+// Setup that fails, leaving an untracked file, only in Verify's own
+// detached checks checkout.
+const FAILS_IN_VERIFY = `${RECORD_SETUP} && case "$PWD" in */verify-checkout-*/repo) printf 'half warm\\n' > ${PARTIAL}; exit ${String(SETUP_EXIT)};; esac`;
 
 function commandRuns(box: Machine): string[][] {
   const log = path.join(box.root, "commands.log");
@@ -79,6 +96,83 @@ function jobFolders(box: Machine, id: string): string[] {
 function issueRunDir(box: Machine): string {
   return path.join(box.pipeline, "runs", SLUG, `issue-${ISSUE}`);
 }
+
+test("a failed setup in Verify's detached checks checkout retains it, its barrier, its slot and the issue", async () => {
+  const box = machine(() => undefined, {
+    landPermission: false,
+    laneSlots: 2,
+    requireCi: false,
+    setup: FAILS_IN_VERIFY,
+  });
+  let passed = false;
+  try {
+    const developer = await box.runBuddy([COUNTS], DEVELOPER_POLLS, {
+      role: "developer",
+      tasks: ["implement"],
+    });
+    assert.equal(developer.status, 0, developer.stderr);
+    const gatekeeper = await box.runBuddy([REVIEWS], HELD_POLLS, {
+      role: "gatekeeper",
+      tasks: ["verify"],
+    });
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const verify = gatekeeper.actions.filter((run) => run.task === "verify");
+    assert.equal(verify.length, 1);
+    const [action] = verify;
+    assert.ok(action !== undefined);
+    assert.equal(action.outcome, "unknown");
+    assert.deepEqual(
+      action.operations.map((item) => [item.op, item.outcome]),
+      [
+        ["task-attempt", "ok"],
+        ["prepare-checkout", "ok"],
+        ["verify-task", "failed"],
+        ["task-result", "ok"],
+      ],
+    );
+    // Setup ran in Implement's checkout, Verify's own checkout and then
+    // Verify's detached checks checkout, once each: nothing replayed over
+    // the held polls.
+    const runs = commandRuns(box);
+    assert.deepEqual(
+      runs.map(([name, slot]) => [name, slot]),
+      [
+        ["setup", "1"],
+        ["setup", "1"],
+        ["setup", "1"],
+      ],
+    );
+    const detached = runs[2]?.[2] ?? "";
+    const parent = path.dirname(detached);
+    assert.match(parent, VERIFY_PARENT);
+    // The detached checkout stays whole, with setup's untracked file,
+    // though the action's own checkout was removed.
+    assert.equal(
+      fs.readFileSync(path.join(detached, PARTIAL), "utf8"),
+      "half warm\n",
+    );
+    assert.equal(action.preserved.checkout, null);
+    // The lease outlives the removed action checkout: its barrier still
+    // names the detached checkout, and the issue stays held.
+    const store = JSON.parse(fs.readFileSync(storeFile(box), "utf8"));
+    assert.equal(store.leases.length, 1);
+    const [lease] = store.leases;
+    assert.equal(lease.issue, ISSUE);
+    assert.equal(lease.slot, 1);
+    // setup's $PWD is the resolved path; the store keeps the pipeline's.
+    assert.deepEqual(
+      lease.pendingSetup.map((dir: string) => fs.realpathSync(dir)),
+      [fs.realpathSync(detached)],
+    );
+    assert.equal(action.ownership.state, "retained");
+    assert.match(String(action.ownership.reason), CONSUMERS);
+    // No review was submitted from an environment that was never prepared.
+    assert.deepEqual(box.world().pulls?.[0]?.reviews ?? [], []);
+    passed = true;
+  } finally {
+    keepIfFailed(box, passed);
+  }
+});
 
 test("without laneSlots a failed setup starts no session, is not replayed and retains the checkout and the issue", async () => {
   const box = machine(() => undefined, {
