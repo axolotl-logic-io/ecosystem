@@ -47,7 +47,7 @@ const EVENTS = /events/u;
 const EXECUTION_HOLD = /issue execution/u;
 const START_REVOKED_PUSH =
   /^signal github-label:acme\/widgets#7:300 is revoked: @autumn is not a member of acme/u;
-const PUSH_BOUNDARY_REVOKED = /^push: signal .* revoked: /u;
+const HARDENING_BOUNDARY_REVOKED = /^session: signal .* revoked: /u;
 
 function planned(change: Partial<PlannedSession>): PlannedSession {
   return {
@@ -307,7 +307,8 @@ suite("buddy authority changes during an Implement session", {
       assert.equal(push.pushed, "none");
       assert.match(push.pushError ?? "", START_REVOKED_PUSH);
       assert.equal(originBranch(box), "");
-      // The checkpoint still settled; the push and PR ops never ran.
+      // The checkpoint still settled; the hardening session's boundary
+      // refused, so it, the push and the PR ops never ran.
       assert.deepEqual(settled(action), {
         state: "ended",
         outcome: "unknown",
@@ -323,7 +324,7 @@ suite("buddy authority changes during an Implement session", {
           ["task-result", "ok"],
         ],
       });
-      assert.match(action.reason ?? "", PUSH_BOUNDARY_REVOKED);
+      assert.match(action.reason ?? "", HARDENING_BOUNDARY_REVOKED);
       assert.deepEqual(ledger(box), [
         ["attempt", null],
         ["result", "unknown"],

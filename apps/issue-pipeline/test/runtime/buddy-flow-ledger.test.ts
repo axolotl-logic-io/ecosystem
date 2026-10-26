@@ -5,7 +5,7 @@ import process from "node:process";
 import { test } from "node:test";
 import { RECORD } from "../../src/tasks/records.ts";
 import type { PlannedSession } from "./buddy-flow-test-kit.ts";
-import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import { HARDENING, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 const POLLS = 3;
 
@@ -27,7 +27,12 @@ test("a built buddy confirms a result whose private diagnostic was redacted", as
       awaitAbort: false,
       reply: { outcome: "done", summary },
     };
-    const run = await box.runBuddy([session], POLLS, undefined, signal);
+    const run = await box.runBuddy(
+      [session, HARDENING],
+      POLLS,
+      undefined,
+      signal,
+    );
     signal.throwIfAborted();
     assert.equal(run.status, 0, run.stderr);
     const action = run.actions.find((row) => row.task === "implement");
