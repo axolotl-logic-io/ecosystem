@@ -16,7 +16,7 @@ import {
   REQUIREMENTS,
   records,
   taskAnswers,
-} from "./signal-test-kit.ts";
+} from "../../support/signals/signal-test-kit.ts";
 
 const ISSUE = 7;
 const EVENT = 9001;

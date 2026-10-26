@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { PROGRAMS } from "../programs.ts";
+import { PROGRAMS } from "../../programs.ts";
 
-const SOURCE = path.resolve(import.meta.dirname, "..");
+const SOURCE = path.resolve(import.meta.dirname, "../..");
 const DEPENDENCIES = path.resolve(SOURCE, "..", "..", "node_modules");
 const TEST_TIMEOUT_MS = 120_000;
 

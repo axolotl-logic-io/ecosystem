@@ -6,13 +6,13 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
-import { committedPolicy } from "./project-policy-test-kit.ts";
+import { committedPolicy } from "../support/project-policy-test-kit.ts";
 
 // What Land's effect stands on, against a real local origin: the exact
 // remote target read, the R-contains-T check, the trusted Land grant, and
 // the one guarded fast-forward that never overwrites a moved target.
 
-const SOURCE = path.resolve(import.meta.dirname, "..");
+const SOURCE = path.resolve(import.meta.dirname, "../..");
 const ROOT_VARIABLE = "ISSUE_PIPELINE_ROOT";
 const SHA_LENGTH = 40;
 const ABSENT = "3".repeat(SHA_LENGTH);

@@ -7,7 +7,10 @@
     "lint": "biome check --error-on-warnings",
     "typecheck": "tsc -p .",
     "check": "npm run typecheck && npm run lint && npm run build && node --check install.ts && node scripts/check-built.ts",
-    "check:full": "npm run check && node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'"
+    "check:full": "npm run check && node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'",
+    "test:component": "node --test --test-concurrency=2 --test-timeout=180000 'test/component/**/*.test.ts'",
+    "test:component-integration": "node --test --test-concurrency=2 --test-timeout=180000 'test/component-integration/**/*.test.ts'",
+    "test:system": "node --test --test-concurrency=2 --test-timeout=180000 'test/system/**/*.test.ts'"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

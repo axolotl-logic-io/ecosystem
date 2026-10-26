@@ -12,7 +12,7 @@ import { z } from "zod";
 // comments, checked in order, and a proposed record refused before it is
 // written when the next reader would hold on it.
 
-const SOURCE = path.resolve(import.meta.dirname, "..");
+const SOURCE = path.resolve(import.meta.dirname, "../..");
 const LANDING = "lawd-bot";
 const REPO = "owner/repo";
 const SHA_LENGTH = 40;

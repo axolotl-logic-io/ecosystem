@@ -13,7 +13,7 @@ import {
   mentions,
   REPO,
   taskAnswers,
-} from "./signal-test-kit.ts";
+} from "../../support/signals/signal-test-kit.ts";
 
 const ISSUE = 21;
 const EVENT = 8001;

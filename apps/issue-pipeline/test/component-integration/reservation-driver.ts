@@ -7,10 +7,10 @@
 import fs from "node:fs";
 import process from "node:process";
 import { z } from "zod";
-import { loadConfig } from "../src/config.ts";
-import { issueExecution, withExecution } from "../src/execution.ts";
-import type { ReservationHandle } from "../src/runtime/reservations.ts";
-import { reserveModelSession } from "../src/runtime/reservations.ts";
+import { loadConfig } from "../../src/config.ts";
+import { issueExecution, withExecution } from "../../src/execution.ts";
+import type { ReservationHandle } from "../../src/runtime/reservations.ts";
+import { reserveModelSession } from "../../src/runtime/reservations.ts";
 
 const STEP = z.discriminatedUnion("do", [
   z.object({ do: z.literal("reserve"), cap: z.number() }),

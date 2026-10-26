@@ -7,7 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
-import { ACTION_RUN } from "../../src/runtime/observations.ts";
+import { ACTION_RUN } from "../../../src/runtime/observations.ts";
 import type { Machine, PlannedSession } from "./buddy-flow-test-kit.ts";
 import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 

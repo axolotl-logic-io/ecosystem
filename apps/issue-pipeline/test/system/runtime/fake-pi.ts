@@ -16,8 +16,8 @@ import process from "node:process";
 import readline from "node:readline";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
-import { changeWorld } from "../signals/fake-github-test-kit.ts";
-import type { World } from "../signals/fake-github-world.ts";
+import { changeWorld } from "../../support/signals/fake-github-test-kit.ts";
+import type { World } from "../../support/signals/fake-github-world.ts";
 
 const SESSION = z.strictObject({
   commit: z

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";
-import { RECORD } from "../../src/tasks/records.ts";
+import { RECORD } from "../../../src/tasks/records.ts";
 import type { PlannedSession } from "./buddy-flow-test-kit.ts";
 import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 

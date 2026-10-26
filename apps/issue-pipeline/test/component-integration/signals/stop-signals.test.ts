@@ -5,7 +5,7 @@
 // the synchronous guard, answers exactly as stopLatch does.
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { FakeEvent } from "./fake-github-world.ts";
+import type { FakeEvent } from "../../support/signals/fake-github-world.ts";
 import {
   type Harness,
   harness,
@@ -13,7 +13,7 @@ import {
   mentions,
   REPO,
   taskAnswers,
-} from "./signal-test-kit.ts";
+} from "../../support/signals/signal-test-kit.ts";
 
 const ISSUE = 12;
 const FIRST_EVENT = 7001;

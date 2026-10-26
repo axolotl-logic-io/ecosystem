@@ -7,9 +7,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import type { TaskId } from "../../src/domain.ts";
-import type { Result } from "../../src/tasks/records.ts";
-import { RECORD } from "../../src/tasks/records.ts";
+import type { TaskId } from "../../../src/domain.ts";
+import type { Result } from "../../../src/tasks/records.ts";
+import { RECORD } from "../../../src/tasks/records.ts";
 import type { Machine, PlannedSession } from "./buddy-flow-test-kit.ts";
 import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 

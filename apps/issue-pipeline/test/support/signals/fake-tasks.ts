@@ -11,7 +11,7 @@ import type {
   Binding,
   QualifiedSignal,
   TaskView,
-} from "../../src/domain.ts";
+} from "../../../src/domain.ts";
 import { readWorld, type TaskAnswers } from "./fake-github-world.ts";
 
 function answersFor(number: number): TaskAnswers {

@@ -4,7 +4,7 @@
 // reader that can't read memberships, or an unreadable answer, holds.
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { FakeEvent } from "./fake-github-world.ts";
+import type { FakeEvent } from "../../support/signals/fake-github-world.ts";
 import {
   type Harness,
   harness,
@@ -12,7 +12,7 @@ import {
   mentions,
   REPO,
   taskAnswers,
-} from "./signal-test-kit.ts";
+} from "../../support/signals/signal-test-kit.ts";
 
 const ISSUE = 3;
 const EVENT = 4001;

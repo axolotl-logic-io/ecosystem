@@ -4,14 +4,14 @@
 // PATH, as signal-test-kit.ts starts it.
 import process from "node:process";
 import { z } from "zod";
-import { loadConfig } from "../../src/config.ts";
+import { loadConfig } from "../../../src/config.ts";
 import {
   pollSignals,
   requalify,
   requalifyHumanNow,
   stopLatch,
   stopLatchNow,
-} from "../../src/signals/inbox.ts";
+} from "../../../src/signals/inbox.ts";
 
 const REQUEST = z.discriminatedUnion("call", [
   z.strictObject({

@@ -12,7 +12,7 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
-import { LANDING, REPO } from "../signals/signal-test-kit.ts";
+import { LANDING, REPO } from "../../support/signals/signal-test-kit.ts";
 import type {
   ActionRun,
   BuddyChoice,

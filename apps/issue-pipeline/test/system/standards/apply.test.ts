@@ -6,10 +6,10 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
-import { POLICY_VERSION } from "../../src/standards/schema.ts";
-import { committedPolicy } from "../project-policy-test-kit.ts";
+import { POLICY_VERSION } from "../../../src/standards/schema.ts";
+import { committedPolicy } from "../../support/project-policy-test-kit.ts";
 
-const SOURCE = path.resolve(import.meta.dirname, "../..");
+const SOURCE = path.resolve(import.meta.dirname, "../../..");
 const ISSUE = 7;
 const SHA256_WIDTH = 64;
 const PRIVATE_FILE = 0o600;

@@ -12,6 +12,7 @@ import path from "node:path";
 import process from "node:process";
 import { after, test } from "node:test";
 import { z } from "zod";
+import { committedPolicy } from "../support/project-policy-test-kit.ts";
 import type { Store } from "./fake-coordination-gh.ts";
 import {
   newStore,
@@ -19,7 +20,6 @@ import {
   writeFakeGh,
   writeStore,
 } from "./fake-coordination-gh.ts";
-import { committedPolicy } from "./project-policy-test-kit.ts";
 
 const REPO = "o/r";
 const BASE = "main";

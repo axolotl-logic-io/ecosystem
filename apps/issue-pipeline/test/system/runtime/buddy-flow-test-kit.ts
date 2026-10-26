@@ -3,9 +3,9 @@
 // build (buddy.mjs, ops.mjs and the session extensions) and prompt pages,
 // and pi's agent folder the installed agent definitions. The repository is
 // a real local bare origin with a pinned project policy; GitHub is the
-// signal tests' fake GitHub (test/signals/fake-github-test-kit.ts) over one
-// world file, whose git database is that origin; the model is fake-pi.ts, playing the
-// sessions of a plan. Nothing here stands in for the runtime, the tasks,
+// signal tests' fake GitHub (test/support/signals/fake-github-test-kit.ts)
+// over one world file, whose git database is that origin; the model is
+// fake-pi.ts, playing the sessions of a plan. Nothing here stands in for the runtime, the tasks,
 // the ops or the ledger: tests read back what they wrote to the world, the
 // origin and the run observations.
 import { spawn, spawnSync } from "node:child_process";
@@ -17,21 +17,27 @@ import { z } from "zod";
 import {
   ACTION_RUN,
   BUDDY_RUN as BUDDY_RUN_OBSERVATION,
-} from "../../src/runtime/observations.ts";
-import type { PolicyPin } from "../project-policy-test-kit.ts";
-import { committedPolicy } from "../project-policy-test-kit.ts";
-import { startFakeGitHub } from "../signals/fake-github-test-kit.ts";
-import type { FakeIssue, World } from "../signals/fake-github-world.ts";
-import { readWorld, writeWorld } from "../signals/fake-github-world.ts";
+} from "../../../src/runtime/observations.ts";
+import type { PolicyPin } from "../../support/project-policy-test-kit.ts";
+import { committedPolicy } from "../../support/project-policy-test-kit.ts";
+import { startFakeGitHub } from "../../support/signals/fake-github-test-kit.ts";
+import type {
+  FakeIssue,
+  World,
+} from "../../support/signals/fake-github-world.ts";
+import {
+  readWorld,
+  writeWorld,
+} from "../../support/signals/fake-github-world.ts";
 import {
   baseWorld,
   LANDING,
   ORGANIZATION,
   REPO,
-} from "../signals/signal-test-kit.ts";
+} from "../../support/signals/signal-test-kit.ts";
 
-const SOURCE = path.resolve(import.meta.dirname, "../..");
-const FAKE_PI = path.join(SOURCE, "test", "runtime", "fake-pi.ts");
+const SOURCE = path.resolve(import.meta.dirname, "../../..");
+const FAKE_PI = path.join(import.meta.dirname, "fake-pi.ts");
 const DEVELOPER = "lawd-dev";
 const HUMAN = "autumn";
 const EXECUTABLE = 0o755;

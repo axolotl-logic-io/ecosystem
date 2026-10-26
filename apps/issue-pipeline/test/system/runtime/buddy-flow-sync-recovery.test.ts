@@ -8,7 +8,7 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
-import { RECORD } from "../../src/tasks/records.ts";
+import { RECORD } from "../../../src/tasks/records.ts";
 import type { Machine, PlannedSession } from "./buddy-flow-test-kit.ts";
 import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 

@@ -8,7 +8,8 @@ import {
   registerHooks,
 } from "node:module";
 
-const TASKS: string = new URL("../../src/tasks/index.ts", import.meta.url).href;
+const TASKS: string = new URL("../../../src/tasks/index.ts", import.meta.url)
+  .href;
 const FAKE_TASKS: string = new URL("fake-tasks.ts", import.meta.url).href;
 
 registerHooks({
