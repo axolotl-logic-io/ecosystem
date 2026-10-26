@@ -115,7 +115,7 @@ There is no generic restart-at-stage command or automatic continuation operation
 
 At the repository root, `npm run check` runs both apps' fast gates. The pipeline fast gate covers source/test types, Biome, build, installer syntax and every built program's syntax. It runs no pipeline Node tests and cannot prove effect or recovery behavior. The dashboard gate includes its own tests.
 
-`npm run check:full` runs the pipeline fast gate and every `test/**/*.test.ts`, with file concurrency 2 and the original 180000 ms timeout, then the dashboard gate. The old unit suite was removed; new public-entrypoint tests now populate `test/`. Do not describe the suite as empty or restore historical unit tests wholesale.
+`npm run check:full` runs the pipeline fast gate and every `test/**/*.test.ts` under the component, component-integration, system and acceptance folders, with file concurrency 8 and the original 180000 ms timeout, then the dashboard gate. The old unit suite was removed; new public-entrypoint tests now populate `test/`. Do not describe the suite as empty or restore historical unit tests wholesale.
 
 Tests use temporary HOME/pipeline roots, local Git origins and fake GitHub/model processes. They must not touch real credentials, models or production data. Set disposable roots before dynamic source imports. A failed or flaky test blocks acceptance; fix its cause rather than repeating it for a pass.
 
