@@ -1,6 +1,6 @@
 # Project practices
 
-These are the repository's design, type, lint, test and secrets rules. The root [`AGENTS.md`](../AGENTS.md) links here.
+These are the repository's design, type, lint, test and secrets rules. The sections from Design through Secrets are a shared core, kept word for word the same in [ecosystem](https://github.com/axolotl-logic-io/ecosystem/blob/main/docs/project-practices.md) and [project-buddy](https://github.com/axolotl-logic-io/project-buddy/blob/main/docs/project-practices.md); change both together. The sections after them are this repository's own.
 
 ## Design
 
@@ -35,14 +35,14 @@ Follow John Ousterhout's *A Philosophy of Software Design*:
 
 ## Tests
 
-Tests are sorted by the ISTQB (CTFL v4.0) test levels. A test lives in `test/<level>/`, under the path its subject has, so `test/system/runtime/buddy-flow.test.ts` is a system test of the runtime. A helper that more than one level uses lives in `test/support/`. [Writing a test](../apps/issue-pipeline/test/README.md) says what each level fakes, which kit to start from and how to run it.
+Tests are sorted by the ISTQB (CTFL v4.0) test levels. A test lives in `test/<level>/`, under the path its subject has. A helper that more than one level uses lives in `test/support/`; one that a single level uses sits beside its tests.
 
 | Level | Tests | Folder |
 | --- | --- | --- |
 | Component | one component on its own | `component/` |
-| Component integration | components together, or one with a real dependency such as Git, the filesystem or a subprocess | `component-integration/` |
-| System | the whole built program: buddy flows against fake GitHub and fake pi, CLI entrypoints, built artifacts | `system/` |
-| System integration | the program against real GitHub or a real model; opt-in, not in `check:full` | `system-integration/` |
+| Component integration | components together, or one with a real dependency such as a database, a browser, Git, the filesystem or a subprocess | `component-integration/` |
+| System | the whole built program through its entry points, with external services faked | `system/` |
+| System integration | the program against real external services; opt-in, never in the default gates | `system-integration/` |
 | Acceptance | an issue's Gherkin scenarios, one test each, run against the system | `acceptance/` |
 
 - **A flake is a failure**. Fix the cause or the measurement; never rerun until it passes. A passing repeat adds no evidence, and no test may depend on timing.
@@ -58,3 +58,7 @@ Tests are sorted by the ISTQB (CTFL v4.0) test levels. A test lives in `test/<le
 ## Secrets
 
 Never print a `.env*` file. Never copy a secret into code, docs, logs, issues or commits.
+
+## Issue pipeline tests
+
+In `apps/issue-pipeline/`, `test/system/runtime/buddy-flow.test.ts` is a system test of the runtime. System tests run full buddy flows of the built `buddy.mjs` against fake GitHub and fake pi, the public CLI entrypoints and checks on the built and distributed artifacts. `check:full` runs every level except system integration. [Writing a test](../apps/issue-pipeline/test/README.md) says what each level fakes, which kit to start from and how to run it.
