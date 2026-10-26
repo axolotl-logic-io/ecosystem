@@ -111,18 +111,31 @@ const FAULT = z.strictObject({
   link: z.string().nullable(),
 });
 // The task lane's answers, in the subset of the contract's shapes the
-// signal tests use: Implement requirements bindings and no stored results.
+// signal tests use: Author and Implement requirements bindings, revision
+// bindings of the other tasks, and no stored results.
 const WORK_ITEM = z.strictObject({
   repo: z.string(),
   number: z.number().int().positive(),
 });
 const TARGET = z.strictObject({ branch: z.string(), commit: z.string() });
-const BINDING = z.strictObject({
-  workItem: WORK_ITEM,
-  task: z.literal("implement"),
-  target: TARGET,
-  requirements: z.string(),
-});
+const BINDING = z.union([
+  z.strictObject({
+    workItem: WORK_ITEM,
+    task: z.enum(["author", "implement"]),
+    target: TARGET,
+    requirements: z.string(),
+  }),
+  z.strictObject({
+    workItem: WORK_ITEM,
+    task: z.enum(["verify", "fix", "land", "refactor-safely"]),
+    target: TARGET,
+    revision: z.strictObject({
+      code: z.string(),
+      inputs: z.string(),
+      policy: z.string(),
+    }),
+  }),
+]);
 const TASK_ANSWERS = z.strictObject({
   number: z.number().int().positive(),
   view: z.strictObject({

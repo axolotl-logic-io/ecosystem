@@ -273,3 +273,34 @@ test("identical duplicate records merge and conflicting ones hold", () => {
   );
   assert.ok(body.startsWith(MARK));
 });
+
+test("an earlier version's record, or a request its source doesn't make, holds", () => {
+  const kit = startWorld();
+  kit.poll();
+  const body = kit.world().issues[0]?.comments[0]?.body ?? "";
+  for (const forged of [
+    body.replace(`"version":2`, `"version":1`),
+    body.replace(`"task":"implement"`, `"task":"author"`),
+  ]) {
+    assert.notEqual(forged, body);
+    const copy = harness((world) => {
+      const issue = labelledIssue(ISSUE, "bug", "autumn", EVENT);
+      issue.comments.push({
+        id: 600,
+        author: LANDING,
+        body: forged,
+        editor: null,
+        createdAt: "2026-10-25T12:00:00Z",
+      });
+      world.issues.push(issue);
+      world.tasks.push(taskAnswers(ISSUE));
+    });
+    const inbox = copy.poll();
+    assert.deepEqual(inbox.signals, []);
+    assert.match(
+      inbox.holds[0]?.reason ?? "",
+      mentions("signal record 600 is invalid or of an unknown version"),
+    );
+    assert.equal(copy.latchNow(ISSUE).state, "unknown");
+  }
+});
