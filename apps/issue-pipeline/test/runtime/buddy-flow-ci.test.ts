@@ -24,11 +24,7 @@ const IMPLEMENT: PlannedSession = {
 };
 const HARDEN: PlannedSession = {
   ...IMPLEMENT,
-  commit: {
-    file: "counter.txt",
-    content: "3 checked widgets\n",
-    message: "Check widget count",
-  },
+  commit: null,
   reply: { outcome: "done", summary: "Checked widgets." },
 };
 const SECURITY: PlannedSession = {

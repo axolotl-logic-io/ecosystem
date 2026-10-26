@@ -3,11 +3,14 @@
 // The Land's own fast-forward reaches the target but GitHub refuses the
 // post of its passed result, so its attempt stays uncertain and keeps the
 // target's integration turn. The next poll settles that original attempt
-// read-only from the target, under a recovery action of its own, gives back
-// the turn the original took and completes the issue from that Land. The
+// read-only from the target and gives back its turn. Complete closes the
+// issue, loses its own result post and reconciles that original attempt
+// without a second close, preserving the original own-Land proof. The
 // built buddy.mjs runs the real tasks, ops, ledger, push server and Git;
 // only gh (fake-gh.ts) and pi (fake-pi.ts) are fakes.
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { LANDING, REPO } from "../signals/signal-test-kit.ts";
@@ -31,11 +34,7 @@ const IMPLEMENTS: PlannedSession = {
   reply: { outcome: "done", summary: "Counted the widgets." },
 };
 const HARDENS: PlannedSession = {
-  commit: {
-    file: "counter.txt",
-    content: "3 widgets, checked\n",
-    message: "Check the widget count",
-  },
+  commit: null,
   change: null,
   changeFirst: false,
   awaitAbort: false,
@@ -55,10 +54,9 @@ const GATEKEEPER: BuddyChoice = {
   role: "gatekeeper",
   tasks: ["integrate", "review-security", "land", "complete"],
 };
-// Integrate, Review Security, the uncertain Land, its settlement and
-// Complete each begin on a poll of their own; the sixth, with nothing left
-// to begin, stops the run.
-const GATEKEEPER_POLLS = 6;
+// Integrate, Security, uncertain Land and its settlement, then uncertain
+// Complete and its settlement each take one poll. The seventh stops.
+const GATEKEEPER_POLLS = 7;
 // Implement, Harden and Review Security each launch one model session.
 const MODEL_SESSIONS = 3;
 // Only the Land's own passed result carries its authorization digest.
@@ -82,7 +80,7 @@ function onlyOf(outcome: BuddyOutcome, task: string): ActionRun {
   return action;
 }
 
-test("the next poll settles an uncertain own Land read-only and completes from it", async ({
+test("uncertain own Land and Complete settle their original attempts read-only", async ({
   signal,
 }) => {
   const box = machine(undefined, { landPermission: true });
@@ -105,6 +103,7 @@ test("the next poll settles an uncertain own Land read-only and completes from i
     box.change((reported) => {
       reported.checks = { [hardened]: [{ name: "ci", bucket: "pass" }] };
       reported.failPostsContaining = OWN_LAND_RESULT;
+      reported.failPostOnceContaining = '"summary":"completed #';
     });
 
     const gatekeeper = await box.runBuddy(
@@ -159,10 +158,23 @@ test("the next poll settles an uncertain own Land read-only and completes from i
       ],
     );
     assert.deepEqual(reconciler.binding, original.binding);
-    const complete = onlyOf(gatekeeper, "complete");
+    const completes = begunOf(gatekeeper, "complete");
+    const complete = completes.find((action) => action.mode === "act");
+    const completion = completes.find((action) => action.mode === "recover");
+    assert.ok(complete !== undefined && completion !== undefined);
+    assert.equal(completes.length, 2);
     assert.deepEqual(
-      [complete.mode, complete.verdict, complete.binding],
-      ["act", "passed", { ...original.binding, task: "complete" }],
+      [complete.verdict, complete.binding],
+      ["unknown", { ...original.binding, task: "complete" }],
+    );
+    assert.deepEqual(
+      [
+        completion.previous,
+        completion.verdict,
+        completion.binding,
+        completion.operations.map((item) => [item.op, item.outcome]),
+      ],
+      [complete.id, "passed", complete.binding, [["complete-reconcile", "ok"]]],
     );
 
     // The ledger: the original run's uncertain result, then its passed
@@ -208,6 +220,36 @@ test("the next poll settles an uncertain own Land read-only and completes from i
     assert.deepEqual(retirement, { retiredBy: reconciler.id });
     const issue = world.issues.find((item) => item.number === ISSUE);
     assert.deepEqual(issue?.closed, { by: LANDING, reason: "completed" });
+    const ownLand = issue?.comments.find(
+      (comment) =>
+        comment.body.includes(`"reconciledBy":"${reconciler.id}"`) &&
+        comment.body.includes('"kind":"result"'),
+    );
+    assert.ok(ownLand !== undefined);
+    const completionResults = marked(world, "task-result").filter(
+      (record) =>
+        record.kind === "result" &&
+        JSON.stringify(record.run) ===
+          JSON.stringify({ id: complete.id, previous: null }),
+    );
+    assert.deepEqual(
+      completionResults.map((record) => record.verdict),
+      ["unknown", "passed"],
+    );
+    assert.deepEqual(completionResults.at(-1)?.receipt, {
+      summary: `completed #${ISSUE}: ${hardened} is on main`,
+      evidence: {
+        land: ownLand.id,
+        preTarget: { branch: "main", commit: target },
+        reconciledBy: completion.id,
+      },
+    });
+    assert.equal(world.failPostOnceContaining, undefined);
+    const closes = fs
+      .readFileSync(path.join(box.root, "gh.log"), "utf8")
+      .split("\n")
+      .filter((line) => line.includes('"args":["issue","close",'));
+    assert.equal(closes.length, 1);
     passed = true;
   } finally {
     if (passed) {

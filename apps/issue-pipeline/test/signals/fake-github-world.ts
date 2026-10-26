@@ -151,6 +151,7 @@ const WORLD = z.strictObject({
   // POST fails before it applies.
   collaborators: z.array(z.string()).optional(),
   failPostsContaining: z.string().optional(),
+  failPostOnceContaining: z.string().min(1).optional(),
   race: z
     .strictObject({
       after: z.array(z.string()).min(1),

@@ -425,6 +425,12 @@ function post(world: World, args: readonly string[]): void {
   if (issue === null || body === undefined) {
     fail("gh: Not Found (HTTP 404)");
   }
+  const once = world.failPostOnceContaining;
+  if (once !== undefined && body.includes(once)) {
+    Reflect.deleteProperty(world, "failPostOnceContaining");
+    writeWorld(WORLD_FILE, world);
+    fail("gh: HTTP 502: Bad Gateway");
+  }
   const marked = world.failPostsContaining;
   if (
     world.post === "lost-before-apply" ||
