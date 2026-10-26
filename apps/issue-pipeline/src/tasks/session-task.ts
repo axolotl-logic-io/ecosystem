@@ -1,17 +1,18 @@
 // The facts a task's model session is given: its kind, the issue file, the
 // checkout and the exact binding. The behaviour each session follows is the
-// prompt page the runtime loads for its agent and phase (prompts/:
-// developer.md, developer-hardening.md, sync.md, security.md); the kind
-// names that page's section. Its reply's shape is the session's schema.
+// prompt page the runtime loads for its task and phase (prompts/:
+// author.md, developer.md, developer-hardening.md, fix.md, verify.md); the
+// kind names that page's section. Its reply's shape is the session's schema.
 
 import type { ActionContext } from "../domain.ts";
 import { isRevisionBinding } from "../domain.ts";
 import { writeIssueContext } from "../issue-context.ts";
 
 type SessionKind =
+  | "authoring"
   | "development"
   | "hardening"
-  | "conflict-resolution"
+  | "fix"
   | "security-review";
 
 function bullets(items: readonly string[]): string[] {

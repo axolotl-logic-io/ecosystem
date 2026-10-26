@@ -14,6 +14,11 @@ import { run, runFailure, shell } from "./process.ts";
 import { readWriteAuthority } from "./write-authority.ts";
 
 const PUSHED_FILE = "pushed.json";
+const PUSHED = z.looseObject({
+  sha: z.string(),
+  op: z.string(),
+  run: z.string().nullish(),
+});
 const MS_PER_MINUTE = 60_000;
 // The config keys setUpCheckout reads; loadConfig applied their defaults.
 const SETUP_SETTINGS = z.looseObject({
@@ -49,14 +54,41 @@ function ensureClone(cfg: Config): string {
   });
 }
 
-// Records in the issue's run directory that `op` is pushing `sha` as the
-// branch's head, replacing the last record, so a later claim on this machine
-// knows that head as the pipeline's own push.
-function recordPush(cfg: Config, n: number, sha: string, op: string): void {
+// What the issue's last recorded push was: the head, the op that pushed it
+// and the task run it pushed for, when it named one.
+interface PushRecord {
+  sha: string;
+  op: string;
+  run: string | null;
+}
+
+// Records in the issue's run directory that `pushed.op` is pushing
+// `pushed.sha` as the branch's head for task run `pushed.run`, replacing the
+// last record, so a later claim or reconciliation on this machine knows
+// that head as the pipeline's own push.
+function recordPush(cfg: Config, n: number, pushed: PushRecord): void {
   const dir = paths.runDir(cfg, n);
   fs.mkdirSync(dir, { recursive: true });
-  const record = { sha, op, at: new Date().toISOString() };
+  const record = { ...pushed, at: new Date().toISOString() };
   fs.writeFileSync(path.join(dir, PUSHED_FILE), `${JSON.stringify(record)}\n`);
+}
+
+// The issue's last recorded push on this machine, or null when none was
+// recorded or the record can't be read: no record proves no push.
+function lastPush(cfg: Config, n: number): PushRecord | null {
+  const file = path.join(paths.runDir(cfg, n), PUSHED_FILE);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  const record = PUSHED.safeParse(parsed);
+  if (!record.success) {
+    return null;
+  }
+  const { sha, op } = record.data;
+  return { sha, op, run: record.data.run ?? null };
 }
 
 // What the issue's work changes: whether its branch changes files against the
@@ -71,17 +103,22 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
   return { codeChanged: result.code === 1 };
 }
 
-// Pushes the issue's checkout's HEAD to its branch for `op`, recording the
-// push first, with --force-with-lease against the head it last pushed, and
-// returns the head pushed. A refused push throws.
-function pushHead(cfg: Config, n: number, op: string): string {
+// Pushes the issue's checkout's HEAD to its branch for `op` of task run
+// `taskRun`, recording the push first, with --force-with-lease against the head
+// it last pushed, and returns the head pushed. A refused push throws.
+function pushHead(
+  cfg: Config,
+  n: number,
+  op: string,
+  taskRun: string | null = null,
+): string {
   const wt = paths.worktree(cfg, n);
   const headSha = head(wt);
   const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
   if (!readWriteAuthority(cfg, n).codeWritable) {
     throw new OpsError(`#${n}'s code merged; refusing code push`);
   }
-  recordPush(cfg, n, headSha, op);
+  recordPush(cfg, n, { sha: headSha, op, run: taskRun });
   // The push record lets the next claim adopt the head (adopt-push.ts).
   git(
     cfg,
@@ -170,11 +207,12 @@ function setUpCheckout(
   }
 }
 
-export type { BranchChanges, PushResult };
+export type { BranchChanges, PushRecord, PushResult };
 export {
   branchChanges,
   claimSetupStart,
   ensureClone,
+  lastPush,
   push,
   pushHead,
   recordPush,

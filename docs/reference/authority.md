@@ -1,6 +1,6 @@
 # Authority
 
-Authority comes from qualified human controls, trusted buddy configuration, authenticated ownership and exact-bound task evidence. A prompt, historical stage, hidden marker or local process grants none of these. The rules are in [authority decisions](../decisions/authority.md) and the [domain runtime contract](../domain-runtime-contract.md).
+Authority comes from qualified human controls, trusted buddy configuration, authenticated ownership and exact-bound task evidence. A prompt, historical stage, hidden marker or local process grants none of these. The [domain runtime contract](../domain-runtime-contract.md) sets out the interfaces.
 
 ## GitHub accounts
 
@@ -8,12 +8,18 @@ The repository configuration names distinct `devAccount` and `landingAccount` lo
 
 | Operation | Account |
 |---|---|
-| Code commits, issue-branch pushes, Sync pushes and permitted recovery pushes | Development |
-| PR lifecycle and permitted source-branch effects | Development |
+| Code commits, issue-branch pushes, Fix pushes and permitted recovery pushes | Development |
+| Opening the PR, Fix marking it ready, and permitted source-branch effects | Development |
+| Fix's replies on review threads | Development |
 | Authenticated pipeline records, authority reads and issue lifecycle | Landing |
-| The guarded target-branch Land effect | Landing |
+| Verify's PR reviews and their comments | Landing |
+| Land's merge of the PR, its close of the issue, and marking a conflicting PR a draft | Landing |
 
-Neither machine account qualifies as a human producer, even if its name appears in a trusted-input list.
+GitHub doesn't let a PR's author approve or request changes on it. The development account opens and pushes the PR, so Verify's reviews and Land's merge come from the landing account. Only the landing account records attempts and results, for Developer tasks as well as Gatekeeper ones.
+
+Neither machine account qualifies as a human producer, even if its name appears in a trusted-input list. Neither account's PR review is a human review signal.
+
+**Note:** The installed pipeline still lands with a fast-forward push to the base through the landing account. The PR merge, the Verify reviews and Fix are the source's decided design and run only once installed.
 
 `credentialsEnvFile` must be an absolute path to a regular file with no group or other permissions. A privileged call selects one token variable, verifies its login, and supplies only that token as `GH_TOKEN`. Git uses a per-call, non-storing credential helper for the configured repository. The config must name both accounts; there is no single-account mode.
 
@@ -21,9 +27,9 @@ A safe login read can retry transient failures; the operation it guards is not r
 
 ## Human controls
 
-A qualified issue-label application event can request `start:implement` or `agents:stop`. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal do not supply equivalent authority.
+A qualified issue-label application event can request `start:author`, `start:implement`, `start:verify` or `agents:stop`. A qualified person's submitted review on the issue's linked PR is a signal too. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal don't supply equivalent authority.
 
-The accepted start binds the work item's trusted requirements. An authenticated Implement attempt spends those requirements regardless of its result or a later target change. Applying the start label again does not retry it. Unknown or conflicting evidence holds work. See [stops and labels](stops-and-labels.md).
+An accepted Author or Implement start binds the work item's trusted requirements. A Verify start binds the linked PR's head. An authenticated Implement attempt spends its requirements regardless of its result or a later target change. Applying the start label again doesn't retry it. Unknown or conflicting evidence holds work. See [stops and labels](stops-and-labels.md).
 
 Membership-reader capability must be verified for the installed account. A passing fake transport does not establish that capability. Unavailable membership evidence holds; it does not authorize credential changes or a fallback.
 
@@ -53,9 +59,11 @@ Ownership and capacity are distinct. A model-session reservation grants no issue
 
 Task operations reread the trusted buddy authorization, current cause, relevant stop evidence, ownership and task-specific prerequisites at their controlled effects. The authoritative request envelope overrides payload fields.
 
-Source pushes, including `pipeline_commit`, require substantive write authority. A new human stop, loss of qualification, unknown stop evidence, a Security refusal or already-landed work cannot grant another code write. Evidence-only settlement uses a separate, limited recording authorization; it does not hide a substantive mutation.
+The cause is checked by task. Author and Implement need a qualified human start. Every other task's cause is either an authenticated result record, `result:N`, or an accepted human signal that still qualifies when the operation rereads it.
 
-Land additionally needs explicit trusted permission, exact-bound Harden/Integrate/independent Security, current required CI, an immutable strict-descendant candidate and an exact old-object lease. Complete preserves the item's original own-Land proof; observing someone else's merge cannot manufacture it. See [Land and Complete](merge.md).
+Source pushes, including `pipeline_commit`, require substantive write authority. A new human stop, loss of qualification, unknown stop evidence or work a Land may already have delivered can't grant another code write. A Land that is unsettled or passed fences code writes, because its merge may be on the base. A Land that settled without merging, such as one that found a conflict and marked the PR a draft, leaves code writable for Fix. Evidence-only settlement uses a separate, limited recording authorization; it doesn't hide a substantive mutation.
+
+Land additionally needs explicit trusted permission, an approval standing on the exact head, no standing request for changes, a head that contains the base, and green required CI on that head. Its merge passes the checked head, so GitHub refuses it if the head moved. See [Land](merge.md).
 
 ## Trusted inputs and sessions
 
@@ -68,7 +76,7 @@ A session receives only its task/profile permissions. Its name and prompt are no
 1. Hold new actions for the affected work item.
 2. Preserve its authenticated history, action observations, uncertainty journals, checkouts, tracked and untracked work, patches and bundles.
 3. Identify the failed evidence: credentials, human qualification, provenance, binding, ownership, reservation or an uncertain effect.
-4. Reconcile the original attempt through its permitted read-only observations. Do not repeat a push, rebase, close or checkpoint to discover whether it succeeded.
+4. Reconcile the original attempt through its permitted read-only observations. Do not repeat a push, merge, review, close or checkpoint to discover whether it succeeded.
 5. Resume only a defined, newly authorized path. Clearing a local barrier, fixing a credential read or removing a label does not unspend a start or authorize continuation.
 
 Source delivery does not authorize installation, activation, credential changes, unrelated interruption or work discard.

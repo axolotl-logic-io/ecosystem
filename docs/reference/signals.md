@@ -1,8 +1,8 @@
 # Signals
 
-A signal is qualified evidence that a buddy may act on a work item. The signal component in `apps/issue-pipeline/src/signals/` reads control labels on issues, accepts qualified label events as records, and delivers three kinds of signal: a start, a stop and a machine result. This page describes how it behaves. The rules come from the [domain runtime contract](../domain-runtime-contract.md#signals) and the decisions in [authority](../decisions/authority.md) and [buddies and tasks](../decisions/buddies-and-tasks.md).
+A signal is qualified evidence that a buddy may act on a work item. The signal component in `apps/issue-pipeline/src/signals/` reads control labels on issues, accepts qualified label events as records, and delivers signals of four kinds: a start, a human PR review, a stop and a machine result. This page describes how it behaves. The rules come from the [domain runtime contract](../domain-runtime-contract.md#signals).
 
-**Note:** The component isn't integrated yet. It imports `src/domain.ts` and `src/tasks/index.ts` from the tasks lane, and nothing calls it until the buddy runtime does.
+**Note:** The installed pipeline accepts only `start:implement` and `agents:stop` until this source is installed.
 
 ## Public API
 
@@ -21,12 +21,14 @@ The synchronous forms run the same code as the asynchronous ones. There is one s
 
 ## Control labels
 
-Two issue labels are control labels:
+The component reads four issue labels as control labels:
 
+- `start:author` requests Author for the issue's current requirements.
 - `start:implement` requests Implement for the issue's current requirements.
+- `start:verify` requests Verify for the current head of the issue's linked PR.
 - `agents:stop` stops all work on the issue.
 
-A label on a pull request grants nothing. A start label doesn't request Author or Safe Refactor.
+A label on a pull request grants nothing. No label requests Safe Refactor, Fix or Land.
 
 To accept a label for the first time, the component needs both of these:
 
@@ -76,7 +78,7 @@ To accept a label event, the landing account appends a hidden issue comment. It 
 
 ```
 <!-- agent-pipeline:signal
-{"version":1,"kind":"accepted","id":"github-label:o/r#7:9001",...}
+{"version":2,"kind":"accepted","id":"github-label:o/r#7:9001",...}
 -->
 ```
 
@@ -84,12 +86,20 @@ The record holds these fields:
 
 | Field | Meaning |
 |---|---|
-| `id` | `github-label:REPO#NUMBER:EVENT_ID`, where `EVENT_ID` is the label event's id. One event can never gain a second record or binding. |
+| `version` | `2`. A record of an earlier version holds its issue as invalid or of an unknown version. |
+| `id` | `github-label:REPO#NUMBER:EVENT_ID` for a label event, or `github-review:REPO#NUMBER:REVIEW_ID` for a PR review. One event or review can never gain a second record or binding. |
 | `workItem` | The repository and issue number. |
-| `source` | The label and its event's id, node id and time. |
+| `source` | For a label, the label and its event's id, node id and time. For a review, the PR and the review's id and submission time. |
 | `producer` | `{ route: "human", login, userId, organization }` at acceptance. |
-| `request` | `start` with `task: "implement"`, the requirements digest and the target, or `stop`. |
+| `request` | What the source asks for, as the table below shows. |
 | `acceptedBy` | The buddy run that appended the record. |
+
+| Source | Request |
+|---|---|
+| `start:author` or `start:implement` | `start` with the task, the requirements digest and the target, read at acceptance |
+| `start:verify` | `start` with `task: "verify"`, the linked PR, its `head` commit and the target, read at acceptance |
+| A PR review | `review` with GitHub's review id, the PR, the `commit` it was submitted against and its `state` |
+| `agents:stop` | `stop` |
 
 The component finds records by reading every page of the repository's issue comments, not by label. Removing a label doesn't hide an accepted start or stop.
 
@@ -104,12 +114,25 @@ The component appends through the coordination journal's `confirmedWrite` and th
 A poll delivers an accepted start only when all of these hold:
 
 - No accepted stop exists on the issue.
-- No Implement attempt names the start's id as its cause. Any such attempt spends the start, whatever its verdict and even if the target moved.
-- No Implement attempt exists for the same requirements. Otherwise the start is inert.
-- `previousAction` reports no action for the exact binding.
+- No attempt of the start's task names the start's id as its cause. Any such attempt spends the start, whatever its verdict and even if the target moved.
+- For Author and Implement, no attempt of that task exists for the same requirements, and `previousAction` reports no action for the exact binding. Otherwise the start is inert.
 - The producer still qualifies, by retained user id.
 
-A new start event for requirements that Implement already attempted isn't accepted. It holds with "retrying requirements Implement already attempted is unsupported". No label or operation continues or retries work.
+A new Author or Implement start event for requirements that task already attempted isn't accepted. It holds with "retrying requirements Implement already attempted is unsupported", naming the task. No label or operation continues or retries work. Implement doesn't wait for Author.
+
+A `start:verify` binds the head of the issue's linked PR when the start is accepted. The linked PR comes from the issue's branch. With no linked PR, or a PR that isn't open, the start holds and nothing is recorded. A later push doesn't rewrite the accepted head; Verify's task decides whether that head is still current, and waits for a new start when it isn't. Verify starts have no retry gate in the component, because Verify binds a revision that the component can't compute.
+
+## Reviews
+
+For every polled issue that isn't stopped, the component reads the issue's linked PR and its reviews. It accepts a review only while it stands: it is the reviewer's latest `APPROVED` or `CHANGES_REQUESTED` review on its commit, not dismissed and not followed by a later one from the same reviewer. A superseded review is never recorded.
+
+The reviewer must qualify the same way a label's producer does. A machine account, a non-member or a pending invitee grants nothing and adds no hold, because anyone can review a PR and a hold would block the issue indefinitely. An unknown qualification or an unreadable review listing holds the issue and makes the poll incomplete. Neither pipeline account's review is a signal: the landing account's reviews are Verify's results, and the development account authored the PR.
+
+A poll delivers an accepted review only while it still stands, checked against a fresh listing, and while its reviewer still qualifies. A stop revokes reviews as it revokes starts, and the component doesn't deliver them while the issue's execution is owned.
+
+A review grants nothing on its own. A `CHANGES_REQUESTED` review on the current head wakes Fix, and an `APPROVED` one counts toward Land, as the [stops and labels reference](stops-and-labels.md#human-reviews) describes. Whether a review binds the current head is the task's decision, not the component's.
+
+Reviews are found only on issues that the component already polls: issues with a control label or an accepted record. Every issue the pipeline delivers gets a record when its start is accepted.
 
 ## Stops
 
@@ -129,7 +152,8 @@ An unknown latch is never clear.
 
 `requalify` and `requalifyHumanNow` reread the issue's authenticated records. They don't trust the caller's copy of the signal. The record named by `recordId` must accept exactly the given id, and for `requalify`, exactly the given signal. Then:
 
-- A start on a stopped issue is revoked.
+- A start or review on a stopped issue is revoked.
+- A review that no longer stands, because it was dismissed or followed by the same reviewer's later review, is revoked.
 - The record's retained producer must still be an active member, checked by user id. A login that now belongs to someone else doesn't qualify.
 - The label doesn't need to remain.
 
@@ -139,4 +163,4 @@ For a machine result, `requalify` checks that the task lane's `machineSignals` s
 
 ## Tests
 
-The tests in `apps/issue-pipeline/test/signals/` run the inbox in a driver subprocess. A fake `gh` on `PATH` answers from a world file, and the real journal writes to a temporary pipeline root. A test-only resolve hook, `fake-tasks-hook.ts`, replaces `src/tasks/index.ts` with canned task answers. These tests prove the component's transport and rules, not integration with the real task lane.
+The tests in `apps/issue-pipeline/test/component-integration/signals/` run the inbox in a driver subprocess. A fake `gh` on `PATH` forwards each call to a fake GitHub server that holds a world file, and the real journal writes to a temporary pipeline root. A test-only resolve hook, `fake-tasks-hook.ts`, replaces `src/tasks/index.ts` with canned task answers. These tests prove the component's transport and rules, not integration with the real task lane.

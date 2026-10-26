@@ -1,14 +1,14 @@
 // The shell supervisor, `node shell-supervisor.mjs <request JSON>`, which
-// `shell` (process.ts) runs for each command (commands-leave-no-processes,
-// #371). It runs the request's command as `bash -lc` in a process group and
-// session of its own. The command ends when bash exits, when its time runs
-// out, or when this process gets SIGTERM, SIGINT or SIGHUP, as it does when
-// its op is stopped. Then every process left in the command's group gets
-// SIGTERM and, after SHELL_KILL_GRACE_MS, SIGKILL. Once the group is empty,
-// the supervisor stops reading any pipe a process outside it still holds,
-// prints its report (shell-protocol.ts) as JSON on stdout and exits 0. A bad
-// request exits 2 with the reason on stderr and no report. It ignores write
-// errors on its outputs, since its parent may already be gone.
+// `shell` (process.ts) runs for each command (#371). It runs the request's
+// command as `bash -lc` in a process group and session of its own. The
+// command ends when bash exits, when its time runs out, or when this process
+// gets SIGTERM, SIGINT or SIGHUP, as it does when its op is stopped. Then
+// every process left in the command's group gets SIGTERM and, after
+// SHELL_KILL_GRACE_MS, SIGKILL. Once the group is empty, the supervisor stops
+// reading any pipe a process outside it still holds, prints its report
+// (shell-protocol.ts) as JSON on stdout and exits 0. A bad request exits 2
+// with the reason on stderr and no report. It ignores write errors on its
+// outputs, since its parent may already be gone.
 
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";

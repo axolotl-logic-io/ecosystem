@@ -1,9 +1,9 @@
-// What a failed credentialed write proves (#169, `observation-sources`). A
-// write is refused only when the system it targets answered no: GitHub with
-// a 4xx status other than a timeout or rate limit, or a Git remote that
-// rejected the ref. Nothing changed, so its journaled intent can be cleared.
-// Every other failure, such as a 5xx, a dropped connection or a timeout, may
-// hide a write that landed, so its result is unknown.
+// What a failed credentialed write proves (#169). A write is refused only
+// when the system it targets answered no: GitHub with a 4xx status other than
+// a timeout or rate limit, or a Git remote that rejected the ref. Nothing
+// changed, so its journaled intent can be cleared. Every other failure, such
+// as a 5xx, a dropped connection or a timeout, may hide a write that landed,
+// so its result is unknown.
 
 import type { RunResult } from "./process.ts";
 

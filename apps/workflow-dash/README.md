@@ -2,7 +2,7 @@
 
 An opt-in, read-only Pi extension. `/dash` shows the buddy runtime's buddy-run and action-run observations, GitHub items and generic subagent runs. It composes editable requests to the caller, not direct control operations. It is not a scheduler.
 
-The [shared glossary](../../GLOSSARY.md) and [buddy and task decisions](../../docs/decisions/buddies-and-tasks.md) define the language. A buddy pairs a role with an identity. A buddy run is one activation of the action loops of all the buddy's tasks; it is not one task execution or one model session. Each action that a buddy run admits for one task and work item is an action run. A model session has its own id and names its action run as its parent; session, run and checkpoint identities are not interchangeable.
+The [shared glossary](../../GLOSSARY.md) defines the language. A buddy pairs a role with an identity. A buddy run is one activation of the action loops of all the buddy's tasks; it is not one task execution or one model session. Each action that a buddy run admits for one task and work item is an action run. A model session has its own id and names its action run as its parent; session, run and checkpoint identities are not interchangeable.
 
 ## Source and activation
 
@@ -115,4 +115,4 @@ npm run lint --workspace @ecosystem/workflow-dash
 
 The equivalent mise tasks are `//apps/workflow-dash:typecheck`, `:test`, `:lint` and `:check`. `check` includes all three gates. The root design and type rules apply, with the same narrow Node process-boundary and Pi default-export exceptions used by the pipeline. The full app gate passes without suppressing inherited lint debt.
 
-Tests go through a real dependency: temporary files, the runtime's configuration file and watchers, or the extension entrypoint with a fake Pi host. They never activate a live extension or call a real model. Unit tests aren't written ([`no-unit-tests`](../../docs/decisions/code-and-tests.md#no-unit-tests)). The [preserved pre-import report](docs/history/local-dash-report.md) is historical, not current acceptance evidence. Its terminal captures remain in the original directory and are not imported. The [import validation report](REPORT.md) records the 2026-10-22 import's checks; it predates the buddy-run and action-run views.
+Tests go through a real dependency: temporary files, the runtime's configuration file and watchers, or the extension entrypoint with a fake Pi host. They never activate a live extension or call a real model. The [preserved pre-import report](docs/history/local-dash-report.md) is historical, not current acceptance evidence. Its terminal captures remain in the original directory and are not imported. The [import validation report](REPORT.md) records the 2026-10-22 import's checks; it predates the buddy-run and action-run views.

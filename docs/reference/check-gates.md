@@ -32,14 +32,14 @@ npm run check:full
 It runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, and last the dashboard's `check`:
 
 ```bash
-node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'
+node --test --test-concurrency=8 --test-timeout=180000 'test/{component,component-integration,system,acceptance}/**/*.test.ts'
 ```
 
 `mise //apps/issue-pipeline:check:full` runs only the pipeline's part.
 
-The suite isn't empty. `test/` holds integration and flow tests for buddy runs, task delivery, setup and resource release, stops, Sync, signals, the task ledger, Land's Git effects, project policy, model-session reservations, the distribution and standards upgrade. They run real files, subprocesses and Git in temporary HOME and pipeline roots, against local Git origins; the buddy-flow tests run the built `buddy.mjs`. GitHub and the model are fake processes. A new `test/**/*.test.ts` file runs with no change to the scripts.
+The suite isn't empty. `test/` holds component, component-integration and system tests, one folder per level, for buddy runs, task delivery, setup and resource release, stops, Author, Implement's hardening, Verify, Fix, Land's merge and its recovery, signals, the task ledger, project policy, model-session reservations, the distribution and standards upgrade. `npm run test:<level>` in `apps/issue-pipeline/` runs one level. They run real files, subprocesses and Git in temporary HOME and pipeline roots, against local Git origins; the buddy-flow tests run the built `buddy.mjs`. GitHub and the model are fake processes. A new `test/**/*.test.ts` file runs with no change to the scripts.
 
-File concurrency stays at 2 and the per-test timeout at 180000 ms. Fix or remove a slow test rather than raise its deadline or move its work into a hook. A failure or flake blocks acceptance; fix its cause instead of rerunning for a pass.
+File concurrency stays at 8. `test/system-integration/` stays out, since it needs real credentials; run it with `npm run test:system-integration`. The per-test timeout stays at 180000 ms. Fix or remove a slow test rather than raise its deadline or move its work into a hook. A failure or flake blocks acceptance; fix its cause instead of rerunning for a pass.
 
 ## Gate selection
 

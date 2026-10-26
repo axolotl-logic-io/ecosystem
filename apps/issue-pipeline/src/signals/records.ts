@@ -1,20 +1,28 @@
-// Accepted-signal records. Each accepted label signal is one append-only
-// hidden comment on its issue, written once by the landing account and never
-// edited (`authenticated-authority-records`, `state-comment-on-the-issue`).
-// It retains the label event, the producer's login, durable user id and
-// organization, and for a start the requirements binding it requested, so
-// later checks never depend on the label remaining. Readers trust only
-// landing-authored, never-edited comments whose author and editor come from
-// one verified read. A forged, edited, malformed or conflicting record
-// holds; an incomplete listing is unknown, never "no records".
+// Accepted-signal records. Each accepted human signal, a control label's
+// event or a person's submitted PR review, is one append-only hidden comment
+// on its issue, written once by the landing account and never edited. It
+// retains its source, the producer's login, durable user id and organization,
+// and what it requests: a start's binding read at acceptance, or the review's
+// PR, commit and state. So later checks never depend on the label remaining.
+// Readers trust only landing-authored, never-edited comments whose author and
+// editor come from one verified read. A forged, edited, malformed or
+// conflicting record holds, as does a record of an earlier version; an
+// incomplete listing is unknown, never "no records".
 import { z } from "zod";
 import { currentComments } from "../comment-authority.ts";
 import { COMMENT, type IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { wire } from "../discovery/wire.ts";
-import type { QualifiedSignal, WorkItemRef } from "../domain.ts";
+import {
+  PR_REVIEW,
+  type QualifiedSignal,
+  REQUIREMENTS,
+  SHA,
+  TARGET_STATE,
+  type WorkItemRef,
+} from "../domain.ts";
 import { errorText, type Observation, observeAll } from "./github-source.ts";
-import { CONTROL_LABELS } from "./label-evidence.ts";
+import { CONTROL_LABELS, START_LABELS } from "./label-evidence.ts";
 import { GITHUB_LOGIN } from "./qualification.ts";
 
 const MARK = "<!-- agent-pipeline:signal\n";
@@ -23,45 +31,80 @@ const MARK_END_PATTERN = /-->/gu;
 const ESCAPED_MARK_END = "--\\u003e";
 const ISSUE_URL = /\/issues\/(?<number>\d+)$/u;
 const POSITIVE = z.number().int().positive();
-const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
+const LABEL_SOURCE = z.strictObject({
+  kind: z.literal("github-label"),
+  label: z.enum(CONTROL_LABELS),
+  event: z.strictObject({
+    id: POSITIVE,
+    nodeId: z.string().min(1),
+    createdAt: z.iso.datetime(),
+  }),
+});
+// A person's submitted review of the issue's linked PR.
+const REVIEW_SOURCE = z.strictObject({
+  kind: z.literal("github-review"),
+  pr: POSITIVE,
+  review: z.strictObject({ id: POSITIVE, submittedAt: z.iso.datetime() }),
+});
+const REQUEST = z.union([
+  // Author or Implement for the requirements and target read at acceptance.
+  z.strictObject({
+    kind: z.literal("start"),
+    task: z.enum(["author", "implement"]),
+    requirements: REQUIREMENTS,
+    target: TARGET_STATE,
+  }),
+  // Verify for the linked PR's head read at acceptance.
+  z.strictObject({
+    kind: z.literal("start"),
+    task: z.literal("verify"),
+    pr: POSITIVE,
+    head: SHA,
+    target: TARGET_STATE,
+  }),
+  z.strictObject({ kind: z.literal("review"), review: PR_REVIEW }),
+  z.strictObject({ kind: z.literal("stop") }),
+]);
+
+type Source = z.infer<typeof LABEL_SOURCE> | z.infer<typeof REVIEW_SOURCE>;
+type Request = z.infer<typeof REQUEST>;
+
+// Whether `request` is the one its source makes: a start label its task, the
+// stop label a stop, and a review exactly that review of that PR.
+function makes(source: Source, request: Request): boolean {
+  if (source.kind === "github-review") {
+    return (
+      request.kind === "review" &&
+      request.review.id === source.review.id &&
+      request.review.pr === source.pr
+    );
+  }
+  const task = START_LABELS.get(source.label);
+  if (task === undefined) {
+    return request.kind === "stop";
+  }
+  return request.kind === "start" && request.task === task;
+}
 
 const RECORD = z
   .strictObject({
-    version: z.literal(1),
+    version: z.literal(2),
     kind: z.literal("accepted"),
     id: z.string().min(1),
     workItem: z.strictObject({ repo: z.string().min(1), number: POSITIVE }),
-    source: z.strictObject({
-      kind: z.literal("github-label"),
-      label: z.enum(CONTROL_LABELS),
-      event: z.strictObject({
-        id: POSITIVE,
-        nodeId: z.string().min(1),
-        createdAt: z.iso.datetime(),
-      }),
-    }),
+    source: z.discriminatedUnion("kind", [LABEL_SOURCE, REVIEW_SOURCE]),
     producer: z.strictObject({
       route: z.literal("human"),
       login: z.string().regex(GITHUB_LOGIN),
       userId: POSITIVE,
       organization: z.string().regex(GITHUB_LOGIN),
     }),
-    request: z.discriminatedUnion("kind", [
-      z.strictObject({
-        kind: z.literal("start"),
-        task: z.literal("implement"),
-        requirements: z.string().min(1),
-        target: z.strictObject({ branch: z.string().min(1), commit: SHA }),
-      }),
-      z.strictObject({ kind: z.literal("stop") }),
-    ]),
+    request: REQUEST,
     acceptedBy: z.strictObject({ buddyRun: z.uuid() }),
   })
   .refine(
-    (record) =>
-      (record.request.kind === "start") ===
-      (record.source.label === "start:implement"),
-    "the request must be the one its label makes",
+    (record) => makes(record.source, record.request),
+    "the request must be the one its source makes",
   );
 const MARKED_COMMENT = wire(
   z.looseObject({
@@ -88,6 +131,20 @@ type IssueRecords =
 // The stable id of the signal a label event produces on a work item.
 function signalId(workItem: WorkItemRef, eventId: number): string {
   return `github-label:${workItem.repo}#${workItem.number}:${eventId}`;
+}
+
+// The stable id of the signal a submitted PR review produces on a work item.
+function reviewSignalId(workItem: WorkItemRef, reviewId: number): string {
+  return `github-review:${workItem.repo}#${workItem.number}:${reviewId}`;
+}
+
+// The id the signal of `record`'s source must carry.
+function sourceId(record: AcceptedRecord): string {
+  const { source, workItem } = record;
+  if (source.kind === "github-review") {
+    return reviewSignalId(workItem, source.review.id);
+  }
+  return signalId(workItem, source.event.id);
 }
 
 // `value` as JSON with every object's keys sorted, for comparing content.
@@ -155,7 +212,7 @@ function rowOf(
   if (record.workItem.repo !== cfg.repo || record.workItem.number !== number) {
     return `signal record ${item.id} names another work item`;
   }
-  if (record.id !== signalId(record.workItem, record.source.event.id)) {
+  if (record.id !== sourceId(record)) {
     return `signal record ${item.id} carries a mismatched signal id`;
   }
   return { record, recordId: item.id };
@@ -262,20 +319,39 @@ function markedIssues(cfg: Config): Observation<number[]> {
 
 function signalOf(row: AcceptedRow): QualifiedSignal {
   const { record, recordId } = row;
-  const { workItem, producer: provenance, request } = record;
-  if (request.kind === "start") {
+  const { id, workItem, producer: provenance, request } = record;
+  if (request.kind === "stop") {
+    return { kind: "stop", id, workItem, provenance, recordId };
+  }
+  if (request.kind === "review") {
+    const { review } = request;
+    return { kind: "review", id, workItem, review, provenance, recordId };
+  }
+  if (request.task === "verify") {
+    const { task, pr, head, target } = request;
     return {
       kind: "start",
-      id: record.id,
+      id,
       workItem,
-      task: request.task,
-      requirements: request.requirements,
-      target: request.target,
+      task,
+      pr,
+      head,
+      target,
       provenance,
       recordId,
     };
   }
-  return { kind: "stop", id: record.id, workItem, provenance, recordId };
+  const { task, requirements, target } = request;
+  return {
+    kind: "start",
+    id,
+    workItem,
+    task,
+    requirements,
+    target,
+    provenance,
+    recordId,
+  };
 }
 
 export type { AcceptedRecord, AcceptedRow, IssueRecords };
@@ -285,6 +361,7 @@ export {
   markedIssues,
   RECORD,
   recordBody,
+  reviewSignalId,
   sameAction,
   signalId,
   signalOf,

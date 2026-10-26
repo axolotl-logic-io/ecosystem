@@ -36,11 +36,13 @@ interface JobCheckout {
 // The trusted buddy authorization an ops request runs under, once
 // src/runtime/buddy-config.ts's bindBuddyAuthorization validated it: the
 // buddy file and the repository config it was matched against, the buddy
-// run and task, and the authorization digest, which is the action's own and
-// never part of the shared checking policy. Internal, never loaded from JSON.
+// run and task, the organization whose active members qualify as people,
+// and the authorization digest, which is the action's own and never part
+// of the shared checking policy. Internal, never loaded from JSON.
 interface BuddyAuthorization {
   config: string;
   repository: string;
+  organization: string;
   run: string;
   task: string;
   digest: string;

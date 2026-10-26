@@ -1,21 +1,28 @@
 # Sessions
 
-A session is one model invocation inside an action. It is not a task, a buddy, an account or a workflow stage. Tasks choose their session specifications; the runtime owns credential isolation, launch records, interruption and guarded commit requests. See [session decisions](../decisions/sessions.md) and the [domain runtime contract](../domain-runtime-contract.md).
+A session is one model invocation inside an action. It is not a task, a buddy, an account or a workflow stage. Tasks choose their session specifications; the runtime owns credential isolation, launch records, interruption and guarded commit requests. See the [domain runtime contract](../domain-runtime-contract.md).
 
 ## Task sessions
 
-| Task | Model agent | Phase | Commits | Installed prompt |
+Each delivery task picks its sessions from this table. The runtime selects the prompt page by the task and the session's phase.
+
+| Task | Model agent | Phase | Commits code | Prompt page |
 |---|---|---|---|---|
-| Implement | `issue-pipeline-developer` | None | Yes | `developer.md` |
-| Harden | `issue-pipeline-developer` | `hardening` | Yes | `developer-hardening.md` |
-| Sync, for one text conflict | `issue-pipeline-developer` | `sync` | Yes | `sync.md` |
-| Review Security | `issue-pipeline-reviewer` | `security-review` | No | `security.md` |
+| Author | `issue-pipeline-author` | None | No; it writes requirements | `author.md` |
+| Implement, writing | `issue-pipeline-developer` | None | Yes | `developer.md` |
+| Implement, hardening | `issue-pipeline-developer` | `hardening` | Yes | `developer-hardening.md` |
+| Verify, review with its Security | `issue-pipeline-reviewer` | `security-review` | No | `verify.md` |
+| Fix | `issue-pipeline-developer` | `fix` | Yes | `fix.md` |
 
-Integrate runs deterministic checks without a model. Land and Complete do not start a model. Harden belongs to the Developer buddy; the independent Security session belongs to the Gatekeeper. A model name or agent prompt grants neither role nor account authority.
+Land starts no model. Verify's full checks and required CI are deterministic; one read-only session reviews the head's diff, its Security included, and its findings become the review. A model name or agent prompt grants neither role nor account authority.
 
-A qualified `start:implement` event requests Implement only. Author is registered but has no supported activation signal; neither `--stage author` nor the old caller is an entrypoint. Safe Refactor uses its [standalone tool](safe-refactor.md), whose reports grant no Harden, Security or Land result.
+**Note:** These are the source's sessions for the five delivery tasks. The installed pipeline still runs the older Harden, Sync and Review Security sessions until this source is installed.
 
-Implement reads the trusted issue title, body and qualified collaborator comments. It needs no substitute Gherkin document and does not synchronize the base or own final verification. A changed requirement needs a newly accepted start; ending a session does not grant a retry.
+Implement's hardening runs in a fresh session that doesn't read the writing session's conversation. Implement records its result only after the hardening session ends.
+
+A qualified `start:author` requests Author, and `start:implement` requests Implement. Implement doesn't wait for an unsettled Author. Safe Refactor uses its [standalone tool](safe-refactor.md), whose reports grant no Verify or Land result.
+
+Implement reads the trusted issue title, body and qualified collaborator comments. It needs no substitute Gherkin document, doesn't merge the base and doesn't own final verification. A changed requirement needs a newly accepted start; ending a session doesn't grant a retry.
 
 ## Prompts and provenance
 
@@ -31,13 +38,13 @@ Sessions read the target's `AGENTS.md`, trusted requirements and relevant docume
 
 The runtime strips configured account-token variables and inherited commit scope from model environments. Credentialed GitHub and push operations remain in controlled processes outside the model. Configured network-host lists are declarations, not an enforced network sandbox; do not treat them as proof that arbitrary network access is blocked.
 
-Writers change only their granted checkout scope. Security is read-only. No session may deploy, push a target branch, retrieve secrets, expose credentials or leave unregistered background work. Delivery to a configured base is not a production release.
+Writers change only their granted checkout scope. Verify's Security session is read-only. No session may deploy, push a target branch, retrieve secrets, expose credentials or leave unregistered background work. Delivery to a configured base is not a production release.
 
 A qualified stop or unreadable stop evidence cooperatively interrupts the affected local work item. Unknown evidence creates no authenticated human stop and grants no continuation when readability returns. In-flight credentialed writes are not killed or replayed. Retained checkout and resource obligations survive the model's exit.
 
 ## `pipeline_commit`
 
-Writers commit through `pipeline_commit`, not by running Git commit or push themselves. A Sync resolver stages resolved files and returns control to its finish operation; it does not continue or publish the rebase.
+Writers commit through `pipeline_commit`, not by running Git commit or push themselves. When Fix's merge of the base stops on a conflict, its session stages the resolved files and returns control to Fix's finish operation. The session doesn't conclude or publish the merge.
 
 The tool accepts Git commit arguments, for example:
 

@@ -1,8 +1,7 @@
-// The two opt-in tasks, which no signal activates: Author and Safe
-// Refactor. A start requests only Implement, so both always wait, and
-// neither manufactures authority for itself. Safe Refactor's standalone
-// tool (safe-refactor.mjs) still delivers its reports, which grant no
-// pipeline result.
+// The opt-in task no signal activates: Safe Refactor. It always waits and
+// never manufactures authority for itself. Its standalone tool
+// (safe-refactor.mjs) still delivers its reports, which grant no pipeline
+// result.
 
 import type {
   ActionEnd,
@@ -12,39 +11,17 @@ import type {
 } from "../domain.ts";
 import type { TaskModule } from "./module.ts";
 import { ended } from "./module.ts";
+import { sameItem } from "./sensing.ts";
 
 const SAFE_REFACTOR_REFUSAL =
   "use safe-refactor.mjs; standalone reports grant no pipeline result";
-const AUTHOR_REFUSAL =
-  "Author has no activation signal; a start requests only Implement";
 
-function waitsFor(reason: string) {
-  return (signal: QualifiedSignal, view: TaskView): Readiness | null => {
-    if (
-      signal.workItem.repo.toLowerCase() !== view.workItem.repo.toLowerCase() ||
-      signal.workItem.number !== view.workItem.number
-    ) {
-      return null;
-    }
-    return { state: "waiting", reason };
-  };
+function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
+  if (!sameItem(signal, view)) {
+    return null;
+  }
+  return { state: "waiting", reason: SAFE_REFACTOR_REFUSAL };
 }
-
-const author: TaskModule = {
-  definition: {
-    id: "author",
-    role: "developer",
-    access: "writer",
-    sensors: [],
-    resources: ["model-session"],
-    match: waitsFor(AUTHOR_REFUSAL),
-    act: (): Promise<ActionEnd> =>
-      Promise.resolve(ended("refused", AUTHOR_REFUSAL)),
-  },
-  prerequisite: () => AUTHOR_REFUSAL,
-  ownsResult: false,
-  writesCode: false,
-};
 
 const refactorSafely: TaskModule = {
   definition: {
@@ -53,7 +30,7 @@ const refactorSafely: TaskModule = {
     access: "writer",
     sensors: [],
     resources: ["model-session"],
-    match: waitsFor(SAFE_REFACTOR_REFUSAL),
+    match,
     act: (): Promise<ActionEnd> =>
       Promise.resolve(ended("refused", SAFE_REFACTOR_REFUSAL)),
   },
@@ -62,4 +39,4 @@ const refactorSafely: TaskModule = {
   writesCode: false,
 };
 
-export { author, refactorSafely, SAFE_REFACTOR_REFUSAL };
+export { refactorSafely, SAFE_REFACTOR_REFUSAL };

@@ -1,7 +1,7 @@
-// The issue as its agents read it: issue.md in the run dir holds the issue and
-// the comments of the pipeline and of allowed users only (Autumn, 2026-10-14).
-// This module also owns the trusted-inputs revision (`trusted-inputs-revision`):
-// the hash of the inputs only an allowed person can change.
+// The issue as its agents read it: issue.md in the run dir holds the issue
+// and the comments of the pipeline and of allowed users only (Autumn,
+// 2026-10-14). This module also owns the trusted-inputs revision: the hash of
+// the inputs only an allowed person can change.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";

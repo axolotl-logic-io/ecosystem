@@ -1,12 +1,23 @@
 # Domain runtime implementation contract
 
-This page records the shared interfaces and ownership for the glossary-alignment refactor. Autumn accepted the plan on 2026-10-25. The latest [authority decisions](decisions/authority.md) and [buddy lifecycle decisions](decisions/buddies-and-tasks.md) govern the implementation. This is a source contract, not installed behavior.
+This page records the shared interfaces and ownership for the glossary-alignment refactor. It follows the five delivery tasks that replaced the separate-duties tasks. This is a source contract, not installed behavior.
 
 ## Domain boundaries
 
 Tasks own sensor declarations, matching, prerequisites, actions and recovery. Buddies pair trusted scope, task responsibilities and identity. One buddy run activates every configured task loop; action runs and model sessions have separate identities. Initial execution is sequential within a buddy process, without a global stage cursor. Coordination excludes competing action effects across processes.
 
-Use canonical task identifiers `author`, `implement`, `harden`, `sync`, `integrate`, `review-security`, `land`, `complete`, and `refactor-safely`. Developer responsibilities are Author, Implement, Harden, Sync and explicitly assigned Safe Refactor. Gatekeeper responsibilities are Integrate, Review Security, Land and Complete. Display names can retain glossary nouns in historical descriptions, but new task names use verbs.
+Use canonical task identifiers `author`, `implement`, `verify`, `fix`, `land` and `refactor-safely`. Each task definition names its role and access profile, and buddy configuration derives from them:
+
+| Task | Role | Access | Binds |
+| --- | --- | --- | --- |
+| `author` | Developer | writer | Requirements |
+| `implement` | Developer | writer | Requirements |
+| `verify` | Gatekeeper | reader | The PR head revision |
+| `fix` | Developer | writer | The PR head revision |
+| `land` | Gatekeeper | lander | The PR head revision |
+| `refactor-safely` | Developer | writer | A revision |
+
+A Developer buddy's default responsibilities are Author, Implement and Fix; Safe Refactor is explicitly assigned. A Gatekeeper's are Verify and Land. The tasks `harden`, `sync`, `integrate`, `review-security` and `complete` are removed: hardening is part of Implement, Sync and Integrate fold into Fix and Verify, Security is part of Verify, and Complete is part of Land. Display names can retain glossary nouns in historical descriptions, but new task names use verbs.
 
 A task-result v2 record carries canonical identifiers, the producing buddy run, action run and causal signal. Readers accept only v2. A record of any other version, including a v1 record from an earlier release, a malformed authoritative record and contradictory evidence hold work.
 
@@ -17,8 +28,13 @@ A task-result v2 record carries canonical identifiers, the producing buddy run, 
 The task writer implements these interfaces in `src/domain.ts`. Other lanes consume them with type-only imports where possible. A necessary interface change requires a supervisor request before another lane depends on it.
 
 ```ts
-type TaskId = "author" | "implement" | "harden" | "sync" | "integrate"
-  | "review-security" | "land" | "complete" | "refactor-safely";
+type TaskId = "author" | "implement" | "verify" | "fix" | "land"
+  | "refactor-safely";
+// REQUIREMENTS_TASKS bind requirements; REVISION_TASKS bind a revision.
+type RequirementsTask = "author" | "implement";
+type RevisionTask = "verify" | "fix" | "land" | "refactor-safely";
+type StartTask = "author" | "implement" | "verify";   // START_TASKS
+const VERIFY_FIX_ROUNDS = 3;
 type RoleId = "developer" | "gatekeeper";
 type AccessProfile = "reader" | "writer" | "lander";
 type RunState = "running" | "waiting" | "stopped" | "ended";
@@ -27,21 +43,29 @@ interface WorkItemRef { repo: string; number: number }
 interface TargetState { branch: string; commit: string }
 interface Revision { code: string; inputs: string; policy: string }
 interface RunRef { id: string; previous: string | null }
-type Binding = {
-  workItem: WorkItemRef;
-  task: TaskId;
-  target: TargetState;
-} & ({ requirements: string } | { revision: Revision });
+type Binding =
+  | { workItem: WorkItemRef; task: RequirementsTask; target: TargetState;
+      requirements: string }
+  | { workItem: WorkItemRef; task: RevisionTask; target: TargetState;
+      revision: Revision };
 interface HumanProvenance {
   route: "human";
   login: string;
   userId: number;
   organization: string;
 }
+type ReviewState = "APPROVED" | "CHANGES_REQUESTED";
+// One submitted PR review, bound to the head commit it was submitted against.
+interface PrReview { id: number; pr: number; commit: string; state: ReviewState }
 type QualifiedSignal =
-  | { kind: "start"; id: string; workItem: WorkItemRef; task: "implement";
-      requirements: string; target: TargetState; provenance: HumanProvenance;
-      recordId: number }
+  | { kind: "start"; id: string; workItem: WorkItemRef;
+      task: "author" | "implement"; requirements: string; target: TargetState;
+      provenance: HumanProvenance; recordId: number }
+  | { kind: "start"; id: string; workItem: WorkItemRef; task: "verify";
+      pr: number; head: string; target: TargetState;
+      provenance: HumanProvenance; recordId: number }
+  | { kind: "review"; id: string; workItem: WorkItemRef; review: PrReview;
+      provenance: HumanProvenance; recordId: number }
   | { kind: "stop"; id: string; workItem: WorkItemRef;
       provenance: HumanProvenance; recordId: number }
   | { kind: "result"; id: string; workItem: WorkItemRef; binding: Binding;
@@ -53,10 +77,22 @@ interface SignalInbox {
   complete: boolean;
 }
 interface ActionCause { signal: string; recordId: number }
+// receipt.evidence of a determined Verify result. Its verdict mirrors the
+// review: passed for APPROVED, refused for CHANGES_REQUESTED.
+interface VerifyEvidence {
+  review: PrReview; blocking: number; nits: number; security: boolean;
+}
+// receipt.evidence of a determined Land result.
+type LandEvidence =
+  | { outcome: "merged"; pr: number; head: string; mergeCommit: string;
+      issueClosed: true }                       // passed; produced = mergeCommit
+  | { outcome: "conflict"; pr: number; head: string; base: TargetState;
+      reason: string };                         // refused; wakes Fix
 interface TaskResult {
   binding: Binding;
   run: RunRef;
   buddyRun: string;
+  cause: ActionCause;
   verdict: Verdict;
   receipt: { summary: string; produced?: { code: string }; evidence?: unknown };
   recordId: number;
@@ -88,7 +124,7 @@ interface SessionSpec {
   task: string;
   schema: import("zod").ZodType;
   commits: boolean;
-  phase?: "hardening" | "security-review" | "sync";
+  phase?: "hardening" | "security-review" | "fix";
 }
 type SessionResult = { ok: true; reply: unknown }
   | { ok: false; transient: boolean; error: string };
@@ -103,6 +139,7 @@ interface ActionContext {
   stop: AbortSignal;
   boundary: (name: string) => Promise<void>;
   op: (name: string, payload: object) => Promise<unknown>;
+  prepare: () => Promise<void>;
   session: (spec: SessionSpec) => Promise<SessionResult>;
   checkpoint: (detail: object) => Promise<void>;
 }
@@ -134,11 +171,19 @@ The code should export schemas and types for boundary values rather than making 
 
 Do not repeat effectful reads merely to satisfy these signatures. Shared task recording and snapshot modules hide their own schemas, budgets and journal layout.
 
-Author and Safe Refactor remain explicit opt-in work. A start label requests only Implement, not Author or Safe Refactor. A task with no applicable signal waits. A passed binding does not execute again. A failed, refused or unknown action is not automatically retried; report the hold. A new requirements binding requires a new accepted start. An Implement attempt on the same work item and requirements prevents another Implement attempt even if the target moves or a new start event appears. Changed revision/target bindings create new downstream work only through current qualified evidence.
+A start label requests only its own task: `start:author` Author, `start:implement` Implement and `start:verify` Verify. Fix, Land and Safe Refactor have no start label. Implement doesn't wait for an unsettled Author. A task with no applicable signal waits. A passed binding does not execute again. A failed, refused or unknown action is not automatically retried; report the hold. A new `start:verify` for the same head is the one explicit retry: it requests a new attempt of a failed Verify, within the binding's attempt budget. A new requirements binding requires a new accepted start. An Implement attempt on the same work item and requirements prevents another Implement attempt even if the target moves or a new start event appears. Changed revision/target bindings create new downstream work only through current qualified evidence.
 
-Readiness `recover` is separate from new-attempt admission. The runtime calls only the task's read-only `recover` handler: never `beginAction`, `act` or `finishAction` for a new attempt. Recovery receives a new local action/invocation identity, but the task helper settles the original attempt's run and buddy run from observed original effects. Its receipt links the reconciling action. Unproven or incomplete effects hold; recovery never replays a push, rebase or Completion mutation.
+Readiness `recover` is separate from new-attempt admission. The runtime calls only the task's read-only `recover` handler: never `beginAction`, `act` or `finishAction` for a new attempt. Recovery receives a new local action/invocation identity, but the task helper settles the original attempt's run and buddy run from observed original effects. Its receipt links the reconciling action. Unproven or incomplete effects hold; recovery never replays a push, merge, review submission or issue close.
 
-Sync can act before Harden when R does not contain T. Sync's output requires fresh Harden. Complete finds the authenticated passed Land result and keeps its original R, pre-Land T and policy. It verifies current trusted inputs, own Land provenance and target ancestry without rerunning Integration or Security. A changed policy after Land does not create retroactive permission or require a new post-Land check; the irreversible Land's policy stays pinned. Contradictory landed evidence holds. No-code/no-PR completion and automatic adoption of historical/manual Lands are unsupported.
+The review loop runs on results and human reviews:
+
+- Implement records its result only after a fresh hardening session.
+- Verify becomes ready for a PR head with no Verify result, or for `start:verify`. It runs `commands.test`, the head's required CI and the Security review, and submits one review through the landing account against the head's commit. Only nits approve; a Security finding always blocks.
+- Fix becomes ready for a refused Verify on the current head, a qualified person's `CHANGES_REQUESTED` review on it, or a refused Land that found a conflict. It merges the base into the head, answers every blocking comment with code and a thread reply, pushes through the development account and marks a draft PR ready. Only the landing account's requests for changes and a currently qualified person's direct it; anyone else's are neither given to its session nor answered.
+- `verifyFixRounds(view)` in `tasks/chain.ts` counts the Fix results whose `cause.signal` is `result:N` for a refused Verify result `N`. At `VERIFY_FIX_ROUNDS` such rounds, a further request for changes holds the item for a person. Fix rounds that a person or Land caused don't count.
+- Land needs a passed Verify of the current head, whose Security review must pass before any merge, an approval on that head from the landing account or a qualified person, no standing request for changes, a head that contains the base, green required CI and `permissions.land`. It merges with `gh pr merge --merge --match-head-commit`, then closes the issue; one result covers both. On a conflict it marks the PR a draft and records a refused result. Its recovery reads the PR's merged state and the issue's state, closes an issue a merged PR left open, and never merges or closes twice.
+
+Only an unsettled or passed Land fences code writes (`src/write-authority.ts`). A Land refused for a conflict leaves code writable for Fix. Automatic adoption of historical or manual merges is unsupported.
 
 ### Signals
 
@@ -164,11 +209,11 @@ Poll complete open-issue control-label listings and all event/comment pages. Dis
 
 First acceptance requires the issue label to be present and its latest application event to explain that condition. An accepted signal retains event ID, producer ID and organization. Requalification after acceptance checks retained producer identity/current membership, not label presence. A single event cannot acquire a new binding on a later poll.
 
-Only human-produced issue labels are supported initially; PR labels, bots, configured machine-account labels and App-mediated human events grant nothing. Machine signals come from authenticated result records. Trusted requirements still require the existing allow-list and current collaborator rule; organization membership does not replace it.
+Human signals are issue labels and a qualified person's submitted review on the issue's linked PR. A review signal binds the head commit it was submitted against; the landing account's reviews are Verify results, never review signals. PR labels, bots, configured machine-account labels and App-mediated human events grant nothing. Machine signals come from authenticated result records. Trusted requirements still require the existing allow-list and current collaborator rule; organization membership does not replace it.
 
 Use explicit `scope.organization`, never derive it from `repo`. Verify the real membership API schemas against GitHub documentation: `/orgs/{org}/memberships/{login}` may provide `organization_url` rather than an `organization` object. Unknown reader capability or membership grants nothing. No credential changes or live activation verification is required for source delivery.
 
-Accept/append through the existing uncertain-write journal and authoritative reread. An uncertain append is held, not posted again. Identical duplicate accepted records may be deduplicated only if all action-relevant content agrees; conflicts hold. A start is spent by an Implement v2 attempt whose cause names its ID, regardless of verdict. Any accepted stop latches the issue across buddy runs and makes all pending starts inert. Reapplying start to a binding with an attempt does not authorize a retry. No continuation operation or new control label is added.
+Accept/append through the existing uncertain-write journal and authoritative reread. An uncertain append is held, not posted again. Identical duplicate accepted records may be deduplicated only if all action-relevant content agrees; conflicts hold. A start is spent by a v2 attempt of its task whose cause names its ID, regardless of verdict. Any accepted stop latches the issue across buddy runs and makes all pending starts inert. Reapplying start to a binding with an attempt does not authorize a retry, except that a new `start:verify` retries a failed Verify of the same head; `start:implement` doesn't retry a failed Implement for the same requirements. The control labels are `start:author`, `start:implement`, `start:verify` and `agents:stop`, all on the issue. No continuation operation is added.
 
 ### Buddy runtime
 
@@ -176,9 +221,9 @@ Accept/append through the existing uncertain-write journal and authoritative rer
 
 Buddy config uses an explicit organization, repository config paths, one role (or a validated subset of that role's task responsibilities), and one identity with the appropriate account/model/runtime/access/network settings. Role names carry no credentials. Validate profile/account consistency and reject obsolete scheduler/assignment controls before effects.
 
-Land authorization requires an explicit trusted `permissions.land: true` grant in the Gatekeeper buddy configuration and the same repository-scoped grant in the trusted repository configuration. Missing permission defaults to false. Both grants, configured repository scope, Land responsibility and matching landing identity must pass. The fresh ops child rereads the repository grant; the runtime rereads buddy grant, scope and identity before privileged effects. Passing Security or receiving a result signal never itself supplies permission. Ownership and all task prerequisites remain necessary.
+Land authorization requires an explicit trusted `permissions.land: true` grant in the Gatekeeper buddy configuration and the same repository-scoped grant in the trusted repository configuration. Missing permission defaults to false. Both grants, configured repository scope, Land responsibility and matching landing identity must pass. The fresh ops child rereads the repository grant; the runtime rereads buddy grant, scope and identity before privileged effects. A passed Verify, an approving review or a result signal never itself supplies permission. Ownership and all task prerequisites remain necessary.
 
-The shared revision checking-policy digest includes repository permissions. The buddy-specific action-authorization digest records its scope, identity and grant separately; putting it in `revision.policy` would prevent Developer and Gatekeeper results from sharing a binding. Preserve that distinct authorization evidence with the Land intent. Complete and read-only Land recovery use current trusted configuration for transport fencing but retain the original Land policy as historical proof, without fresh post-Land checks.
+The shared revision checking-policy digest includes repository permissions. The buddy-specific action-authorization digest records its scope, identity and grant separately; putting it in `revision.policy` would prevent Developer and Gatekeeper results from sharing a binding. Preserve that distinct authorization evidence with the Land intent. Read-only Land recovery uses current trusted configuration for transport fencing but retains the original Land policy as historical proof, without fresh post-Land checks.
 
 The ops envelope carries `buddy: { config: string; run: string; task: TaskId; authorizationDigest: string }`. These are claims until validated. The runtime writer exports synchronous `bindBuddyAuthorization(cfg, repositoryConfigPath, buddyEnvelope): Config` from `runtime/buddy-config.ts`. The task writer invokes it in `ops.ts` before canonical task-effect dispatch. It rereads trusted configuration, verifies repository config path/scope, role, task responsibility, profile, account/identity and digest, and returns an internal validated `cfg.buddyAuthorization`. It never rewrites `cfg.policyBinding`. Canonical v2 task-effect/attempt/result ops require this context. Runtime envelope fields override task payload fields, never the other way round.
 
@@ -190,7 +235,7 @@ Land's task-owned `beginAction` acquires and confirms the existing integration t
 
 One buddy run UUID per activation; one new action UUID per admitted action. The action UUID is the execution invocation's `instance` and task attempt's `run.id`. The lane is stable per buddy/repo/work-item, not capacity. Every model launch names its parent action but has a separate session identity. Historical jobs are never relabeled as buddy runs.
 
-Stop uses one scoped cooperative control. Stop admission immediately; do not kill credentialed writes, Git rebase or Land in flight on a graceful stop. Abort model-assisted work at a safe boundary; classify interrupted verification as unknown. Preserve progress, checkpoints and journals before release. A failed checkpoint keeps ownership/checkouts/reservations. Escalation remains an explicit process safety valve, not the normal domain stop.
+Stop uses one scoped cooperative control. Stop admission immediately; do not kill credentialed writes, a Git merge or rebase, a review submission or Land in flight on a graceful stop. Abort model-assisted work at a safe boundary; classify interrupted verification as unknown. Preserve progress, checkpoints and journals before release. A failed checkpoint keeps ownership/checkouts/reservations. Escalation remains an explicit process safety valve, not the normal domain stop.
 
 Local observation paths:
 
@@ -227,7 +272,7 @@ Every implementation lane has its own worktree, based on the shared-contract com
 
 | Lane | Exclusive ownership |
 | --- | --- |
-| Tasks/effects | `src/domain.ts`, new `src/tasks/**`, `src/roles/**`, `src/ops.ts` canonical registration/envelope, `src/task-result*.ts`, `src/task-results.ts`, `src/ops/**`, `src/state.ts`, `src/saved-state*.ts`, `src/write-authority.ts`, `src/security-clearance.ts`, `src/land*-authorization.ts`, `src/land-provenance.ts`, `src/reviewed-target.ts`; task-specific integration tests and reference pages |
+| Tasks/effects | `src/domain.ts`, new `src/tasks/**`, `src/roles/**`, `src/ops.ts` canonical registration/envelope, `src/task-result*.ts`, `src/task-results.ts`, `src/ops/**`, `src/state.ts`, `src/saved-state*.ts`, `src/write-authority.ts`, `src/pr-reviews.ts`, `src/land*-authorization.ts`, `src/land-provenance.ts`, `src/reviewed-target.ts`; task-specific integration tests and reference pages |
 | Signals | New `src/signals/**`, `test/signals/**`, `docs/reference/signals.md`; no global Config schema edits |
 | Runtime | New `src/buddy.ts`, `src/runtime/**` except `reservations.ts`, existing `src/job/**`, `src/config.ts`, `src/config-schema.ts`; runtime integration tests and `docs/reference/runtime-runs.md`; no task/result/ops edits |
 | Resources | `src/runtime/reservations.ts`, coordination resource-schema/record support, `src/execution.ts` resource helper and removal of assignment-grant check, `src/lane-slot*.ts`, resource integration tests |
@@ -235,6 +280,6 @@ Every implementation lane has its own worktree, based on the shared-contract com
 
 Saved work state is canonical v4 `WORK_STATE` (`readWorkState`/`writeWorkState`); the stage-era `IssueState` schema is removed, and a saved state of any other version holds its work item. Land intent belongs to the authenticated v2 attempt. The task writer may delete owned stage roles and obsolete ops even while adjacent job/orchestrator imports still fail. Provide a canonical `checkpoint-action` operation for the runtime and report its exact shape rather than restoring old stage save/release semantics.
 
-Author has no implicit signal and waits. Safe Refactor also waits; its runtime act may explicitly refuse with a pointer to `safe-refactor.mjs`. Standalone reports grant no pipeline result.
+Safe Refactor waits on every signal; its runtime act may explicitly refuse with a pointer to `safe-refactor.mjs`. Standalone reports grant no pipeline result.
 
 Temporary compilation failures caused by not-yet-integrated adjacent lanes must be reported honestly. Do not weaken guards, lint rules or types to make an isolated lane appear green. Focused real-file/subprocess/Git tests should prove each lane's own boundary. No unit-test restoration or blanket fixture restoration. Reuse another lane's committed test kit when available; do not create parallel copies of the same fake infrastructure.

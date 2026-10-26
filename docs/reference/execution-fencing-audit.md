@@ -1,8 +1,8 @@
 # Execution fencing audit
 
-This page lists every credentialed or cleanup effect the pipeline can cause and what fences it. It's the audit for #132, taken at `main` `ea483b5` (2026-10-24 19:30 EDT, UTC−04:00), after #167 and #168 landed. #151 and #170 have since fenced the release, teardown, exit-order and cleanup rows, and #169 the credentialed-write rows.
+This page lists every credentialed or cleanup effect the pipeline can cause and what fences it. It's the audit for #132, taken at `main` `ea483b5` (2026-10-24 19:30 EDT, UTC−04:00), after #167 and #168 landed. #151 and #170 have since fenced the release, teardown, exit-order and cleanup rows, and #169 the credentialed-write rows. The audit is a historical snapshot: Sync, Integration and Completion have since been removed, and Land now merges the PR ([merge](merge.md)).
 
-The rule each row is checked against is [`fresh-reads`](../decisions/buddies-and-tasks.md#fresh-reads): a run reads ownership immediately before each privileged effect, and a cached reading authorizes nothing.
+Each row is checked against one rule: a run reads ownership immediately before each privileged effect, and a cached reading authorizes nothing.
 
 ## How a write is fenced
 

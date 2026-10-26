@@ -1,9 +1,9 @@
-// The standards assessment's wire format (docs/reference/standards-upgrade.md):
-// what `standards-upgrade assess` writes as assessment.json, and the marker a
-// plan carries into its upgrade issue. Every assessment is parsed with
-// ASSESSMENT before it's written, so a reader can trust its shape. Version 2
-// adds the sandbox and the commands run in it (`additive-record-versions`);
-// readers still accept version 1, which ran nothing.
+// The standards assessment's wire format
+// (docs/reference/standards-upgrade.md): what `standards-upgrade assess`
+// writes as assessment.json, and the marker a plan carries into its upgrade
+// issue. Every assessment is parsed with ASSESSMENT before it's written, so a
+// reader can trust its shape. Version 2 adds the sandbox and the commands run
+// in it; readers still accept version 1, which ran nothing.
 
 import { z } from "zod";
 

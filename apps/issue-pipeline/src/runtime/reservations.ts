@@ -1,9 +1,8 @@
-// Resource reservations (`capacity-by-resource`, `shared-reservations`). A
-// reservation is one slot of a capped resource, claimed by one invocation,
-// its holder, and released only once every consumer registered on it has
-// reported done. A run or process ending, an issue closing or an idle
-// observation releases nothing, and an unknown, malformed or partial record
-// holds rather than counting as free.
+// Resource reservations. A reservation is one slot of a capped resource,
+// claimed by one invocation, its holder, and released only once every
+// consumer registered on it has reported done. A run or process ending, an
+// issue closing or an idle observation releases nothing, and an unknown,
+// malformed or partial record holds rather than counting as free.
 //
 // Model sessions are shared slots: each slot is a coordination scope of the
 // repository and base, claimed with the same fenced protocol as issue

@@ -2,8 +2,8 @@
 // authenticated `gh api --include` request per page, read by the landing
 // account, with its HTTP status kept and no hidden retries. Listings walk
 // explicit pages and check each page's Link header, so a listing is complete
-// only when every page was read (`fresh-reads`). A failed, partial or
-// malformed read is an unknown observation, never an empty one.
+// only when every page was read. A failed, partial or malformed read is an
+// unknown observation, never an empty one.
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { authenticatedEnv, credentialedRun } from "../github-auth.ts";

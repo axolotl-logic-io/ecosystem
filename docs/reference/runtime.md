@@ -1,6 +1,6 @@
 # Runtime
 
-This page summarizes the model runtime every session uses: Pi's native sessions under settings the pipeline generates. The full contract and provisioning steps are in the pipeline's [runtime README](../../apps/issue-pipeline/runtime/README.md). The rule is [pipeline-owned-native-runtime](../decisions/operations.md#pipeline-owned-native-runtime).
+This page summarizes the model runtime every session uses: Pi's native sessions under settings the pipeline generates. The full contract and provisioning steps are in the pipeline's [runtime README](../../apps/issue-pipeline/runtime/README.md).
 
 ## Supported runtime
 

@@ -40,7 +40,7 @@ Local investigation logs are `/tmp/dash-check.log` and `/tmp/dash-pipeline-check
 
 Tests cover dark/light rendering at 40/80/110/160/220 columns, inactive modes, cancellation and steering, source identifiers, canonical/deprecated tool contracts, malformed and nullable records, uncertain process observations, task coverage, configuration aliases and explicit versus missing accounts. Lifecycle regressions cover stop during configuration or collection, refresh coalescing, restart generations and recovery after collection failure.
 
-On 2026-10-24, #164 removed the direct-call cases among these: rendering, tool contracts, records, observations, templates, labels and configuration aliases. The [removal ledger](../../docs/decisions/unit-test-removal-164.md#workflow-dash) lists them.
+On 2026-10-24, #164 removed the direct-call cases among these: rendering, tool contracts, records, observations, templates, labels and configuration aliases.
 
 Tests use synthetic process probes, mocked host delivery and disposable filesystem roots. They do not probe fixture PIDs, activate a live extension or call a real model. Pending requests, bounded logs and lists, absent parent/task/result bindings, unverified account metadata and historical deprecated capacity assumptions retain the [documented observation limits](README.md#observation-limits).
 

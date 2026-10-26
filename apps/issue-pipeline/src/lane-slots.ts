@@ -202,7 +202,7 @@ function assertCheckoutReadyForRemoval(
 }
 
 // The removal guard for a checkout that never registered as a lane-slot
-// consumer (Land, Complete, a read-only recovery, a task with no test slot).
+// consumer (Land, a read-only recovery, a task with no test slot).
 // With no lane store at all, nothing is registered, so nothing can be
 // pending on it or depend on its metadata; otherwise the full guard holds.
 function assertNonconsumerReadyForRemoval(
@@ -222,8 +222,8 @@ function assertNonconsumerReadyForRemoval(
 
 // The registered consumers of issue `issue`'s lane slot other than checkout
 // `except`: its other surviving checkouts and every pending setup. The slot
-// stays held while any is left (capacity-by-resource); an unreadable store
-// throws, since an unknown consumer state holds too.
+// stays held while any is left; an unreadable store throws, since an unknown
+// consumer state holds too.
 function registeredConsumers(
   cfg: Config,
   issue: number,

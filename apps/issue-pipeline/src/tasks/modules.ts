@@ -2,25 +2,20 @@
 // owns beside it (module.ts).
 
 import type { TaskId } from "../domain.ts";
-import { complete } from "./complete.ts";
-import { harden } from "./harden.ts";
+import { author } from "./author.ts";
+import { fix } from "./fix.ts";
 import { implement } from "./implement.ts";
-import { integrate } from "./integrate.ts";
 import { land } from "./land.ts";
 import type { TaskModule } from "./module.ts";
-import { author, refactorSafely } from "./opt-in.ts";
-import { reviewSecurity } from "./review-security.ts";
-import { sync } from "./sync.ts";
+import { refactorSafely } from "./opt-in.ts";
+import { verify } from "./verify.ts";
 
 const MODULES: Readonly<Record<TaskId, TaskModule>> = {
   author,
   implement,
-  harden,
-  sync,
-  integrate,
-  "review-security": reviewSecurity,
+  verify,
+  fix,
   land,
-  complete,
   "refactor-safely": refactorSafely,
 };
 

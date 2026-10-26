@@ -26,7 +26,7 @@ This repository's root `.issue-pipeline.json` supplies its pipeline gate and pra
     "lint": "npm run lint",
     "typecheck": "npm run typecheck"
   },
-  "practices": ["AGENTS.md", "docs/coding-practices.md"],
+  "practices": ["AGENTS.md", "docs/project-practices.md"],
   "lockfiles": [],
   "migrations": null
 }
@@ -68,4 +68,4 @@ Repository configuration keys the pipeline no longer reads, such as `assignments
 
 A new policy never rewrites earlier receipts or erases a rejection. Uncertain or incompatible recovery needs explicit reconciliation with the retained evidence, not deletion or automatic adoption of candidate-owned settings.
 
-Complete binds to the authenticated own Land's original revision, pre-Land target and policy. Policy drift after that irreversible mutation does not request new Hardening, Integration or Security. Complete checks the original exact prerequisite records, own Land receipt, unchanged trusted inputs and current target ancestry. Contradictory or incomplete evidence holds. A changed policy never clears a known Security refusal or grants a writer, push or second Land.
+A Land result binds its original revision, target and policy. Policy drift after that irreversible merge doesn't request a new hardening or Verify. Land's recovery reads the PR's merged state and the issue's state for that original binding. Contradictory or incomplete evidence holds. A changed policy never clears a known Verify refusal or grants a writer, push or second Land.

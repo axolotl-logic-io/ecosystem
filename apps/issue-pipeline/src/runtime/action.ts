@@ -67,11 +67,8 @@ import { agentEnvOf, rolesOf } from "../job/roles.ts";
 import type { LaunchStart } from "../job/status.ts";
 import { assertCheckoutReady } from "../lane-slots.ts";
 import type { TaskGuard } from "../ops/task-guard.ts";
-import {
-  checkGuard,
-  guardedMutations,
-  TASK_OP_CLASSES,
-} from "../ops/task-guard.ts";
+import { checkGuard, guardedMutations } from "../ops/task-guard.ts";
+import { TASK_OP_CLASSES } from "../ops/task-ops.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { SignalScope } from "../signals/inbox.ts";
 import { requalify, stopLatch } from "../signals/inbox.ts";
@@ -129,9 +126,9 @@ const PROMPT_PAGES: readonly {
 }[] = [
   { task: "author", phase: null, page: "author.md" },
   { task: "implement", phase: null, page: "developer.md" },
-  { task: "harden", phase: "hardening", page: "developer-hardening.md" },
-  { task: "sync", phase: "sync", page: "sync.md" },
-  { task: "review-security", phase: "security-review", page: "security.md" },
+  { task: "implement", phase: "hardening", page: "developer-hardening.md" },
+  { task: "verify", phase: "security-review", page: "verify.md" },
+  { task: "fix", phase: "fix", page: "fix.md" },
 ];
 
 // An action the runtime admitted (src/runtime/admission.ts): its identity,

@@ -97,7 +97,7 @@ node apps/issue-pipeline/dist/standards-upgrade.mjs assess \
   --config CONFIG --repo OWNER/REPO --out OUT_DIR
 ```
 
-- `CONFIG` is the target repository's pipeline config, as `docs/reference/operations.md` describes. The assessment reads GitHub with its `landingAccount` credential, for reads only, as the Gatekeeper's Integration task does.
+- `CONFIG` is the target repository's pipeline config, as `docs/reference/operations.md` describes. The assessment reads GitHub with its `landingAccount` credential, for reads only, as the Gatekeeper's tasks do.
 - `OWNER/REPO` names the repository, either as a slug or as its canonical URL, such as `https://github.com/OWNER/REPO`. It must be the config's `repo`.
 - `OUT_DIR` is an existing, empty folder outside any checkout.
 
@@ -217,7 +217,7 @@ To deliver an assessment's plan, follow these steps:
 
 `apply` prints one JSON line with `issue`, the canonical issue `branch`, the plan marker fields, `task: "implement"` and `next`, which states that a qualified human must apply the label. It prints no retired launcher or stage. Its branch follows the same repository branch rules as the buddy's task view; for a new unbound issue this is `agent/issue-ISSUE`.
 
-The buddy independently qualifies the label event and all current task prerequisites. Later task results drive readiness; Sync precedes fresh Harden when the revision misses the target. Independent Security and explicit repository/buddy Land permission remain necessary. See [coordination](coordination.md).
+The buddy independently qualifies the label event and all current task prerequisites. Later task results drive readiness: Implement hardens its change, Verify reviews the PR head, and Fix merges the base into the head when Land finds it missing. Verify's Security review and explicit repository/buddy Land permission remain necessary. See [coordination](coordination.md).
 
 `apply` only reads. It refuses, with exit 2 and the reason on stderr, when:
 
@@ -238,7 +238,7 @@ The assessment holds only the read side of the configured credentials, through t
 
 Repository code may run only inside the assessment sandbox, without operator credentials or access to the operator's home. This is a separate isolation boundary from the read-only `apply` checks. The new `apply` subprocess tests prove the human handoff, stale-head refusal and unreadable-collaborator hold; they do not constitute a fresh assessment-sandbox isolation proof. Historical tests that were removed are not current acceptance evidence.
 
-Filing the upgrade issue needs a person. Under [`allow-listed-input`](../decisions/authority.md#allow-listed-input), neither pipeline account counts as trusted input, so an issue filed by the development account couldn't drive Implementation. An allow-listed collaborator files `plan.md` instead.
+Filing the upgrade issue needs a person. Only allow-listed input is trusted, and neither pipeline account is on the allow list, so an issue filed by the development account couldn't drive Implementation. An allow-listed collaborator files `plan.md` instead.
 
 The plan never asks for a settings change. Requiring a check, archiving or changing access are owner actions that need separate administrative authority.
 
@@ -246,6 +246,6 @@ The plan never asks for a settings change. Requiring a check, archiving or chang
 
 The assessment and `apply` write nothing to GitHub or the origin and keep no state, so rerunning them is always safe. The assessment's sandboxed work is deleted when it ends.
 
-A new commit on the base branch makes a plan stale before Implementation starts. Close the stale issue, rerun the assessment and file the new plan. Once Implementation has started, the chain's own Sync task brings the branch up to date, as it does for any issue.
+A new commit on the base branch makes a plan stale before Implementation starts. Close the stale issue, rerun the assessment and file the new plan. Once Implementation has started, Fix brings the branch up to date when Land finds it conflicting with the base, as it does for any issue.
 
 An interrupted delivery retains its original action, branch, checkpoint and uncertain-write evidence. There is no automatic retry or continuation operation: a spent start does not become new after an error or target change. Reconcile uncertain writes by reading, never by repeating them. `apply` refuses another open upgrade plan, but that uniqueness check is not an execution lock or recovery grant. Fenced ownership and the current task guards still apply.

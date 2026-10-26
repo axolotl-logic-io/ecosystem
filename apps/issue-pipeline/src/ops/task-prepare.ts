@@ -6,7 +6,7 @@
 // then requires, from the work item's records read fresh here, that this
 // action is the original unsettled act attempt of a task that declares the
 // `test-slot` resource: a read-only recovery records no attempt, a finished
-// run is settled, and Land and Complete declare no test slot. It checks the
+// run is settled, and Land declares no test slot. It checks the
 // issue's execution is still the action's right before setup runs.
 //
 // Setup runs at most once per action: a start marker is created

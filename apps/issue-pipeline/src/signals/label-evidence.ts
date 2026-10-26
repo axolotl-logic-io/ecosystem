@@ -1,17 +1,33 @@
-// The control-label sensor (`label-signals`): which open issues carry a
-// control label, and which application event explains a label an issue
-// carries now. A label is a condition: the latest `labeled` event for it,
-// with no later `unlabeled` event, explains it. Removing a label is never a
-// signal, and a label nobody's event explains is contradictory evidence.
-// Pull requests' labels grant nothing in this first cut.
+// The control-label sensor: which open issues carry a control label, and
+// which application event explains a label an issue carries now. A label is a
+// condition: the latest `labeled` event for it, with no later `unlabeled`
+// event, explains it. Removing a label is never a signal, and a label
+// nobody's event explains is contradictory evidence. The labels go on the
+// issue; pull requests' labels grant nothing.
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { wire } from "../discovery/wire.ts";
+import type { StartTask } from "../domain.ts";
 import { type Observation, observeAll, observeOne } from "./github-source.ts";
 import type { EventActor } from "./qualification.ts";
 
-const CONTROL_LABELS = ["start:implement", "agents:stop"] as const;
+const CONTROL_LABELS = [
+  "start:implement",
+  "start:author",
+  "start:verify",
+  "agents:stop",
+] as const;
 type ControlLabel = (typeof CONTROL_LABELS)[number];
+
+// The task each start label requests; agents:stop requests none.
+const START_LABELS: ReadonlyMap<ControlLabel, StartTask> = new Map<
+  ControlLabel,
+  StartTask
+>([
+  ["start:author", "author"],
+  ["start:implement", "implement"],
+  ["start:verify", "verify"],
+]);
 
 // The event that explains a present label.
 interface LabelEvent {
@@ -163,4 +179,4 @@ function labelEvidence(
 }
 
 export type { ControlLabel, LabelEvent, LabelEvidence };
-export { CONTROL_LABELS, labelEvidence, labelledIssues };
+export { CONTROL_LABELS, labelEvidence, labelledIssues, START_LABELS };

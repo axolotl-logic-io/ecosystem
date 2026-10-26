@@ -1,12 +1,12 @@
 # Ecosystem docs
 
-These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Decisions record the rules; reference pages describe how the code behaves today and how to recover when something goes wrong.
+These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Reference pages describe how the code behaves today and how to recover when something goes wrong.
+
+Issue delivery has five tasks: Author, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, the page says so in a note.
 
 ## Practices
 
-[Coding practices](coding-practices.md): the shared design, type, lint, test and secrets rules, kept identical in each repository.
-
-[Project practices](project-practices.md): this repository's own rules, which add to the coding practices.
+[Project practices](project-practices.md): the repository's design, type, lint, test and secrets rules.
 
 [Docs style guide](docs-style-guide.md): how to write these docs.
 
@@ -18,25 +18,11 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Domain runtime contract](domain-runtime-contract.md): canonical task, signal, authorization, resource and recovery interfaces.
 
-## Decisions
-
-[Authority](decisions/authority.md): which GitHub accounts, records, inputs and sessions the pipeline trusts, and for what.
-
-[Delivery](decisions/delivery.md): hardening, Security review, what an approval covers and landing order.
-
-[Sessions](decisions/sessions.md): what the Developer owns and where role prompts come from.
-
-[Code and tests](decisions/code-and-tests.md): what the pipeline's tests pin and how its commands clean up.
-
-[Operations](decisions/operations.md): who assigns work, the model runtime, rate limits and checkouts.
-
-[Buddies and tasks](decisions/buddies-and-tasks.md): the buddies and their roles, access per task, bindings and ready tasks, runs and retries, capacity, observation and standing permission.
-
 ## Reference
 
 [Authority](reference/authority.md): the two accounts, authority records, saved state, write authority and trusted input.
 
-[Review](reference/review.md): hardening, deterministic verification, the review bundle and the Security review.
+[Hardening, Verify and Fix](reference/review.md): Implement's hardening, Verify's review of the exact PR head, Fix's answers to blocking reviews and the review loop's limit.
 
 [Check gates](reference/check-gates.md): fast and full gate scope, deadlines, evidence and the separate installation boundary.
 
@@ -50,11 +36,11 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
-[Merge](reference/merge.md): landing order, the landing call, confirming the result and completion.
+[Land](reference/merge.md): Land's prerequisites, its merge of the PR pinned to the checked head, closing the issue, conflicts and read-only recovery.
 
-[Sync](reference/sync.md): integrating with the base before landing, conflicts and their limits.
+[Signals](reference/signals.md): how the signal component reads control labels, accepts qualified events as records and delivers starts, reviews, stops and results.
 
-[Task results](reference/task-results.md): exact-binding attempts, authenticated results, spent causes and holds.
+[Task results](reference/task-results.md): exact-binding attempts, authenticated results, Verify and Land evidence, causes and holds.
 
 [Project settings](reference/project-settings.md): tracked project policy, operator-owned controls and trusted committed revisions.
 
@@ -68,4 +54,4 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Checkouts](reference/checkouts.md): where clones, checkouts and run files live, and what an action preserves when it ends.
 
-[Stops and labels](reference/stops-and-labels.md): qualified stop signals, durable latches, scoped interruption and unsupported continuation.
+[Stops and labels](reference/stops-and-labels.md): start and stop labels, human PR reviews, durable latches, scoped interruption and unsupported continuation.

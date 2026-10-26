@@ -1,6 +1,6 @@
 // Land's integration turn: the target's existing write reservation
 // (execution.ts `integrationTurn`). Land takes it before its attempt is
-// recorded, asserts it owns it at its push, and gives it back only once
+// recorded, asserts it owns it at its merge, and gives it back only once
 // every Land run of the item is settled; an unsettled Land keeps it, so
 // every other Land on the target waits. The turn restricts and grants
 // nothing. These run in the ops child, under the action's execution.

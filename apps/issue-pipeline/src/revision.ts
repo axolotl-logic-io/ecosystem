@@ -11,7 +11,8 @@ import { OpsError } from "./ops-error.ts";
 import { assertPrBase } from "./pr-authority.ts";
 
 const PR_FIELDS =
-  "number,state,mergeCommit,headRefName,headRefOid,baseRefName,isCrossRepository";
+  "number,state,mergeCommit,headRefName,headRefOid,baseRefName,isCrossRepository,isDraft,mergeable";
+const MERGEABLE = z.enum(["MERGEABLE", "CONFLICTING", "UNKNOWN"]);
 
 const PR_VIEW = z.looseObject({
   number: z.number().int().positive(),
@@ -21,16 +22,21 @@ const PR_VIEW = z.looseObject({
   headRefOid: z.string().min(1),
   baseRefName: z.string(),
   isCrossRepository: z.boolean(),
+  isDraft: z.boolean(),
+  mergeable: MERGEABLE,
 });
 
 // The issue's PR as GitHub reports it: a merged PR's merge commit, null
 // otherwise, and its head commit, which GitHub keeps after the branch is
-// deleted.
+// deleted; whether it is a draft, and whether GitHub can merge its head
+// into its base (UNKNOWN while GitHub is still computing it).
 interface PullRequest {
   number: number;
   state: "OPEN" | "CLOSED" | "MERGED";
   mergeCommit: string | null;
   headSha: string;
+  draft: boolean;
+  mergeable: z.infer<typeof MERGEABLE>;
 }
 
 // PR `pr` of issue `n` as GitHub reports it. A PR from another branch or
@@ -74,6 +80,8 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
       state: data.state,
       mergeCommit: null,
       headSha: data.headRefOid,
+      draft: data.isDraft,
+      mergeable: data.mergeable,
     };
   }
   const oid = data.mergeCommit?.oid ?? "";
@@ -87,6 +95,8 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
     state: "MERGED",
     mergeCommit: oid,
     headSha: data.headRefOid,
+    draft: data.isDraft,
+    mergeable: data.mergeable,
   };
 }
 

@@ -1,13 +1,15 @@
 // The signal inbox: the one module other lanes import from src/signals/.
-// pollSignals reads the control-label sensor and the accepted-signal
-// records of the configured repository afresh, accepts newly qualified human
-// label events as append-only records, and delivers qualified signals:
-// accepted stops, pending accepted starts and the task lane's authenticated
-// machine results. requalify checks one delivered signal again before an
-// action or privileged effect relies on it, and stopLatch reports an issue's
-// persistent stop; requalifyHumanNow and stopLatchNow are their synchronous
-// forms for ops mutation guards, with the same rules. Unknown evidence never throws and never reads as absence;
-// it is reported as a hold (`signal-authority`, `label-signals`).
+// pollSignals reads the control-label sensor, the reviews of each issue's
+// linked PR and the accepted-signal records of the configured repository
+// afresh, accepts newly qualified human label events and PR reviews as
+// append-only records, and delivers qualified signals: accepted stops,
+// pending accepted starts, accepted reviews that still stand and the task
+// lane's authenticated machine results. requalify checks one delivered signal
+// again before an action or privileged effect relies on it, and stopLatch
+// reports an issue's persistent stop; requalifyHumanNow and stopLatchNow are
+// their synchronous forms for ops mutation guards, with the same rules.
+// Unknown evidence never throws and never reads as absence; it is reported as
+// a hold.
 import { z } from "zod";
 import { rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";
@@ -15,11 +17,22 @@ import { assertReconciled, confirmedWrite } from "../coordination-journal.ts";
 import type {
   Binding,
   EvidenceHold,
+  PrReview,
   QualifiedSignal,
   SignalInbox,
+  StartTask,
+  TargetState,
   WorkItemRef,
 } from "../domain.ts";
 import { readIssueExecution } from "../execution.ts";
+import { historicalPrFor } from "../ops/prs.ts";
+import {
+  listReviews,
+  type StandingReview,
+  type SubmittedReview,
+  standingOn,
+} from "../pr-reviews.ts";
+import { pullRequest } from "../revision.ts";
 import {
   actionCauses,
   machineSignals,
@@ -33,6 +46,7 @@ import {
   type LabelEvent,
   labelEvidence,
   labelledIssues,
+  START_LABELS,
 } from "./label-evidence.ts";
 import {
   type EventActor,
@@ -49,13 +63,15 @@ import {
   markedIssues,
   RECORD,
   recordBody,
+  reviewSignalId,
   sameAction,
   signalId,
   signalOf,
 } from "./records.ts";
 
-// The organization whose current members' label events qualify. It is
-// configured explicitly, never derived from the repository's owner.
+// The organization whose current members' label events and reviews
+// qualify. It is configured explicitly, never derived from the repository's
+// owner.
 interface SignalScope {
   organization: string;
 }
@@ -79,8 +95,11 @@ interface Latch {
 }
 
 type AttemptCause = Awaited<ReturnType<typeof actionCauses>>[number];
+type TaskView = Awaited<ReturnType<typeof readTaskView>>;
 type StartRequest = Extract<AcceptedRecord["request"], { kind: "start" }>;
 type StartSignal = Extract<QualifiedSignal, { kind: "start" }>;
+type ReviewSignal = Extract<QualifiedSignal, { kind: "review" }>;
+type RequirementsTask = Exclude<StartTask, "verify">;
 
 // A value, or why it isn't available: `unreadable` when evidence couldn't be
 // read, rather than read and found wanting.
@@ -109,10 +128,17 @@ interface Candidate {
 }
 
 const STOP_LABEL: ControlLabel = "agents:stop";
-const START_LABEL: ControlLabel = "start:implement";
+// The stop first, so a stop applied with a start makes it inert.
+const ACCEPTANCE_ORDER: readonly ControlLabel[] = [
+  STOP_LABEL,
+  ...CONTROL_LABELS.filter((label) => label !== STOP_LABEL),
+];
+const TASK_NAMES: ReadonlyMap<StartTask, string> = new Map<StartTask, string>([
+  ["author", "Author"],
+  ["implement", "Implement"],
+  ["verify", "Verify"],
+]);
 const BUDDY_RUN = z.uuid();
-const UNSUPPORTED_RETRY =
-  "retrying requirements Implement already attempted is unsupported; change the requirements to request new work";
 
 // Runs `step` on each of `items` in order, each after the one before it
 // settles: an issue's evidence is read, and its records appended, one at a
@@ -137,6 +163,16 @@ function refused<T>(reason: string): Checked<T> {
 
 function unread<T>(reason: string): Checked<T> {
   return { ok: false, reason, unreadable: true };
+}
+
+function taskName(task: StartTask): string {
+  return TASK_NAMES.get(task) ?? task;
+}
+
+// Why a start may not request what `task` already attempted: retry
+// coverage is undecided, so that is a hold, not permission.
+function unsupportedRetry(task: RequirementsTask): string {
+  return `retrying requirements ${taskName(task)} already attempted is unsupported; change the requirements to request new work`;
 }
 
 function scopeProblem(scope: SignalScope): string | null {
@@ -211,25 +247,30 @@ function stopNames(rows: readonly AcceptedRow[]): string {
     .join(", ");
 }
 
-// The Implement attempt that already tried `requirements`, if any. The work
+// The attempt of `task` that already tried `requirements`, if any. The work
 // item and requirements are the retry boundary, whatever the target.
 function attemptedRequirements(
   attempts: readonly AttemptCause[],
+  task: RequirementsTask,
   requirements: string,
 ): AttemptCause | undefined {
   return attempts.find(
     ({ binding }) =>
-      binding.task === "implement" &&
+      binding.task === task &&
       "requirements" in binding &&
       binding.requirements === requirements,
   );
 }
 
-// Whether an Implement attempt names start `id` as its cause, whatever its
-// binding or verdict.
-function spends(attempts: readonly AttemptCause[], id: string): boolean {
+// Whether an attempt of the start's own task names it as its cause,
+// whatever its binding or verdict.
+function spends(
+  attempts: readonly AttemptCause[],
+  signal: StartSignal,
+): boolean {
   return attempts.some(
-    ({ binding, cause }) => binding.task === "implement" && cause.signal === id,
+    ({ binding, cause }) =>
+      binding.task === signal.task && cause.signal === signal.id,
   );
 }
 
@@ -240,7 +281,7 @@ async function causesOf(
   try {
     return ok(await actionCauses(cfg, number));
   } catch (error) {
-    return unread(`Implement attempts unreadable: ${errorText(error)}`);
+    return unread(`task attempts unreadable: ${errorText(error)}`);
   }
 }
 
@@ -251,36 +292,44 @@ async function previousOf(
   try {
     return ok(await previousAction(cfg, binding));
   } catch (error) {
-    return unread(`previous Implement action unreadable: ${errorText(error)}`);
+    return unread(
+      `previous ${binding.task} action unreadable: ${errorText(error)}`,
+    );
   }
 }
 
-// The requirements binding a new start would request, or why none may be
-// recorded. A start never re-requests requirements Implement has attempted:
-// retry coverage is undecided, so that is a hold, not permission.
-async function startRequest(
+// The issue's linked PR: its own branch's PR, or null when it has none.
+function linkedPr(cfg: Config, number: number): Checked<number | null> {
+  try {
+    return ok(historicalPrFor(cfg, number));
+  } catch (error) {
+    return unread(`#${number}'s linked PR unreadable: ${errorText(error)}`);
+  }
+}
+
+// The Author or Implement binding a new start would request, or why none
+// may be recorded. A start never re-requests requirements its task has
+// attempted.
+async function requirementsRequest(
   cfg: Config,
   workItem: WorkItemRef,
-  attempts: readonly AttemptCause[],
+  task: RequirementsTask,
+  view: TaskView,
 ): Promise<Checked<StartRequest>> {
-  let view: Awaited<ReturnType<typeof readTaskView>>;
-  try {
-    view = await readTaskView(cfg, workItem.number);
-  } catch (error) {
-    return unread(`its task view is unreadable: ${errorText(error)}`);
+  const attempts = await causesOf(cfg, workItem.number);
+  if (!attempts.ok) {
+    return attempts;
   }
-  if (view.hold !== null) {
-    return refused(`its task view holds: ${view.hold}`);
-  }
-  const prior = attemptedRequirements(attempts, view.requirements);
+  const name = taskName(task);
+  const prior = attemptedRequirements(attempts.value, task, view.requirements);
   if (prior !== undefined) {
     return refused(
-      `Implement already attempted these requirements under cause ${prior.cause.signal}; ${UNSUPPORTED_RETRY}`,
+      `${name} already attempted these requirements under cause ${prior.cause.signal}; ${unsupportedRetry(task)}`,
     );
   }
   const previous = await previousOf(cfg, {
     workItem,
-    task: "implement",
+    task,
     target: view.target,
     requirements: view.requirements,
   });
@@ -289,15 +338,83 @@ async function startRequest(
   }
   if (previous.value !== null) {
     return refused(
-      `Implement action ${previous.value} already ran for this binding; ${UNSUPPORTED_RETRY}`,
+      `${name} action ${previous.value} already ran for this binding; ${unsupportedRetry(task)}`,
     );
   }
   return ok({
     kind: "start",
-    task: "implement",
+    task,
     requirements: view.requirements,
     target: view.target,
   });
+}
+
+// The Verify request for the current head of the issue's linked PR, or why
+// none may be recorded: the issue has no PR, or it is no longer open.
+function verifyRequest(
+  cfg: Config,
+  number: number,
+  target: TargetState,
+): Checked<StartRequest> {
+  const linked = linkedPr(cfg, number);
+  if (!linked.ok) {
+    return linked;
+  }
+  const pr = linked.value;
+  if (pr === null) {
+    return refused(`#${number} has no linked PR to verify`);
+  }
+  let pull: ReturnType<typeof pullRequest>;
+  try {
+    pull = pullRequest(cfg, number, pr);
+  } catch (error) {
+    return unread(`PR #${pr} unreadable: ${errorText(error)}`);
+  }
+  if (pull.state !== "OPEN") {
+    return refused(`PR #${pr} is ${pull.state}, so it has no head to verify`);
+  }
+  return ok({
+    kind: "start",
+    task: "verify",
+    pr,
+    head: pull.headSha,
+    target,
+  });
+}
+
+// The request a new start of `task` would record, read from the issue's
+// task view now.
+async function startRequest(
+  cfg: Config,
+  workItem: WorkItemRef,
+  task: StartTask,
+): Promise<Checked<StartRequest>> {
+  let view: TaskView;
+  try {
+    view = await readTaskView(cfg, workItem.number);
+  } catch (error) {
+    return unread(`its task view is unreadable: ${errorText(error)}`);
+  }
+  if (view.hold !== null) {
+    return refused(`its task view holds: ${view.hold}`);
+  }
+  if (task === "verify") {
+    return verifyRequest(cfg, workItem.number, view.target);
+  }
+  return await requirementsRequest(cfg, workItem, task, view);
+}
+
+// What the journal keeps of a record's source while its write is uncertain.
+function sourceEvidence(record: AcceptedRecord): {
+  signal: string;
+  event?: number;
+  review?: number;
+} {
+  const { source } = record;
+  if (source.kind === "github-review") {
+    return { signal: record.id, review: source.review.id };
+  }
+  return { signal: record.id, event: source.event.id };
 }
 
 // Appends `record` once through the uncertain-write journal and confirms it
@@ -326,7 +443,7 @@ function append(
         }
         return false;
       },
-      evidence: { signal: record.id, event: record.source.event.id },
+      evidence: sourceEvidence(record),
     });
   } catch (error) {
     return unread(
@@ -349,10 +466,11 @@ async function accept(
   const { scope, buddyRun, poll } = context;
   const { workItem } = poll;
   const { label, event } = candidate;
+  const task = START_LABELS.get(label);
   if (event.actor === null) {
     return refused("its event names no actor");
   }
-  if (label === START_LABEL && rows.some(isStop)) {
+  if (task !== undefined && rows.some(isStop)) {
     return refused(
       `#${workItem.number} is stopped by accepted stop ${stopNames(rows)}; removing agents:stop does not continue work`,
     );
@@ -365,19 +483,15 @@ async function accept(
     return unread(`its producer can't be qualified: ${qualification.reason}`);
   }
   let request: AcceptedRecord["request"] = { kind: "stop" };
-  if (label === START_LABEL) {
-    const attempts = await causesOf(cfg, workItem.number);
-    if (!attempts.ok) {
-      return attempts;
-    }
-    const start = await startRequest(cfg, workItem, attempts.value);
+  if (task !== undefined) {
+    const start = await startRequest(cfg, workItem, task);
     if (!start.ok) {
       return start;
     }
     request = start.value;
   }
   const record = RECORD.safeParse({
-    version: 1,
+    version: 2,
     kind: "accepted",
     id: signalId(workItem, event.id),
     workItem,
@@ -410,7 +524,7 @@ async function acceptLabels(
     return rows;
   }
   let current = rows;
-  await inOrder([STOP_LABEL, START_LABEL], async (label) => {
+  await inOrder(ACCEPTANCE_ORDER, async (label) => {
     const event = evidence.value.get(label);
     if (event === null) {
       holdOn(
@@ -434,33 +548,179 @@ async function acceptLabels(
   return current;
 }
 
+// Each reviewer's standing approval or request for changes on the PR, on
+// whichever head it binds.
+function standingReviews(
+  reviews: readonly SubmittedReview[],
+): StandingReview[] {
+  const heads = new Set(
+    reviews.flatMap((review): string[] => {
+      if (review.commit === null) {
+        return [];
+      }
+      return [review.commit];
+    }),
+  );
+  return [...heads].flatMap((head) => standingOn(reviews, head));
+}
+
+// Whether `review` is still its reviewer's standing review of its commit:
+// not dismissed and not followed by a later approval or request for changes.
+function stands(
+  reviews: readonly SubmittedReview[],
+  review: PrReview,
+): boolean {
+  return standingOn(reviews, review.commit).some(
+    (item) => item.id === review.id && item.state === review.state,
+  );
+}
+
+// Accepts one standing review by a qualified person. A review by a machine
+// or by someone who isn't an active member grants nothing and holds
+// nothing: anyone who can read the PR may review it.
+function acceptReview(
+  cfg: Config,
+  context: PollContext,
+  pr: number,
+  review: StandingReview,
+): Checked<AcceptedRow[] | null> {
+  const { scope, buddyRun, poll } = context;
+  const { workItem } = poll;
+  const actor: EventActor = { ...review.author, viaApp: false };
+  const qualification = qualifyActor(cfg, scope.organization, actor);
+  if (qualification.status === "rejected") {
+    return ok(null);
+  }
+  if (qualification.status === "unknown") {
+    return unread(`its reviewer can't be qualified: ${qualification.reason}`);
+  }
+  const record = RECORD.safeParse({
+    version: 2,
+    kind: "accepted",
+    id: reviewSignalId(workItem, review.id),
+    workItem,
+    source: {
+      kind: "github-review",
+      pr,
+      review: { id: review.id, submittedAt: review.submittedAt },
+    },
+    producer: qualification.provenance,
+    request: {
+      kind: "review",
+      review: { id: review.id, pr, commit: review.commit, state: review.state },
+    },
+    acceptedBy: { buddyRun },
+  });
+  if (!record.success) {
+    return refused("its record would be invalid");
+  }
+  return append(cfg, workItem.number, record.data);
+}
+
+// Accepts each standing approval or request for changes on the issue's
+// linked PR that a qualified person submitted and no record holds yet.
+// Returns the issue's records after.
+function acceptReviews(
+  cfg: Config,
+  context: PollContext,
+  rows: AcceptedRow[],
+): AcceptedRow[] {
+  const { poll } = context;
+  const linked = linkedPr(cfg, poll.workItem.number);
+  if (!linked.ok) {
+    holdFor(poll, "reviews unreadable", linked);
+    return rows;
+  }
+  const pr = linked.value;
+  if (pr === null) {
+    return rows;
+  }
+  const listed = listReviews(cfg, pr);
+  if (listed.status !== "ok") {
+    unreadableOn(poll, `PR #${pr}'s reviews unreadable: ${unreadable(listed)}`);
+    return rows;
+  }
+  let current = rows;
+  for (const review of standingReviews(listed.value)) {
+    const id = reviewSignalId(poll.workItem, review.id);
+    if (!current.some((row) => row.record.id === id)) {
+      const accepted = acceptReview(cfg, context, pr, review);
+      if (!accepted.ok) {
+        holdFor(
+          poll,
+          `review ${review.id} of PR #${pr} not accepted`,
+          accepted,
+        );
+      } else if (accepted.value !== null) {
+        current = accepted.value;
+      }
+    }
+  }
+  return current;
+}
+
+function deliverQualified(
+  cfg: Config,
+  scope: SignalScope,
+  poll: IssuePoll,
+  signal: StartSignal | ReviewSignal,
+): void {
+  const current = requalifyProducer(cfg, scope.organization, signal.provenance);
+  if (current.status === "qualified") {
+    poll.signals.push(signal);
+  } else if (current.status === "unknown") {
+    unreadableOn(
+      poll,
+      `accepted ${signal.kind} ${signal.id} held: ${current.reason}`,
+    );
+  } else {
+    holdOn(
+      poll,
+      `accepted ${signal.kind} ${signal.id} revoked: ${current.reason}`,
+    );
+  }
+}
+
 async function deliverStart(
   cfg: Config,
   scope: SignalScope,
   poll: IssuePoll,
   signal: StartSignal,
 ): Promise<void> {
-  const previous = await previousOf(cfg, {
-    workItem: signal.workItem,
-    task: "implement",
-    target: signal.target,
-    requirements: signal.requirements,
-  });
-  if (!previous.ok) {
-    holdFor(poll, `accepted start ${signal.id} held`, previous);
-    return;
+  if (signal.task !== "verify") {
+    const previous = await previousOf(cfg, {
+      workItem: signal.workItem,
+      task: signal.task,
+      target: signal.target,
+      requirements: signal.requirements,
+    });
+    if (!previous.ok) {
+      holdFor(poll, `accepted start ${signal.id} held`, previous);
+      return;
+    }
+    if (previous.value !== null) {
+      return;
+    }
   }
-  if (previous.value !== null) {
-    return;
+  deliverQualified(cfg, scope, poll, signal);
+}
+
+// Whether `signal` still requests work: not spent by an attempt of its task
+// and, for Author or Implement, its requirements not attempted by its task.
+function pendingStart(
+  attempts: readonly AttemptCause[],
+  signal: StartSignal,
+): boolean {
+  if (spends(attempts, signal)) {
+    return false;
   }
-  const current = requalifyProducer(cfg, scope.organization, signal.provenance);
-  if (current.status === "qualified") {
-    poll.signals.push(signal);
-  } else if (current.status === "unknown") {
-    unreadableOn(poll, `accepted start ${signal.id} held: ${current.reason}`);
-  } else {
-    holdOn(poll, `accepted start ${signal.id} revoked: ${current.reason}`);
+  if (signal.task === "verify") {
+    return true;
   }
+  return (
+    attemptedRequirements(attempts, signal.task, signal.requirements) ===
+    undefined
+  );
 }
 
 // Delivers each accepted start that is neither spent nor inert and whose
@@ -471,7 +731,9 @@ async function deliverStarts(
   poll: IssuePoll,
   rows: readonly AcceptedRow[],
 ): Promise<void> {
-  const starts = rows.filter((row) => !isStop(row)).map(signalOf);
+  const starts = rows
+    .map(signalOf)
+    .filter((signal): signal is StartSignal => signal.kind === "start");
   if (starts.length === 0 || rows.some(isStop)) {
     return;
   }
@@ -480,13 +742,41 @@ async function deliverStarts(
     holdFor(poll, "accepted starts held", attempts);
     return;
   }
-  const pending = starts.filter(
-    (signal): signal is StartSignal =>
-      signal.kind === "start" &&
-      !spends(attempts.value, signal.id) &&
-      attemptedRequirements(attempts.value, signal.requirements) === undefined,
+  const pending = starts.filter((signal) =>
+    pendingStart(attempts.value, signal),
   );
   await inOrder(pending, (signal) => deliverStart(cfg, scope, poll, signal));
+}
+
+// Delivers each accepted review that still stands on its PR and whose
+// reviewer still qualifies; whether it binds the current head is the task
+// lane's to decide. A stop makes every review inert.
+function deliverReviews(
+  cfg: Config,
+  scope: SignalScope,
+  poll: IssuePoll,
+  rows: readonly AcceptedRow[],
+): void {
+  const reviews = rows
+    .map(signalOf)
+    .filter((signal): signal is ReviewSignal => signal.kind === "review");
+  if (reviews.length === 0 || rows.some(isStop)) {
+    return;
+  }
+  const listings = new Map<number, ReturnType<typeof listReviews>>();
+  for (const signal of reviews) {
+    const { pr } = signal.review;
+    const listed = listings.get(pr) ?? listReviews(cfg, pr);
+    listings.set(pr, listed);
+    if (listed.status !== "ok") {
+      unreadableOn(
+        poll,
+        `accepted review ${signal.id} held: PR #${pr}'s reviews unreadable: ${unreadable(listed)}`,
+      );
+    } else if (stands(listed.value, signal.review)) {
+      deliverQualified(cfg, scope, poll, signal);
+    }
+  }
 }
 
 async function deliverResults(cfg: Config, poll: IssuePoll): Promise<void> {
@@ -528,10 +818,16 @@ async function pollIssue(
   }
   const held = records.problem ?? journalProblem(cfg, number);
   let { rows } = records;
-  if (held !== null) {
+  if (held === null) {
+    if (context.labelled) {
+      rows = await acceptLabels(cfg, { ...context, poll }, rows);
+    }
+    // A stopped issue's reviews would be inert, so none is read or kept.
+    if (!rows.some(isStop)) {
+      rows = acceptReviews(cfg, { ...context, poll }, rows);
+    }
+  } else {
     holdOn(poll, `accepted signals held: ${held}`);
-  } else if (context.labelled) {
-    rows = await acceptLabels(cfg, { ...context, poll }, rows);
   }
   // A retained execution prevents new work, not acceptance/delivery of a
   // qualified stop. No ownership observation grants signal authority.
@@ -541,6 +837,7 @@ async function pollIssue(
   }
   if (held === null && !owned) {
     await deliverStarts(cfg, context.scope, poll, rows);
+    deliverReviews(cfg, context.scope, poll, rows);
   }
   if (rows.length > 0) {
     await deliverResults(cfg, poll);
@@ -638,11 +935,34 @@ async function requalifyResult(
   };
 }
 
+// Why an accepted review no longer stands on its PR, or null while it does.
+function reviewProblem(
+  cfg: Config,
+  signal: ReviewSignal,
+): Requalification | null {
+  const { pr } = signal.review;
+  const listed = listReviews(cfg, pr);
+  if (listed.status !== "ok") {
+    return {
+      status: "unknown",
+      reason: `PR #${pr}'s reviews unreadable: ${unreadable(listed)}`,
+    };
+  }
+  if (!stands(listed.value, signal.review)) {
+    return {
+      status: "revoked",
+      reason: `review ${signal.review.id} of PR #${pr} no longer stands: it was dismissed or its reviewer reviewed again`,
+    };
+  }
+  return null;
+}
+
 // Checks an accepted human signal again from its authenticated record,
 // rereading it rather than trusting the caller's copy. `given`, when the
 // caller holds a whole delivered signal, must be exactly what the record
 // accepts. The retained producer must still be the same user and an active
-// member; the label need not remain. A start on a stopped issue is revoked.
+// member; the label need not remain, but a review must still stand on its
+// PR. A start or review on a stopped issue is revoked.
 function requalifyAccepted(
   cfg: Config,
   scope: SignalScope,
@@ -686,7 +1006,7 @@ function requalifyAccepted(
       reason: `record ${source.recordId} does not accept ${source.id} as given`,
     };
   }
-  if (accepted.kind === "start") {
+  if (accepted.kind !== "stop") {
     if (records.rows.some(isStop)) {
       return {
         status: "revoked",
@@ -696,6 +1016,12 @@ function requalifyAccepted(
     const held = records.problem ?? journalProblem(cfg, number);
     if (held !== null) {
       return { status: "unknown", reason: held };
+    }
+  }
+  if (accepted.kind === "review") {
+    const problem = reviewProblem(cfg, accepted);
+    if (problem !== null) {
+      return problem;
     }
   }
   const { producer: provenance } = row.record;
@@ -728,8 +1054,8 @@ async function requalify(
 }
 
 // The synchronous form of requalify for ops mutation guards: the same
-// record reread and qualification rules, for the accepted human signal
-// `source` names.
+// record reread and qualification rules, for the accepted human signal,
+// start, review or stop, that `source` names.
 function requalifyHumanNow(
   cfg: Config,
   scope: SignalScope,

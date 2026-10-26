@@ -6,7 +6,6 @@
   },
   "practices": [
     "AGENTS.md",
-    "docs/coding-practices.md",
     "docs/project-practices.md"
   ],
   "lockfiles": [],
