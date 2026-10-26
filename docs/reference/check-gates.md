@@ -65,7 +65,7 @@ Capture a command's exit status before any output filter, so a filter can't hide
 
 Installation is a separate, operator-authorized action. Landing source installs nothing and changes no operator configuration, wrapper or credential.
 
-Installation needs the pre-Land proof that the effective policy required: the exact-source gate result and an independent, read-only pre-Land Security result. Both must bind the same full source commit, trusted-input revision, checking policy and pre-Land target branch and commit. Missing, stale or mismatched proof is a **STOP**. A fast pass alone, an invented receipt or a retrospective Security pass doesn't authorize installation.
+Before installation, confirm the exact-source gate result and independent, read-only pre-Land Security result that the effective policy required. Record both against the same full source commit, trusted-input revision, checking policy and pre-Land target branch and commit. A fast pass alone is not full-gate evidence.
 
 After Land, confirm only the existing identity, receipt, ancestry, pre-Land verification and saved clearance. Run no check suite, fresh Security model, repair writer or second Land. The installer dry-run, backups, draining jobs and test consumers, a controlled cutover and [installation acceptance](operations.md#installation-acceptance) each still need separate authorization. Authorized evidence checkpoints and completion bookkeeping aren't post-Land validation.
 

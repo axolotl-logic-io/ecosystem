@@ -270,14 +270,20 @@ interface BuddyDiagnostics {
 // Remember holds across the poll's temporary idle reset, until a whole cycle
 // clears them. JSON keeps multiline reasons within one physical log line.
 function buddyDiagnostics(id: string): BuddyDiagnostics {
-  const holds = new Map<string, string>();
+  const holds = new Map<string, Set<string>>();
+  const seen = new Map<string, Set<string>>();
   return {
     held: (where: LoopLocation, reason: string): void => {
       const key = JSON.stringify([where.repo, where.task]);
-      if (holds.get(key) === reason) {
+      const current = seen.get(key) ?? new Set<string>();
+      current.add(reason);
+      seen.set(key, current);
+      const reported = holds.get(key) ?? new Set<string>();
+      if (reported.has(reason)) {
         return;
       }
-      holds.set(key, reason);
+      reported.add(reason);
+      holds.set(key, reported);
       process.stderr.write(
         `${JSON.stringify({
           at: new Date().toISOString(),
@@ -290,10 +296,15 @@ function buddyDiagnostics(id: string): BuddyDiagnostics {
     },
     settled: (loops: readonly LoopObservation[]): void => {
       for (const loop of loops) {
+        const key = JSON.stringify([loop.repo, loop.task]);
+        const current = seen.get(key);
         if (loop.state !== "held") {
-          holds.delete(JSON.stringify([loop.repo, loop.task]));
+          holds.delete(key);
+        } else if (current !== undefined) {
+          holds.set(key, current);
         }
       }
+      seen.clear();
     },
     ended: (where: LoopLocation, summary: ActionSummary): void => {
       if (summary.notAdmitted !== null || summary.end.outcome === "succeeded") {

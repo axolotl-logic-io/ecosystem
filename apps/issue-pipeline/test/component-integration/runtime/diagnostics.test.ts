@@ -36,6 +36,10 @@ test("holds log per loop, changed reason and recurrence, without repeating a ste
       log.settled([loop]);
       log.held(where, "first\\nline");
       log.held(where, "changed");
+      log.held(where, "first\\nline");
+      log.settled([loop]);
+      log.held(where, "changed");
+      log.held(where, "first\\nline");
       log.settled([{ ...loop, state: "idle" }]);
       log.held(where, "changed");
       log.held({ ...where, task: "author" }, "changed");

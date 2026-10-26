@@ -146,15 +146,18 @@ Every landing-account-authored comment is reread through GraphQL with body,
 author, `lastEditedAt` and `editor` in the same response. Unedited comments
 require null edit time/editor; edited comments require the landing account as
 editor. Issue-local reads check every landing-authored comment, including removed
-markers. Repository-wide coordination reads check provenance only when either
+markers.
+
+Repository-wide coordination reads check provenance only when either
 the listing or the current reread contains the coordination marker. They do not
 consume ordinary discussion or unrelated historical state and task receipts.
 Missing or unreadable provenance still stops the read. Untrusted provenance on
 a selected comment stops for reconciliation rather than falling back to an
 older or empty receipt. These semantics still need the operator verification
-below. This is not a
-same-OS-user sandbox: a child under the operator's user may still read the
-credential file.
+below.
+
+This is not a same-OS-user sandbox: a child under the operator's user may still
+read the credential file.
 
 ## Config and model cutover
 
