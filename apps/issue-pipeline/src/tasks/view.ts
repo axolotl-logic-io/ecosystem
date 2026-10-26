@@ -3,8 +3,7 @@
 // configured target's tip T, whether R contains T, and the item's
 // authenticated v2 results. Evidence that can't be trusted as read holds
 // the whole item rather than throwing past the runtime: unreadable or
-// contradictory records, historical saved state that is never adopted, and
-// an unsettled historical Land.
+// contradictory records, and saved state of another version.
 
 import type { IssueComment } from "../comments.ts";
 import { listComments } from "../comments.ts";
@@ -24,14 +23,7 @@ import type { Records } from "./records.ts";
 import { RecordsHold, readRecords, taskResults } from "./records.ts";
 
 const WHITESPACE = /\s+/u;
-const NO_RECORDS: Records = {
-  rows: [],
-  historical: {
-    landAttempted: false,
-    unsettledLand: null,
-    refusedSubjects: [],
-  },
-};
+const NO_RECORDS: Records = { rows: [] };
 
 // The view with what an op needs beside it: the checked records and the
 // clone the revision was read in.
@@ -111,16 +103,6 @@ function isAncestor(
   );
 }
 
-function holdOf(records: Records, work: StoredWork | null): string | null {
-  if (work?.kind === "historical") {
-    return `historical version ${String(work.version)} saved state is never adopted; reconcile it explicitly`;
-  }
-  if (records.historical.unsettledLand !== null) {
-    return `historical Land run ${records.historical.unsettledLand} is unsettled; reconcile it explicitly`;
-  }
-  return null;
-}
-
 function checkedRecords(
   cfg: Config,
   number: number,
@@ -129,7 +111,7 @@ function checkedRecords(
   try {
     const records = readRecords(cfg, number, comments);
     const work = storedWork(cfg, number, comments);
-    return { records, work, hold: holdOf(records, work) };
+    return { records, work, hold: null };
   } catch (error) {
     if (error instanceof RecordsHold || error instanceof OpsError) {
       return { records: NO_RECORDS, work: null, hold: error.message };

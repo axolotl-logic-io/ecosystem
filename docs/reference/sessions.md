@@ -23,7 +23,7 @@ Behavioral pages live in `apps/issue-pipeline/prompts/` and are installed under 
 
 Before the corresponding launch, the runtime pins and validates the selected page's exact bytes and retains the pinned page for that action. A page must be a plain file, not a symlink, valid UTF-8 without NUL bytes, nonblank, more than one line and at most 131,071 bytes. Missing or malformed pages fail closed; there is no prompt fallback.
 
-Pinned provenance names the page, path and SHA-256. Launch records preserve session observations; the removed stage runtime's `job.json` writer is not recreated. Historical prompt-head fields remain history. A prompt grants no tool, token, writable path or authority.
+Pinned provenance names the page, path and SHA-256. Launch records preserve session observations. A prompt grants no tool, token, writable path or authority.
 
 ## Session boundaries
 

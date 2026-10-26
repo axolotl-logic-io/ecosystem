@@ -61,10 +61,7 @@ function fixture(): {
         .record(z.string(), z.unknown())
         .parse(
           JSON.parse(
-            fs.readFileSync(
-              path.join(SOURCE, "repos", "committed-settings.example.json"),
-              "utf8",
-            ),
+            fs.readFileSync(path.join(SOURCE, "repos", "example.json"), "utf8"),
           ),
         );
       const file = path.join(root, "repo.json");

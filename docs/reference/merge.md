@@ -52,7 +52,3 @@ Read-only recovery settles the original attempt, with its original identity and 
 Neither operation repeats a push or issue close. Current buddy recording authorization and ownership remain required. A lost response is not permission to resend a possibly accepted write.
 
 To investigate uncertainty, stop new dispatch for the affected issue and preserve its attempts, results, checkpoints, coordination records, checkout, consumers and original proof. Read the actual remote effects. Do not erase intent, clear a Security rejection, release another invocation's turn or restart an old stage. An open PR alone does not establish that a target mutation never happened.
-
-## Historical boundaries
-
-The old merge-stage launcher, landing-order flags, stage requests and broad `finish` transition are retired. Historical state and receipts remain evidence under their original schemas. No compatibility adapter promotes them into a current pass or an authorized continuation.

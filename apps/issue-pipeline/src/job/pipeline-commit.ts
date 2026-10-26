@@ -39,8 +39,6 @@ const COMMIT_SCOPE = PATH_SCOPE.extend({
   jobStartedAt: z.string().optional(),
   root: z.string(),
 });
-
-type Access = z.infer<typeof ACCESS>;
 type CheckoutScope = z.infer<typeof CHECKOUT_SCOPE>;
 type CommitScope = z.infer<typeof COMMIT_SCOPE>;
 
@@ -208,7 +206,7 @@ function commitScopeIn(
   }
 }
 
-export type { Access, CommitPlan, CommitScope, PathScope };
+export type { CommitPlan, CommitScope, PathScope };
 export {
   COMMIT_SCOPE_ENV,
   COMMIT_TOOL,

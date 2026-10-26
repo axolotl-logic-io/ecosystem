@@ -58,9 +58,4 @@ function postComments(
   });
 }
 
-// Only posts the queued comments (the ops CLI does that before any op).
-function post(): Record<string, never> {
-  return {};
-}
-
-export { post, postComments, QUEUED_COMMENT };
+export { postComments, QUEUED_COMMENT };

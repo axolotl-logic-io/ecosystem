@@ -1,14 +1,13 @@
 // Bundles the distribution in programs.ts and its compiler/Python assets.
 // Usage: node build.ts [outdir] (defaults to this folder's dist/).
-// Retired delivery executables are removed from an existing output folder.
 
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import ts from "typescript";
-import { PROGRAMS, RETIRED_PROGRAMS } from "./programs.ts";
+import { PROGRAMS } from "./programs.ts";
 
 const BACKEND_PACKAGE = path.dirname(
   fileURLToPath(import.meta.resolve("typescript/package.json")),
@@ -62,11 +61,6 @@ async function main(): Promise<void> {
     await cp(BACKEND_PACKAGE, path.join(outDir, BACKEND_DIRECTORY), {
       recursive: true,
     });
-    await Promise.all(
-      RETIRED_PROGRAMS.map((file) =>
-        rm(path.join(outDir, file), { force: true }),
-      ),
-    );
     await Promise.all(
       PROGRAMS.map(({ source, file }) =>
         buildNodeModule(

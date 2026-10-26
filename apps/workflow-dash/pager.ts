@@ -12,27 +12,11 @@ import { layout, panel, pill } from "./ui-format.ts";
 
 const pageRows = 10;
 const footerRows = 3;
-const failedLine = /ℹ.*(?:fail|cancelled)\s+[1-9]|stopped|timeout/u;
-const passedLine = /ℹ.*pass|✓/u;
-const headingLine = /▰|Verify|TIMELINE/u;
 interface PagerOptions {
   text: string;
   title: string;
   done: () => void;
   theme?: Theme;
-  workflowRun?: boolean;
-}
-function lineInk(line: string): "error" | "success" | "accent" | "muted" {
-  if (failedLine.test(line)) {
-    return "error";
-  }
-  if (passedLine.test(line)) {
-    return "success";
-  }
-  if (headingLine.test(line)) {
-    return "accent";
-  }
-  return "muted";
 }
 class Pager implements Component {
   readonly scroll: ScrollView;
@@ -74,14 +58,11 @@ class Pager implements Component {
     this.scroll.updateLayout(lines.length, height - layout.frameInset, () =>
       this.host.requestRender(),
     );
-    let viewport = lines.slice(
+    const viewport = lines.slice(
       this.scroll.scrollTop,
       this.scroll.scrollTop + height - layout.frameInset,
     );
     const { theme } = this.options;
-    if (theme !== undefined && this.options.workflowRun === true) {
-      viewport = viewport.map((line) => theme.fg(lineInk(line), line));
-    }
     if (theme === undefined) {
       return [
         this.options.title,

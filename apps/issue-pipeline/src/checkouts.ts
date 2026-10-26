@@ -5,29 +5,14 @@ import { z } from "zod";
 import { configureClone, updateSubmodules } from "./clone-setup.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import {
-  assertClean,
-  commitsOffGitHub,
-  fetchIn,
-  gitIn,
-  head,
-  remoteHead,
-  uncommitted,
-} from "./git-state.ts";
+import { assertClean, fetchIn, gitIn, head } from "./git-state.ts";
 import { git } from "./github.ts";
-import {
-  assertCheckoutReady,
-  assertCheckoutReadyForRemoval,
-  releaseCheckoutSlot,
-  withCheckoutSetup,
-} from "./lane-slots.ts";
+import { assertCheckoutReady, withCheckoutSetup } from "./lane-slots.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import { run, runFailure, shell } from "./process.ts";
 import { readWriteAuthority } from "./write-authority.ts";
 
-const TEARDOWN_TIMEOUT_MS = 300_000;
-const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
 const PUSHED_FILE = "pushed.json";
 const MS_PER_MINUTE = 60_000;
 // The config keys setUpCheckout reads; loadConfig applied their defaults.
@@ -35,8 +20,6 @@ const SETUP_SETTINGS = z.looseObject({
   commandTimeoutMinutes: z.number(),
   commands: z.looseObject({ setup: z.string().nullish() }),
 });
-// The part of the push record a claim reads.
-const PUSHED = z.object({ sha: z.string(), op: z.string() });
 
 // What an issue's work changes: whether its code branch changes files
 // against the base branch.
@@ -47,12 +30,6 @@ interface BranchChanges {
 // The code head after a push, and what the work changes.
 interface PushResult extends BranchChanges {
   headSha: string;
-}
-
-// A head the pipeline pushed for an issue, and the op that pushed it.
-interface PushRecord {
-  sha: string;
-  op: string;
 }
 
 function ensureClone(cfg: Config): string {
@@ -72,110 +49,6 @@ function ensureClone(cfg: Config): string {
   });
 }
 
-// Issue `number`'s worktree, made if it is missing: on its branch's head on
-// GitHub, or with no branch there, on the base's.
-function ensureWorktree(cfg: Config, number: number): string {
-  return withCloneLock(cfg, () => {
-    const clone = paths.clone(cfg);
-    const wt = paths.worktree(cfg, number);
-    const branch = paths.branch(cfg, number);
-    if (fs.existsSync(path.join(wt, ".git"))) {
-      return wt;
-    }
-    fs.mkdirSync(path.dirname(wt), { recursive: true });
-    let start = `origin/${cfg.baseBranch}`;
-    if (remoteHead(cfg, number) !== null) {
-      const refspec = `${branch}:refs/remotes/origin/${branch}`;
-      git(cfg, "dev", ["-C", clone, "fetch", "origin", refspec]);
-      start = `origin/${branch}`;
-    }
-    gitIn(clone, ["worktree", "add", "-B", branch, wt, start]);
-    updateSubmodules(cfg, wt);
-    return wt;
-  });
-}
-
-// Runs the configured teardown for issue `number`, then removes its lane
-// worktree and local branch. A stage job's own checkout (`cfg.checkout`) is
-// never removed here: the job is still running in it, and closes it itself
-// as it exits (job/teardown.ts), so the checkout that proves a completion
-// stays until then.
-function removeWorktree(cfg: Config, number: number): void {
-  assertCheckoutReadyForRemoval(cfg, number, paths.worktree(cfg, number));
-  // Frees what setup made outside the worktree, such as a per-issue test
-  // database. Runs in the issue's run dir, whose path names the issue. A
-  // failure is only logged.
-  const { teardown } = cfg.commands;
-  if (teardown !== undefined && teardown !== null && teardown !== "") {
-    const dir = paths.runDir(cfg, number);
-    fs.mkdirSync(dir, { recursive: true });
-    const log = path.join(dir, "teardown.log");
-    shell(teardown, dir, log, TEARDOWN_TIMEOUT_MS);
-  }
-  if (cfg.checkout?.issue === number) {
-    return;
-  }
-  withCloneLock(cfg, () => {
-    const clone = paths.clone(cfg);
-    const wt = paths.worktree(cfg, number);
-    assertCheckoutReadyForRemoval(cfg, number, wt);
-    if (fs.existsSync(wt)) {
-      const args = [
-        "-C",
-        clone,
-        "worktree",
-        "remove",
-        "--force",
-        "--force",
-        wt,
-      ];
-      run("git", args, { allowFail: true });
-    }
-    const branch = paths.branch(cfg, number);
-    run("git", ["-C", clone, "branch", "-D", branch], { allowFail: true });
-    releaseCheckoutSlot(cfg);
-  });
-}
-
-// The issues that have a worktree on this machine, in number order.
-function issueWorktrees(cfg: Config): number[] {
-  const dir = path.dirname(paths.worktree(cfg, 0));
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .flatMap((entry) => {
-      const { n } = ISSUE_DIR.exec(entry.name)?.groups ?? {};
-      return n ?? [];
-    })
-    .map(Number)
-    .sort((a, b) => a - b);
-}
-
-// Why the issue's worktree holds work that GitHub lacks (uncommitted changes,
-// or commits on no branch or PR there), or null when it holds none. `pr` is
-// the issue's PR, or null when it has none.
-function unsavedWork(cfg: Config, n: number, pr: number | null): string | null {
-  const wt = paths.worktree(cfg, n);
-  if (!fs.existsSync(path.join(wt, ".git"))) {
-    return "not a git worktree";
-  }
-  const dirty = uncommitted(wt, "the worktree");
-  if (dirty !== null) {
-    return dirty;
-  }
-  const count = withCloneLock(cfg, () => commitsOffGitHub(cfg, n, pr));
-  if (count === 0) {
-    return null;
-  }
-  if (count === 1) {
-    return "1 local commit is not on GitHub";
-  }
-  return `${count} local commits are not on GitHub`;
-}
-
 // Records in the issue's run directory that `op` is pushing `sha` as the
 // branch's head, replacing the last record, so a later claim on this machine
 // knows that head as the pipeline's own push.
@@ -184,18 +57,6 @@ function recordPush(cfg: Config, n: number, sha: string, op: string): void {
   fs.mkdirSync(dir, { recursive: true });
   const record = { sha, op, at: new Date().toISOString() };
   fs.writeFileSync(path.join(dir, PUSHED_FILE), `${JSON.stringify(record)}\n`);
-}
-
-// The head this machine last recorded pushing for the issue and the op that
-// pushed it, or null when it has no readable record.
-function lastPush(cfg: Config, n: number): PushRecord | null {
-  const file = path.join(paths.runDir(cfg, n), PUSHED_FILE);
-  try {
-    const { sha, op } = PUSHED.parse(JSON.parse(fs.readFileSync(file, "utf8")));
-    return { sha, op };
-  } catch {
-    return null;
-  }
 }
 
 // What the issue's work changes: whether its branch changes files against the
@@ -309,18 +170,13 @@ function setUpCheckout(
   }
 }
 
-export type { BranchChanges, PushRecord, PushResult };
+export type { BranchChanges, PushResult };
 export {
   branchChanges,
   claimSetupStart,
   ensureClone,
-  ensureWorktree,
-  issueWorktrees,
-  lastPush,
   push,
   pushHead,
   recordPush,
-  removeWorktree,
   setUpCheckout,
-  unsavedWork,
 };

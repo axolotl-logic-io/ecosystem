@@ -10,7 +10,7 @@ import {
   type currentComment,
   currentComments,
 } from "./comment-authority.ts";
-import { isStateBody, PIPELINE_MARK, USAGE_MARK } from "./comment-marks.ts";
+import { isStateBody, PIPELINE_MARK } from "./comment-marks.ts";
 import type { Config } from "./config.ts";
 import { gh, ghLines } from "./github.ts";
 
@@ -143,15 +143,6 @@ function listRepoComments(cfg: Config, since: string | null): IssueComment[] {
   return verifiedComments(cfg, lines.map(commentOf));
 }
 
-// The mark of issue `issue`'s n-th usage comment.
-function usageMark(issue: number, n: number): string {
-  let kind = "usage";
-  if (n > 1) {
-    kind = `usage-${n}`;
-  }
-  return `<!-- issue-pipeline:${issue}:${kind} -->`;
-}
-
 // `text`, or `fallback` when it is missing or empty.
 function textOr(text: string | null | undefined, fallback: string): string {
   if (text === undefined || text === null || text === "") {
@@ -197,15 +188,6 @@ function signature(by: Author | undefined): string {
 
 function signed(by: Author | undefined, body: string): string {
   return `${signature(by)}\n\n${body}`.slice(0, MAX_COMMENT_LENGTH);
-}
-
-function comment(
-  cfg: Config,
-  number: number,
-  by: Author | undefined,
-  body: string,
-): void {
-  rawComment(cfg, number, signed(by, body));
 }
 
 // Replaces comment `id`'s body; with `allowFail`, a failed edit is ignored.
@@ -286,9 +268,6 @@ function pipelineRole(
   if (role !== undefined) {
     return role;
   }
-  if (USAGE_MARK.test(body)) {
-    return "usage";
-  }
   return null;
 }
 
@@ -296,7 +275,6 @@ export type { Author, IssueComment };
 export {
   AUTHOR,
   COMMENT,
-  comment,
   commentByKey,
   editComment,
   keyMark,
@@ -307,5 +285,4 @@ export {
   roleSlug,
   signature,
   signed,
-  usageMark,
 };

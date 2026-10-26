@@ -26,10 +26,9 @@ test("subagent loader shows explicitly recorded accounts and leaves missing acco
       join(root, "without-account/status.json"),
       JSON.stringify(status),
     );
-    const runs = await loadSubagentRuns(
-      configure({ subagentRuns: root }),
-      true,
-    );
+    const config = configure({ subagentRuns: root });
+    assert.deepEqual(await loadSubagentRuns(config), []);
+    const runs = await loadSubagentRuns(config, true);
     assert.equal(runs.length, 2);
     assert.equal(
       runs.find((run) => run.id === "with-account")?.account,

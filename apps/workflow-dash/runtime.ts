@@ -6,11 +6,8 @@ import { errorMessage } from "./errors.ts";
 import { Remote } from "./github.ts";
 import type { DashboardContext } from "./host.ts";
 import { readCap, safePath } from "./local-files.ts";
-import { sessions } from "./session-source.ts";
 import { parse } from "./source-records.ts";
 import { widget } from "./status-view.ts";
-import { timeBreakdown, today } from "./time.ts";
-import { fmt } from "./ui-format.ts";
 
 const localRefreshMilliseconds = 15_000;
 const debounceMilliseconds = 350;
@@ -29,7 +26,6 @@ class DashboardRuntime {
   state: Snapshot = { ...empty };
   config: Config = { ...defaults };
   remote: Remote = new Remote(this.config);
-  time = "Loading time breakdown…";
   rerender: (() => void) | undefined;
   private readonly sources: RuntimeSources;
   private context: DashboardContext | undefined;
@@ -160,13 +156,13 @@ class DashboardRuntime {
     try {
       const next = await this.sources.snapshot(this.config, this.remote);
       if (this.current(generation)) {
-        await this.publish(next, generation);
+        this.publish(next, generation);
       }
     } catch (error) {
       this.fail(error, generation);
     }
   }
-  private async publish(next: Snapshot, generation: number): Promise<void> {
+  private publish(next: Snapshot, generation: number): void {
     this.state = next;
     this.context?.ui.setWidget(widgetKey, (_host, theme) =>
       widget(() => this.state, theme),
@@ -182,33 +178,6 @@ class DashboardRuntime {
         }
       })
       .catch((error: unknown) => this.fail(error, generation));
-    const runs = next.jobHistory.filter(
-      (run) => today(run.data.startedAt) || run.live === true,
-    );
-    const breakdown = timeBreakdown(next.jobHistory);
-    const times = await sessions(runs);
-    if (this.current(generation)) {
-      this.time = [
-        "Today · historical job launch kind / source key prefix (consecutive start deltas)",
-        ...Object.entries(breakdown.launches).map(
-          ([key, value]) => `${key}: ${fmt(value)}`,
-        ),
-        "",
-        "Historical job source stages (jobs.jsonl kind=job)",
-        ...Object.entries(breakdown.types).map(
-          ([key, value]) => `${key}: ${fmt(value)}`,
-        ),
-        "",
-        "Session timestamp deltas (toolResult = tool; other message = model)",
-        ...Object.entries(times).map(
-          ([key, value]) =>
-            `${key}: model ${fmt(value.model)} · tool ${fmt(value.tool)}`,
-        ),
-        "",
-        "Capped logs; large-session totals are lower bounds.",
-      ].join("\n");
-      this.rerender?.();
-    }
   }
 }
 

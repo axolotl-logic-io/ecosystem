@@ -10,7 +10,6 @@ import {
   type InstructionSender,
 } from "./messages.ts";
 import { Pager, type PagerOptions } from "./pager.ts";
-import { runReport } from "./run-report.ts";
 import type { DashboardRuntime } from "./runtime.ts";
 import type { Choice, Selection } from "./selection.ts";
 
@@ -69,7 +68,6 @@ class DashboardInteraction {
           theme,
           get: () => this.runtime.state,
           remote: this.runtime.remote,
-          getTime: () => this.runtime.time,
           done,
         });
         view.navigation.tab = this.tab;
@@ -140,7 +138,7 @@ class DashboardInteraction {
     const options = actionTemplates(selection);
     if (options.length === 0) {
       flow.ctx.ui.notify(
-        "Select a buddy run, action run, issue, subagent run or job record first. PRs are read-only.",
+        "Select a buddy run, action run, issue or subagent run first. PRs are read-only.",
         "info",
       );
       return;
@@ -216,12 +214,6 @@ class DashboardInteraction {
             choice.item.number,
           ),
           title: `Thread ${choice.item.repo} #${choice.item.number} · untrusted data · never sent to agent`,
-        };
-      case "detail":
-        return {
-          text: await runReport(choice.item),
-          title: `Historical job record ${choice.item.repo} #${choice.item.issue}`,
-          workflowRun: true,
         };
       case "observation":
         return { text: choice.text, title: choice.title };

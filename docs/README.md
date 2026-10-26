@@ -34,7 +34,7 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 ## Reference
 
-[Authority](reference/authority.md): the two accounts, authority records, saved state, claims, write authority and trusted input.
+[Authority](reference/authority.md): the two accounts, authority records, saved state, write authority and trusted input.
 
 [Review](reference/review.md): hardening, deterministic verification, the review bundle and the Security review.
 
@@ -42,15 +42,11 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Sessions](reference/sessions.md): model sessions, access profiles, prompt pages and the `pipeline_commit` tool.
 
-[Execution fencing audit](reference/execution-fencing-audit.md): every credentialed and cleanup write, the binding and fresh guard that fence it, and which issue owns each gap.
+[Execution fencing audit](reference/execution-fencing-audit.md): the #132 audit of every credentialed and cleanup write, a dated snapshot at `ea483b5` that predates the buddy runtime.
 
 [Runtime runs](reference/runtime-runs.md): strict buddy configuration, CLI, admission, scoped stops and canonical buddy/action observation files.
 
 [Coordination](reference/coordination.md): task admission, fenced execution, shared resources, observations and preservation.
-
-[Caller retirement](reference/caller.md): the removed stage launcher and preservation of former caller work.
-
-[Assignment sweep retirement](reference/assignment-sweep.md): the removed assignment dispatch and separately authorized cutover.
 
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
@@ -58,9 +54,9 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Sync](reference/sync.md): integrating with the base before landing, conflicts and their limits.
 
-[Task results](reference/task-results.md): exact-binding attempts, authenticated results, spent causes and historical evidence.
+[Task results](reference/task-results.md): exact-binding attempts, authenticated results, spent causes and holds.
 
-[Project settings](reference/project-settings.md): tracked project policy, operator-owned controls, trusted committed revisions and legacy migration.
+[Project settings](reference/project-settings.md): tracked project policy, operator-owned controls and trusted committed revisions.
 
 [Safe Refactor](reference/safe-refactor.md): the standalone constrained Developer task, explicit metric check, behavioral contract and write-ahead recovery.
 
@@ -68,7 +64,7 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Runtime](reference/runtime.md): the native Pi runtime, context compaction and startup checks.
 
-[Telemetry](reference/telemetry.md): usage records, local logs, commit attribution and the usage report.
+[Telemetry](reference/telemetry.md): run observations, context records and commit attribution.
 
 [Checkouts](reference/checkouts.md): where clones, checkouts and run files live, and what an action preserves when it ends.
 

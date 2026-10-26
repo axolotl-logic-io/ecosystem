@@ -159,10 +159,7 @@ function actionRunFacts(entry: ActionRunEntry): string[] {
     `Source: ${entry.path}`,
   ];
 }
-function coverageFacts(
-  runtime: RuntimeRuns,
-  configWarnings: string[],
-): string[] {
+function coverageFacts(runtime: RuntimeRuns): string[] {
   const { coverage, problems } = runtime;
   return [
     "Coverage of buddy-run and action-run observations",
@@ -170,7 +167,6 @@ function coverageFacts(
     `Root: ${coverage.root || "not collected"} · repositories ${coverage.repositories.join(", ") || "none"}`,
     `Omitted by read bounds: ${coverage.buddyRunsOmitted} buddy runs · ${coverage.actionRunsOmitted} action runs`,
     ...coverage.unlistable.map((path) => `Unlistable: ${path}`),
-    ...configWarnings.map((warning) => `⚠ ${warning}`),
     "",
     `UNREADABLE OBSERVATIONS · ${problems.length}`,
     ...problems.map(
@@ -178,28 +174,20 @@ function coverageFacts(
     ),
   ];
 }
-function partialCoverage(
-  runtime: RuntimeRuns,
-  configWarnings: string[],
-): boolean {
+function partialCoverage(runtime: RuntimeRuns): boolean {
   const { coverage } = runtime;
   return (
     runtime.problems.length > 0 ||
     coverage.unlistable.length > 0 ||
     coverage.buddyRunsOmitted > 0 ||
-    coverage.actionRunsOmitted > 0 ||
-    configWarnings.length > 0
+    coverage.actionRunsOmitted > 0
   );
 }
-function coverageRow(
-  runtime: RuntimeRuns,
-  configWarnings: string[],
-  theme: Theme,
-): string {
-  if (partialCoverage(runtime, configWarnings)) {
+function coverageRow(runtime: RuntimeRuns, theme: Theme): string {
+  if (partialCoverage(runtime)) {
     return theme.fg(
       "warning",
-      `⚠ Coverage partial · ${runtime.problems.length} unreadable · ${runtime.coverage.buddyRunsOmitted + runtime.coverage.actionRunsOmitted} omitted · ${configWarnings.length} config warnings`,
+      `⚠ Coverage partial · ${runtime.problems.length} unreadable · ${runtime.coverage.buddyRunsOmitted + runtime.coverage.actionRunsOmitted} omitted`,
     );
   }
   return theme.fg("muted", "◷ Coverage · bounded local observations");

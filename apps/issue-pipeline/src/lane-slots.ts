@@ -2,8 +2,6 @@
 // processes or GitHub claims. The clone lock serializes allocation, checkout
 // creation/removal and maintenance; the durable record survives an ops crash.
 import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
 import { assertNoDependentCheckouts } from "./checkout-dependencies.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
@@ -16,11 +14,7 @@ import {
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import type { ShellResult } from "./process.ts";
-import { shell } from "./process.ts";
 
-const HOUR_MS = 3_600_000;
-// Maintenance must finish before the clone lock's stale-lock deadline.
-const PRUNE_TIMEOUT_MS = 300_000;
 // Calls claim under the clone lock with capacity reserved before any claim
 // mutation. Null means the claim lost and cancels only this reservation.
 // Exceptions/crashes retain ownership wherever a checkout still exists.
@@ -252,63 +246,11 @@ function registeredConsumers(
   });
 }
 
-// Maintenance is opt-in, hourly across processes, and never prunes a live
-// out-of-range lease after a pool shrink, nor while a setup is pending. Checkpoint attempts before running:
-// a crash or failure must not cause every subsequent claim to retry cleanup.
-function pruneLaneResources(cfg: Config, now: () => number = Date.now): void {
-  const { laneSlots, commands } = cfg;
-  const { prune } = commands;
-  if (
-    laneSlots === undefined ||
-    prune === undefined ||
-    prune === null ||
-    prune === ""
-  ) {
-    return;
-  }
-  try {
-    withCloneLock(cfg, () => {
-      const store = surviving(readStore(cfg));
-      if (store.leases.some((lease) => lease.slot > laneSlots)) {
-        process.stderr.write(
-          "lane prune deferred: out-of-range checkouts still hold slots; drain them before shrinking the pool\n",
-        );
-        return;
-      }
-      if (store.leases.some((lease) => lease.pendingSetup.length > 0)) {
-        process.stderr.write(
-          "lane prune deferred: a lane setup is still pending; finish or retry it first\n",
-        );
-        return;
-      }
-      const at = now();
-      if (store.prunedAt !== null && at - store.prunedAt < HOUR_MS) {
-        return;
-      }
-      saveStore(cfg, { ...store, prunedAt: at });
-      const log = path.join(path.dirname(paths.runDir(cfg, 0)), "prune.log");
-      const env = new Map([["ISSUE_PIPELINE_LANE_SLOTS", String(laneSlots)]]);
-      const result = shell(prune, paths.clone(cfg), log, {
-        timeoutMs: PRUNE_TIMEOUT_MS,
-        env,
-      });
-      if (result.code !== 0) {
-        process.stderr.write(
-          `lane prune failed (exit ${result.code}); see ${log}\n`,
-        );
-      }
-    });
-  } catch (error) {
-    process.stderr.write(`lane prune failed: ${String(error)}\n`);
-  }
-}
-
 export {
   assertCheckoutReady,
   assertCheckoutReadyForRemoval,
   assertNonconsumerReadyForRemoval,
   checkoutEnvironment,
-  pruneLaneResources,
   registeredConsumers,
   releaseCheckoutSlot,
   withCheckoutSetup,

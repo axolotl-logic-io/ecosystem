@@ -13,7 +13,6 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import process from "node:process";
 import { z } from "zod";
 import type { InvocationBinding } from "../coordination.ts";
 import { sameBinding } from "../coordination-records.ts";
@@ -34,7 +33,6 @@ const STOP_GRACE_MS = 5000;
 // bytes with its terminating zero, Linux's 108.
 const SOCKET_PATH_MAX = 103;
 const SOCKET_HASH_LENGTH = 12;
-const SIGNALS: readonly StopSignal[] = ["SIGTERM", "SIGINT"];
 
 // Pushes what session `key` committed, and says what it pushed.
 type OnPush = (key: string) => PushReply;
@@ -243,47 +241,6 @@ function liveSetOf(): LiveSet {
   };
 }
 
-// Opens the job's control for its run folder: listens on its socket, after
-// removing a stale one, answering the requests that name its `binding`, push
-// requests through `onPush`, and stops
-// the live sessions and ops children on SIGTERM or SIGINT. A second signal
-// while stopping changes nothing.
-async function openControl(
-  runDir: string,
-  onPush: OnPush,
-  binding: InvocationBinding,
-): Promise<Control> {
-  const socket = socketPathOf(runDir);
-  const live = liveSetOf();
-  let signal: StopSignal | null = null;
-  function onSignal(received: StopSignal): void {
-    if (signal !== null) {
-      return;
-    }
-    signal = received;
-    live.stopAll().catch(() => null);
-  }
-  for (const name of SIGNALS) {
-    process.on(name, onSignal);
-  }
-  const closeSocket = await serveSocket(socket, {
-    launches: live.sessions,
-    onPush,
-    binding,
-  });
-  return {
-    socket,
-    register: (launch: LiveHandle): void => live.add(launch, signal !== null),
-    stopping: (): StopSignal | null => signal,
-    close: (): void => {
-      for (const name of SIGNALS) {
-        process.off(name, onSignal);
-      }
-      closeSocket();
-    },
-  };
-}
-
 // Listens on `socket`, after removing a stale one, answering `served`'s
 // requests, and resolves to what closes it.
 async function serveSocket(
@@ -336,10 +293,4 @@ async function openControlSocket(
 }
 
 export type { Control, ControlSocket, LiveHandle, LiveLaunch, OnPush };
-export {
-  openControl,
-  openControlSocket,
-  STOP_GRACE_MS,
-  socketPathOf,
-  stopLaunch,
-};
+export { openControlSocket, STOP_GRACE_MS, socketPathOf, stopLaunch };

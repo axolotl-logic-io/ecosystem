@@ -1,5 +1,6 @@
-// Credentials never travel through ordinary child environments. Legacy role
-// variable names remain hidden, but never select an authentication identity.
+// Credentials never travel through ordinary child environments. The landing
+// token's name before #166 stays hidden too, in case an operator environment
+// still sets it; it never selects an authentication identity.
 const CREDENTIAL_VARIABLES: readonly string[] = [
   "GH_TOKEN",
   "GITHUB_TOKEN",

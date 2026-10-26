@@ -112,12 +112,10 @@ transient text. Only successful account/token verification is cached. Errors
 distinguish wrong account, authentication rejection and unverifiable identity,
 with gh exit status and a stderr excerpt of at most 1024 UTF-16 code units
 including the truncation indicator. Selected-token redaction precedes truncation;
-empty stderr is explicit. Verification retries never repeat the requested write. Legacy live `account`/`tokenFile` config is rejected
-with migration instructions. Optional `legacyAccount` classifies historical
-machine text for display and trusted-input exclusion only; it grants no authority.
+empty stderr is explicit. Verification retries never repeat the requested write.
 
 Ordinary model/shell children lose both fixed token variables, ambient GitHub
-tokens, configured legacy role-token variables and inherited Git credential/debug
+tokens, the landing token's pre-#166 variable name and inherited Git credential/debug
 injection. Privileged calls receive only their selected `GH_TOKEN`; diagnostics
 redact it. Git uses a non-storing per-call helper, no personal/global helper,
 HTTPS repository allow-listing and no redirects. Local test origins receive
@@ -139,7 +137,7 @@ credential file.
 
 ## Config and model cutover
 
-Operator config lives in `$ISSUE_PIPELINE_ROOT/repos/`; `repos/example.json` shows legacy flat configuration, and `repos/committed-settings.example.json` shows opt-in committed project settings. `src/config-schema.ts` defines operator shape/defaults. [Project settings](../../docs/reference/project-settings.md) describes the strict tracked `.issue-pipeline.json`, operator-owned identity/safety controls, trusted full-commit pin, policy binding and safe legacy migration. Candidate settings edits never activate policy for the same candidate. Every newly computed authorization revision, including legacy mode, binds its checking policy; old receipts without that binding remain historical evidence, not fresh pre-Land authorization. `wiki` is refused, even when false or null: remove the key. Docs live in the repository's `docs/`. Other removed config fields load with warnings; old model-role mappings are in `src/config-legacy.ts`.
+Operator config lives in `$ISSUE_PIPELINE_ROOT/repos/`, starting from `repos/example.json`. Every config pins the repository's committed `.issue-pipeline.json` with `projectPolicy`; there is no flat-config mode. `src/config-schema.ts` defines operator shape/defaults. [Project settings](../../docs/reference/project-settings.md) describes the strict tracked `.issue-pipeline.json`, operator-owned identity/safety controls, the trusted full-commit pin and the policy binding. Candidate settings edits never activate policy for the same candidate. Every newly computed authorization revision binds its checking policy. Config keys the pipeline no longer reads are ignored without a warning, and keys renamed in #166 are read only under their new names.
 
 The default and example role models are `openai/gpt-6.1-sol`. Set all three repository roles explicitly rather than relying on old-role aliases:
 
@@ -161,11 +159,9 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 ## Programs and observations
 
-`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `ops.mjs`, `report.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
+`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
 
-The stage job, orchestrator, caller launcher and assignment sweep are removed. `RETIRED_PROGRAMS` intentionally names their former installed files so installation can back them up and retire them. It is not a list of runnable compatibility programs.
-
-Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs, generic subagent runs and historical jobs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
+Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
 ## Install and safe upgrades
 
@@ -187,7 +183,7 @@ mise //apps/issue-pipeline:install:dry-run
 mise //apps/issue-pipeline:install
 ```
 
-The installer backs up replacements and retirements and records `INSTALLED.json`. It does not rewrite operator configs, provision credentials, migrate historical work or grant activation permission. Do not mix live old/new runtimes or translate old assignments/stages into accepted signals. Complete [installation acceptance](../../docs/reference/operations.md#installation-acceptance) separately; it compares managed artifacts and bounded CLI parsing without running a post-Land suite or model.
+The installer backs up the files it replaces and records `INSTALLED.json`. It removes no file it doesn't install. It does not rewrite operator configs, provision credentials or grant activation permission. Complete [installation acceptance](../../docs/reference/operations.md#installation-acceptance) separately; it compares managed artifacts and bounded CLI parsing without running a post-Land suite or model.
 
 Prompt pages and agent definitions are installed assets. Prompt selection and tool authority remain checked by code; a prompt cannot grant credentials, commit scope or permission. Preserve pinned prompt bytes, hashes, receipts and recovery artifacts through cutover. A binary rollback does not undo Land or clear a Security rejection.
 
@@ -204,7 +200,7 @@ npm run check:full   # pipeline fast gate and Node tests, then dashboard gate
 
 From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The pipeline fast gate checks source/test types, Biome, build, installer syntax and all ten built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` with file concurrency 2 and per-test timeout 180000 ms. The historical unit suite was removed; the directory now contains new public-entrypoint tests and is not empty.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` with file concurrency 2 and per-test timeout 180000 ms. The historical unit suite was removed; the directory now contains new public-entrypoint tests and is not empty.
 
 Tests use temporary HOME/pipeline roots, local Git origins and fake GitHub/model processes, never real credentials, models or production data. Set disposable roots before dynamic imports. Test real files, subprocesses, Git and public operations; do not replace task behavior with success stand-ins and call it integrated acceptance. A failure or flake blocks acceptance; fix the cause instead of repeating the same test for a pass.
 

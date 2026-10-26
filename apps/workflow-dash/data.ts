@@ -1,7 +1,6 @@
 import { stat } from "node:fs/promises";
 import type { Config } from "./config.ts";
 import type { Remote } from "./github.ts";
-import { type HistoricalJob, loadJobHistory } from "./job-history.ts";
 import { readCap, safePath } from "./local-files.ts";
 import {
   emptyRuntimeRuns,
@@ -17,9 +16,6 @@ interface Snapshot {
   runtime: RuntimeRuns;
   /** Generic pi-subagents harness records; not domain buddy runs. */
   subagentRuns: SubagentRun[];
-  /** Retired job runtime records, kept as historical evidence only. */
-  jobHistory: HistoricalJob[];
-  configWarnings: string[];
   hold: boolean;
   installed: string;
   main: string;
@@ -31,18 +27,15 @@ interface Snapshot {
 const empty: Snapshot = {
   runtime: emptyRuntimeRuns,
   subagentRuns: [],
-  jobHistory: [],
-  configWarnings: [],
   hold: false,
   installed: "unknown",
   main: "unknown",
   planMtime: "missing",
 };
 async function snapshot(config: Config, remote: Remote): Promise<Snapshot> {
-  const [runtime, jobHistory, subagentRuns, installed, hold, planMtime] =
+  const [runtime, subagentRuns, installed, hold, planMtime, web] =
     await Promise.all([
       loadRuntimeRuns(config),
-      loadJobHistory(config),
       loadSubagentRuns(config),
       readCap(config.installed),
       stat(await safePath(config.hold)).then(
@@ -53,8 +46,8 @@ async function snapshot(config: Config, remote: Remote): Promise<Snapshot> {
         (info) => info.mtime.toISOString(),
         () => "missing",
       ),
+      observeWebGate(),
     ]);
-  const web = await observeWebGate(jobHistory);
   const version = installedSchema.safeParse(parse(installed));
   let installedVersion = "unknown";
   if (version.success) {
@@ -64,8 +57,6 @@ async function snapshot(config: Config, remote: Remote): Promise<Snapshot> {
   return {
     runtime,
     subagentRuns,
-    jobHistory,
-    configWarnings: config.warnings,
     hold,
     installed: installedVersion,
     main: remote.main,

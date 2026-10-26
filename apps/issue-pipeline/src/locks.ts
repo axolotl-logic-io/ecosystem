@@ -8,12 +8,8 @@ import path from "node:path";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { OpsError } from "./ops-error.ts";
-import { ROOT } from "./pipeline-root.ts";
 import { sleepMs } from "./process.ts";
 
-// How long a sweep's pick is held before its claim must have written the
-// lease: 15 minutes.
-const RESERVATION_MS = 900_000;
 // How long an op waits for a lock: 5 minutes.
 const LOCK_WAIT_MS = 300_000;
 // A lock older than 10 minutes is from a dead op.
@@ -78,8 +74,4 @@ function withCloneLock<T>(cfg: Config, fn: () => T): T {
   return withLock(`${paths.clone(cfg)}.lock`, fn);
 }
 
-function withRepoLock<T>(cfg: Config, name: string, fn: () => T): T {
-  return withLock(path.join(ROOT, "runs", cfg.slug, `${name}.lock`), fn);
-}
-
-export { RESERVATION_MS, withCloneLock, withRepoLock };
+export { withCloneLock };

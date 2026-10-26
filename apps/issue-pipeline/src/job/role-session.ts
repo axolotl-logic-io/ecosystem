@@ -1,7 +1,7 @@
 // Shared model-session limits and structured reply validation. Tasks choose
 // their sessions; no stage driver or role-based continuation runs here.
 import { z } from "zod";
-import type { ModelRole } from "../config-legacy.ts";
+import type { ModelRole } from "../config-schema.ts";
 import type { SessionResult } from "../domain.ts";
 import type { SessionRaw } from "./raw-results.ts";
 import { isTransientSessionError } from "./transient.ts";

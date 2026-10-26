@@ -12,6 +12,7 @@ import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
 import { BUDDY_RUN } from "../../src/runtime/observations.ts";
+import { committedPolicy } from "../project-policy-test-kit.ts";
 
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const SHA256 = z.string().regex(/^[0-9a-f]{64}$/u);
@@ -96,31 +97,17 @@ interface Sandbox {
 function sandbox(land: boolean): Sandbox {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-buddy-"));
   const origin = path.join(root, "origin.git");
-  const policy = path.join(root, "policy");
   fs.mkdirSync(origin);
-  fs.mkdirSync(policy);
   git(origin, ["init", "--bare", "--initial-branch=main"]);
-  git(policy, ["init", "--initial-branch=main"]);
-  git(policy, ["remote", "add", "origin", origin]);
-  git(policy, ["config", "user.name", "Buddy test"]);
-  git(policy, ["config", "user.email", "buddy@example.test"]);
-  fs.writeFileSync(
-    path.join(policy, ".issue-pipeline.json"),
-    JSON.stringify({
-      commands: { test: "npm test" },
-      resources: { modelSessions: 2 },
-    }),
-  );
-  git(policy, ["add", ".issue-pipeline.json"]);
-  git(policy, ["commit", "-m", "Pin settings"]);
+  const projectPolicy = committedPolicy(path.join(root, "policy"), origin, {
+    commands: { test: "npm test" },
+    resources: { modelSessions: 2 },
+  });
   const example = z
     .record(z.string(), z.unknown())
     .parse(
       JSON.parse(
-        fs.readFileSync(
-          path.join(SOURCE, "repos", "committed-settings.example.json"),
-          "utf8",
-        ),
+        fs.readFileSync(path.join(SOURCE, "repos", "example.json"), "utf8"),
       ),
     );
   const repository = path.join(root, "repo.json");
@@ -136,10 +123,7 @@ function sandbox(land: boolean): Sandbox {
     repo: "owner/repo",
     cloneUrl: origin,
     permissions: { land },
-    projectPolicy: {
-      repository: policy,
-      revision: git(policy, ["rev-parse", "HEAD"]),
-    },
+    projectPolicy,
   });
   return {
     root,
@@ -255,7 +239,7 @@ test("buddy --check validates a Developer against its repository's pinned pool",
   }
 });
 
-test("retired repository controls warn without changing a buddy's grant", () => {
+test("retired repository controls change nothing about a buddy's grant", () => {
   const box = sandbox(false);
   try {
     const file = box.buddy({});
@@ -278,12 +262,6 @@ test("retired repository controls warn without changing a buddy's grant", () => 
     writePrivate(box.repository, { ...original, ...retired });
     const checked = checkBuddy(file, box.root);
     assert.equal(checked.status, 0, checked.stderr);
-    for (const key of Object.keys(retired)) {
-      assert.ok(
-        checked.stderr.includes(`${key} is no longer read`),
-        checked.stderr,
-      );
-    }
     const summary = CHECKED.parse(JSON.parse(checked.stdout));
     assert.deepEqual(summary.tasks, ["author", "implement", "harden", "sync"]);
     assert.equal(summary.repositories.at(0)?.authorization, before);
@@ -332,27 +310,21 @@ test("buddy --check refuses obsolete controls, foreign accounts and untrusted fi
   }
 });
 
-test("buddy --check refuses a repository with no trusted model-session capacity", () => {
+test("buddy --check refuses a repository that pins no committed project policy", () => {
   const box = sandbox(false);
   try {
-    const { resources: _resources, ...legacy } = z
+    const { projectPolicy: _pinned, ...unpinned } = z
       .record(z.string(), z.unknown())
-      .parse(
-        JSON.parse(
-          fs.readFileSync(path.join(SOURCE, "repos", "example.json"), "utf8"),
-        ),
-      );
+      .parse(JSON.parse(fs.readFileSync(box.repository, "utf8")));
     writePrivate(box.repository, {
-      ...legacy,
-      repo: "owner/repo",
-      devAccount: "DEVELOPMENT-BOT",
-      landingAccount: "REVIEW-MERGE-BOT",
-      credentialsEnvFile: path.join(box.root, "credentials.env"),
+      ...unpinned,
+      commands: { test: "npm test" },
+      resources: { modelSessions: 2 },
     });
     const refused = checkBuddy(box.buddy({}), box.root);
     assert.equal(refused.status, 1);
     assert.ok(
-      refused.stderr.includes("no valid resources.modelSessions capacity"),
+      refused.stderr.includes("must pin projectPolicy"),
       refused.stderr,
     );
   } finally {

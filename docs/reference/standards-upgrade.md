@@ -190,8 +190,6 @@ A green workflow never stands in for enforcement. Without a required check, the 
 - the sandbox: `bwrap`'s version or why there's none, the registry and npm's version;
 - each command it ran: its arguments, whether it had the network, its exit code, its duration and its log's path.
 
-Readers also accept version 1 records, from `standards-v1`, which ran nothing.
-
 `report.md` shows the same data for people.
 
 `plan.md` exists only for a `node-npm` or `python-poetry` assessment with something to change. Its rules name the ecosystem's own checks: `npm ci`, `npm test` and `npm audit`, or `poetry check --lock`, `poetry install`, `poetry run pytest` and `pip-audit`. It's the body of the upgrade issue. Its first line is a marker that binds the plan to what was assessed:

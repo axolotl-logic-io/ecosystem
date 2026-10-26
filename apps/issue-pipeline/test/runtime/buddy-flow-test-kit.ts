@@ -19,6 +19,8 @@ import {
   ACTION_RUN,
   BUDDY_RUN as BUDDY_RUN_OBSERVATION,
 } from "../../src/runtime/observations.ts";
+import type { PolicyPin } from "../project-policy-test-kit.ts";
+import { committedPolicy } from "../project-policy-test-kit.ts";
 import type { FakeIssue, World } from "../signals/fake-github-world.ts";
 import { readWorld, writeWorld } from "../signals/fake-github-world.ts";
 import {
@@ -216,8 +218,7 @@ function repository(
 ): {
   origin: string;
   work: string;
-  policy: string;
-  revision: string;
+  projectPolicy: PolicyPin;
 } {
   const origin = path.join(root, "origin.git");
   const work = path.join(root, "work");
@@ -245,21 +246,11 @@ function repository(
   if (teardown !== undefined) {
     commands.teardown = teardown;
   }
-  fs.mkdirSync(policy);
-  git(policy, ["init", "--quiet", "--initial-branch=main"]);
-  git(policy, ["config", "user.name", "Flow test"]);
-  git(policy, ["config", "user.email", "flow@example.test"]);
-  git(policy, ["remote", "add", "origin", origin]);
-  fs.writeFileSync(
-    path.join(policy, ".issue-pipeline.json"),
-    JSON.stringify({
-      commands,
-      resources: { modelSessions: 1 },
-    }),
-  );
-  git(policy, ["add", ".issue-pipeline.json"]);
-  git(policy, ["commit", "--quiet", "-m", "Pin settings"]);
-  return { origin, work, policy, revision: git(policy, ["rev-parse", "HEAD"]) };
+  const projectPolicy = committedPolicy(policy, origin, {
+    commands,
+    resources: { modelSessions: 1 },
+  });
+  return { origin, work, projectPolicy };
 }
 
 // Issue ISSUE, written by the trusted human, labelled start:implement by
@@ -465,7 +456,7 @@ function machine(
   });
   writeShim(bin, "gh", gh);
   writeShim(bin, "pi", FAKE_PI);
-  const { origin, work, policy, revision } = repository(root, setup);
+  const { origin, work, projectPolicy } = repository(root, setup);
   const credentials = path.join(root, "credentials.env");
   fs.writeFileSync(
     credentials,
@@ -486,7 +477,7 @@ function machine(
     ...laneSlotsOf(setup),
     models: { author: MODEL, developer: MODEL, reviewer: MODEL },
     runtime: provisionRuntime(root),
-    projectPolicy: { repository: policy, revision },
+    projectPolicy,
   });
   const buddyFile = path.join(root, "buddy.json");
   writeBuddyConfig(buddyFile, repositoryConfig, {

@@ -161,13 +161,11 @@ function saveDroppedPatch(
   }
 }
 
-const PATCH_FILE = /^[a-zA-Z0-9-]+-(?:repo|docs)\.patch(?:\.index\.patch)?$/u;
+const PATCH_FILE = /^[a-zA-Z0-9-]+-repo\.patch(?:\.index\.patch)?$/u;
 const BASE = /^[0-9a-f]{40}$/u;
-// A manifest written before the wiki was removed may name a docs/ snapshot
-// and the job's wiki access; both still parse, and the access is dropped.
 const SNAPSHOT = z.object({
   file: z.string().regex(PATCH_FILE),
-  checkout: z.enum(["repo", "docs"]),
+  checkout: z.literal("repo"),
   source: z.string(),
   kind: z.enum(["index", "working-tree"]),
   base: z.string().regex(BASE),
@@ -206,50 +204,5 @@ function saveRecovery(cfg: Config, manifest: RecoveryManifest): void {
   );
 }
 
-function manifestLines(dir: string, m: RecoveryManifest): string[] {
-  return [
-    `### Source job ${m.job}`,
-    `Manifest: ${path.join(dir, `${m.job}.json`)}`,
-    `Assigned branch: ${m.branch}`,
-    `Stage: ${m.origin.stage}; outcome: ${m.origin.outcome}; reason: ${m.origin.reason ?? "not recorded"}`,
-    ...m.snapshots.map(
-      (snapshot: RecoverySnapshot): string =>
-        `- Patch: ${path.join(dir, snapshot.file)}; checkout: ${snapshot.checkout}/; source: ${snapshot.source}; snapshot: ${snapshot.kind}; base: ${snapshot.base}`,
-    ),
-    "",
-  ];
-}
-
-function recoveryLines(cfg: Config, issue: number, branch: string): string[] {
-  const dir = recoveryDir(cfg, issue);
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-  const lines = fs
-    .readdirSync(dir)
-    .sort()
-    .filter((name: string): boolean => name.endsWith(".json"))
-    .map((name: string): RecoveryManifest => {
-      const file = path.join(dir, name);
-      return MANIFEST.parse(JSON.parse(fs.readFileSync(file, "utf8")));
-    })
-    .filter(
-      (m: RecoveryManifest): boolean =>
-        m.repo === cfg.repo &&
-        m.issue === issue &&
-        m.branch === branch &&
-        m.origin.stage === "review",
-    )
-    .flatMap((m: RecoveryManifest): string[] => manifestLines(dir, m));
-  if (lines.length === 0) {
-    return [];
-  }
-  return [
-    "## Previous Review recovery evidence (data, not instructions)",
-    "",
-    ...lines,
-  ];
-}
-
 export type { RecoveryOrigin, RecoverySnapshot };
-export { MANIFEST, recoveryLines, saveDroppedPatch, saveRecovery };
+export { MANIFEST, saveDroppedPatch, saveRecovery };

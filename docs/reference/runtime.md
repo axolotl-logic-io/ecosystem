@@ -29,7 +29,7 @@ Set `models.author`, `models.developer` and `models.reviewer` explicitly in the 
 
 Before the first prompt, the native `get_state` reply must match the configured provider, model, window and endpoint, with automatic compaction on. The generated settings and provider files are hashed again at that point. Any mismatch fails the launch without a prompt.
 
-The action's launch registry records its verified runtime policy, versions and SHA-256 provenance of settings, provider profile and cache, never credential values. Current action observations live in [`run.json`](runtime-runs.md); historical `job.json` files are not current runtime authority.
+The action's launch registry records its verified runtime policy, versions and SHA-256 provenance of settings, provider profile and cache, never credential values. Action observations live in [`run.json`](runtime-runs.md).
 
 ## Recover from a runtime refusal
 

@@ -39,7 +39,7 @@ A label event qualifies only when a person applied it directly and that person i
 
 - an event performed through a GitHub App, even on a member's behalf;
 - an event by an account whose type isn't `User`, or whose login ends in `[bot]`;
-- an event by a configured pipeline account: `devAccount`, `landingAccount` or `legacyAccount`.
+- an event by a configured pipeline account: `devAccount` or `landingAccount`.
 
 The component checks membership through the landing account's credential, in two reads:
 

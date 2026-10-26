@@ -1,10 +1,8 @@
 // Credentialed code writes and writer sessions share one fresh fence. Code
 // of a work item stays writable only while nothing irreversible or refused
-// binds it: any Land attempt (v2, or v1 history) closes it for good, since
-// a Land's outcome may already be on the target; a refused Review Security
-// subject (v2, or a v1 Security refusal) closes it, so writers can't reroll
-// a refusal; and historical saved state (versions 1 to 3) is never adopted,
-// so its work is preserved locally rather than written. Records that hold
+// binds it: any Land attempt closes it for good, since a Land's outcome may
+// already be on the target; and a refused Review Security subject closes
+// it, so writers can't reroll a refusal. Records or saved state that hold
 // throw. Otherwise the item's PR, if it has one, must be open.
 
 import { listComments } from "./comments.ts";
@@ -28,15 +26,12 @@ interface WriteAuthority {
 
 // Why the records fence code writes, or null.
 function recordFence(records: Records): string | null {
-  const { rows, historical } = records;
+  const { rows } = records;
   const land = rows.find(
     (row) => isAttempt(row) && row.binding.task === "land",
   );
   if (land !== undefined) {
     return `Land record ${String(land.id)} was attempted for this work item`;
-  }
-  if (historical.landAttempted) {
-    return "a historical Land was attempted for this work item";
   }
   const refusal = rows.find(
     (row) =>
@@ -44,15 +39,8 @@ function recordFence(records: Records): string | null {
       row.binding.task === "review-security" &&
       row.verdict === "refused",
   );
-  if (refusal !== undefined || historical.refusedSubjects.length > 0) {
-    return `Review Security refused this work item's code (${String(refusal?.id ?? "historical")})`;
-  }
-  return null;
-}
-
-function stateFence(work: StoredWork): string | null {
-  if (work.kind === "historical") {
-    return `historical version ${String(work.version)} state is never adopted; reconcile it explicitly`;
+  if (refusal !== undefined) {
+    return `Review Security refused this work item's code (${String(refusal.id)})`;
   }
   return null;
 }
@@ -60,8 +48,7 @@ function stateFence(work: StoredWork): string | null {
 function readWriteAuthority(cfg: Config, issue: number): WriteAuthority {
   const comments = listComments(cfg, issue);
   const work = storedWork(cfg, issue, comments);
-  const fence =
-    stateFence(work) ?? recordFence(readRecords(cfg, issue, comments));
+  const fence = recordFence(readRecords(cfg, issue, comments));
   if (fence !== null) {
     return { work, codeWritable: false, fence, codeLanded: null };
   }

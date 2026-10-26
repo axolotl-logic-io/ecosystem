@@ -43,7 +43,7 @@ Land separately acquires the target's integration turn before recording its atte
 
 The [run-file reference](runtime-runs.md#observation-files) defines buddy and action records. The [dashboard](../../apps/workflow-dash/README.md) shows their explicit links, uncertain outcomes, retained ownership, held reservations and incomplete coverage.
 
-These are observations, not receipts or authorization. Generic subagent records are not buddy runs. Historical `job.json` and `jobs.jsonl` remain job history, not current task coverage or capacity evidence.
+These are observations, not receipts or authorization. Generic subagent records are not buddy runs.
 
 ## Preserve interrupted work
 
@@ -52,9 +52,3 @@ A stop prevents new substantive work in its scope. A credentialed write, rebase 
 A failed or uncertain checkpoint keeps the work and required ownership/resources. Retain binary-safe staged and working patches, verified Git bundles, stopped-rebase state, journals and consumer records. Do not reset a checkout, clear evidence or release resources merely to permit another action.
 
 Read-only recovery settles the original action; it does not begin a replacement attempt. Missing own-Land proof, a Security rejection or an uncertain effect remains a hold. There is no label-removal restart, automatic retry or undefined continuation command.
-
-## Retired entrypoints
-
-`job.mjs`, `orchestrate.mjs`, `caller-jobs.mjs` and `sweep.mjs` are removed from the distribution. Their source launchers are removed too. There is no stage-job compatibility runtime or assignment-to-signal adapter.
-
-Before a separately authorized installation, drain the old runtime and reconcile or preserve its active work. Historical records do not become current permissions. See [upgrade safely](operations.md#upgrade-safely).

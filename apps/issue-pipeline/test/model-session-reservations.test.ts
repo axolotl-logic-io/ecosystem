@@ -19,6 +19,7 @@ import {
   writeFakeGh,
   writeStore,
 } from "./fake-coordination-gh.ts";
+import { committedPolicy } from "./project-policy-test-kit.ts";
 
 const REPO = "o/r";
 const BASE = "main";
@@ -40,13 +41,14 @@ const HOLDER_ISSUE = 51;
 const WAITER_ISSUE = 52;
 const LOST_ISSUE = 61;
 const CONTENDER_ISSUE = 62;
-const LEGACY_ISSUE = 70;
+const OLD_ISSUE = 70;
 const READER_ISSUE = 71;
 const CONTENDED_CAP = 2;
 const UNVERSIONED_ISSUE = 72;
 const MALFORMED_ISSUE = 99;
 const UNTRUSTED_ISSUE = 98;
 const UNREADABLE_RECORD = /unreadable record/u;
+const INVALID_RECORD = /invalid record/u;
 const UNTRUSTED_AUTHOR = /untrusted author/u;
 const UNCERTAIN = /uncertain/u;
 const RECONCILIATION = /reconciliation required/u;
@@ -69,7 +71,6 @@ const NARROW_ISSUE = 86;
 const UNDECLARED_ISSUE = 87;
 const TRUSTED_ISSUE = 88;
 const TRUSTED_CAPACITY = /differs from the trusted repository capacity, 1$/u;
-const TRUSTED_MISSING = /trusted repository capacity, missing or invalid$/u;
 
 const folders: string[] = [];
 after(() => {
@@ -86,13 +87,19 @@ interface World {
   env: NodeJS.ProcessEnv;
 }
 
-// A repository config file whose trusted `resources` setting is `resources`,
-// or that omits the setting when it's undefined.
+// A repository config file whose committed `resources` setting is
+// `resources`.
 function writeConfig(
   at: { dir: string; credentials: string },
   resources: unknown,
 ): string {
-  const config = path.join(at.dir, `config-${crypto.randomUUID()}.json`);
+  const id = crypto.randomUUID();
+  const config = path.join(at.dir, `config-${id}.json`);
+  const projectPolicy = committedPolicy(
+    path.join(at.dir, `policy-${id}`),
+    `https://github.com/${REPO}.git`,
+    { commands: { test: "true" }, resources },
+  );
   fs.writeFileSync(
     config,
     JSON.stringify({
@@ -102,8 +109,7 @@ function writeConfig(
       credentialsEnvFile: at.credentials,
       allowedUsers: ["alice"],
       baseBranch: BASE,
-      commands: { test: "true" },
-      resources,
+      projectPolicy,
     }),
   );
   return config;
@@ -400,37 +406,30 @@ test("a lost done report and malformed or untrusted records keep the slot held",
   assert.match(untrusted?.reason ?? "", UNTRUSTED_AUTHOR);
 });
 
-test("old record bytes stay readable, but a resource record without its version grants nothing", async () => {
+test("a record of another version, or a resource record without its version, holds and grants nothing", async () => {
   const at = world(1);
-  const legacy = newInvocation(LEGACY_ISSUE);
-  const branch = `agent/issue-${legacy.issue}`;
-  const scope = JSON.stringify([REPO, BASE, "issue", legacy.issue, branch]);
-  const request = seedRecord(at, legacy.issue, {
+  const old = newInvocation(OLD_ISSUE);
+  const branch = `agent/issue-${old.issue}`;
+  const scope = JSON.stringify([REPO, BASE, "issue", old.issue, branch]);
+  seedRecord(at, old.issue, {
     version: 1,
     scope,
     operation: crypto.randomUUID(),
     kind: "request",
     identity: {
-      instance: legacy.instance,
+      instance: old.instance,
       lane: "lane-70",
-      issue: legacy.issue,
+      issue: old.issue,
       branch,
       repo: REPO,
       base: BASE,
     },
     token: "a".repeat(SHA_WIDTH),
   });
-  seedRecord(at, legacy.issue, {
-    version: 1,
-    scope,
-    operation: crypto.randomUUID(),
-    kind: "cancel",
-    request,
-    instance: legacy.instance,
-  });
   const reader = newInvocation(READER_ISSUE);
-  const [readable] = await invoke(at, reader, [{ do: "reserve", cap: 1 }]);
-  assert.equal(readable?.state, "reserved");
+  const [other] = await invoke(at, reader, [{ do: "reserve", cap: 1 }]);
+  assert.equal(other?.state, "held");
+  assert.match(other?.reason ?? "", INVALID_RECORD);
 
   const fresh = world(1);
   seedRecord(fresh, UNVERSIONED_ISSUE, {
@@ -455,7 +454,7 @@ test("old record bytes stay readable, but a resource record without its version 
   assert.match(unversioned?.reason ?? "", VERSION_MISMATCH);
 });
 
-test("a caller cap that differs from the trusted capacity, or a missing or invalid capacity setting, holds and writes nothing", async () => {
+test("a caller cap that differs from the trusted capacity holds and writes nothing", async () => {
   const at = world(SMALL_CAP);
   const caller = newInvocation(TRUSTED_ISSUE);
   const [differs] = await invoke(at, caller, [
@@ -463,23 +462,6 @@ test("a caller cap that differs from the trusted capacity, or a missing or inval
   ]);
   assert.equal(differs?.state, "held");
   assert.match(differs?.reason ?? "", TRUSTED_CAPACITY);
-  const settings: unknown[] = [
-    undefined,
-    {},
-    { modelSessions: 0 },
-    { modelSessions: SMALL_CAP, extra: SMALL_CAP },
-  ];
-  const untrusted = await Promise.all(
-    settings.map((resources) =>
-      invoke(machine(at, resources), caller, [
-        { do: "reserve", cap: SMALL_CAP },
-      ]),
-    ),
-  );
-  for (const [first] of untrusted) {
-    assert.equal(first?.state, "held", JSON.stringify(untrusted));
-    assert.match(first?.reason ?? "", TRUSTED_MISSING);
-  }
   assert.deepEqual(slotRecords(readStore(at.store)), []);
 });
 

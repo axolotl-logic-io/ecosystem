@@ -1,1 +1,0 @@
-{"type":"message","message":{"role":"assistant","content":[{"type":"toolCall","id":"synthetic-gate","name":"bash","arguments":{"command":"cd repo/apps/web && npm run gate:web"}}]}}

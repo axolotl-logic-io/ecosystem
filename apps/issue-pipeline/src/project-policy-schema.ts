@@ -52,21 +52,14 @@ const PROJECT_POLICY_SOURCE = z.strictObject({
   ),
   revision: z.string().regex(FULL_SHA, "must be a full immutable commit SHA"),
 });
-const POLICY_BINDING = z.discriminatedUnion("mode", [
-  z.object({
-    mode: z.literal("legacy"),
-    digest: z.string().regex(SHA256),
-    settings: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    mode: z.literal("committed"),
-    settings: z.record(z.string(), z.unknown()),
-    revision: z.string().regex(FULL_SHA),
-    blob: z.string().regex(FULL_SHA),
-    sha256: z.string().regex(SHA256),
-    digest: z.string().regex(SHA256),
-  }),
-]);
+const POLICY_BINDING = z.object({
+  mode: z.literal("committed"),
+  settings: z.record(z.string(), z.unknown()),
+  revision: z.string().regex(FULL_SHA),
+  blob: z.string().regex(FULL_SHA),
+  sha256: z.string().regex(SHA256),
+  digest: z.string().regex(SHA256),
+});
 
 // JSON.parse silently takes the last duplicate member. Validate its syntax
 // first, then compare decoded object keys so escaping cannot hide duplicates.

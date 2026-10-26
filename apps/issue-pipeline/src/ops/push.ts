@@ -14,8 +14,6 @@ const PUSH_REQUEST = z.looseObject({
   number: z.number().int().positive(),
 });
 
-type PushOp = (cfg: Config, request: unknown) => PushResult;
-
 // Throws when issue `n`'s saved state records its code landed, since `op`
 // would push code.
 function refuseOnceLanded(cfg: Config, n: number, op: string): void {
@@ -37,16 +35,4 @@ function pushOp(cfg: Config, request: unknown): PushResult {
   return pushFor(cfg, request, "push");
 }
 
-// The push a writer's stage job makes as it exits, of commits its checkout
-// holds past the last state save (src/job/exit-push.ts). It is recorded as
-// "exit-push", which the next claim may adopt (adopt-push.ts).
-function exitPushOp(cfg: Config, request: unknown): PushResult {
-  return pushFor(cfg, request, "exit-push");
-}
-
-const pushOps: Readonly<Record<string, PushOp>> = {
-  push: pushOp,
-  "exit-push": exitPushOp,
-};
-
-export { pushOp, pushOps, refuseOnceLanded };
+export { pushOp, refuseOnceLanded };

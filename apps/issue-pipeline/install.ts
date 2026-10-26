@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Builds programs and installs prompts, examples and filled agent definitions.
-// Every replaced/retired file is backed up; operator config and work stay local.
+// Every replaced file is backed up; operator config and work stay local.
 // Only an operator-authorized install activates source changes.
 // Usage: node install.ts [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
@@ -11,24 +11,23 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { PROGRAMS, RETIRED_PROGRAMS } from "./programs.ts";
+import { PROGRAMS } from "./programs.ts";
 
-// A file to install from a path here, GENERATED or RETIRED (text null: it is
-// removed); a Source is one this folder holds, `fill` to fill in.
+// A file to install from a path here or GENERATED; a Source is one this
+// folder holds, `fill` to fill in.
 interface InstallFile {
   from: string;
   to: string;
-  text: string | null;
+  text: string;
 }
 interface Source {
   from: string;
   to: string;
   fill: boolean;
 }
-type Status = "new" | "same" | "updated" | "retired";
+type Status = "new" | "same" | "updated";
 
 const GENERATED = "(generated)";
-const RETIRED = "(retired)";
 const SHORT_SHA_LENGTH = 7;
 // The backup folder's stamp: yyyymmdd-hhmmss.
 const BACKUP_STAMP_LENGTH = 15;
@@ -37,17 +36,6 @@ const STATUS_WIDTH = 8;
 const GITHUB_PREFIX = /^.*github\.com[:/]/u;
 const GIT_SUFFIX = /\.git$/u;
 const DATE_PUNCTUATION = /[-:]/gu;
-// An older install's stage agents, which retired() retires with its old
-// workflow.js, which an old lane schedule could still run, and its pi prompts.
-const RETIRED_AGENTS = [
-  "escalation",
-  "ops",
-  "reader",
-  "specifier",
-  "writer",
-  // Renamed issue-pipeline-developer (#166).
-  "implementor",
-];
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const HOME = os.homedir();
@@ -113,7 +101,6 @@ function sources(): Source[] {
     })),
     ...[
       "repos/example.json",
-      "repos/committed-settings.example.json",
       "runtime/pi-cliproxyapi-config.example.json",
       "dist/standards-python-tools.txt",
       ...mdIn(SRC, "prompts"),
@@ -182,10 +169,7 @@ Native compaction is pipeline-owned (175000 target, 30000 recent). Before any mo
   ];
 }
 
-function statusOf(old: string | null, text: string | null): Status {
-  if (text === null) {
-    return "retired";
-  }
+function statusOf(old: string | null, text: string): Status {
   if (old === null) {
     return "new";
   }
@@ -201,10 +185,6 @@ function write(f: InstallFile, old: string | null, backup: string): void {
     const copy = path.join(backup, path.relative(path.parse(f.to).root, f.to));
     fs.mkdirSync(path.dirname(copy), { recursive: true });
     fs.writeFileSync(copy, old);
-  }
-  if (f.text === null) {
-    fs.rmSync(f.to);
-    return;
   }
   fs.mkdirSync(path.dirname(f.to), { recursive: true });
   fs.writeFileSync(f.to, f.text);
@@ -231,30 +211,13 @@ function install(files: InstallFile[], backup: string): number {
   return changed.length;
 }
 
-// The retired files present, never a folder or a file `files` installs.
-function retired(files: InstallFile[]): InstallFile[] {
-  const installed = new Set(files.map((f) => f.to));
-  const agents = path.join(AGENT_DIR, "agents/issue-pipeline");
-  return [
-    path.join(ROOT, "workflow.js"),
-    ...RETIRED_PROGRAMS.map((file) => path.join(ROOT, file)),
-    ...mdIn(ROOT, "prompts").map((f) => path.join(ROOT, f)),
-    ...RETIRED_AGENTS.map((a) => path.join(agents, `issue-pipeline-${a}.md`)),
-    path.join(AGENT_DIR, "prompts/pipeline-start.md"),
-    path.join(AGENT_DIR, "prompts/pipeline-pause.md"),
-  ]
-    .filter((to) => !installed.has(to) && fs.existsSync(to))
-    .filter((to) => fs.lstatSync(to).isFile())
-    .map((to) => ({ from: RETIRED, to, text: null }));
-}
-
 function outcome(changed: number, shortSha: string, backup: string): string {
   if (dryRun) {
     return `dry run: ${changed} pipeline file(s) would change; nothing written`;
   }
   let where = "";
   if (changed) {
-    where = `; replaced and retired files are in ${backup.replace(HOME, "~")}`;
+    where = `; replaced files are in ${backup.replace(HOME, "~")}`;
   }
   return `installed ${shortSha}: ${changed} pipeline file(s) changed${where}`;
 }
@@ -298,13 +261,12 @@ function main(): void {
     // Vendored compiler declarations contain literal template braces, not
     // agent-definition placeholders. They are copied without interpolation.
     if (
-      f.text?.includes("{{") &&
+      f.text.includes("{{") &&
       !f.from.startsWith("dist/vendor/node_modules/typescript-")
     ) {
       fail(`${f.from} has a placeholder this script doesn't know`);
     }
   }
-  files.push(...retired(files));
   const at = new Date().toISOString();
   let shortSha = commit.slice(0, SHORT_SHA_LENGTH);
   if (dirty !== null && dirty !== "") {

@@ -6,7 +6,7 @@ Sync brings revision R onto an exact target commit T that R does not contain. Th
 
 Sync requires a passed Implement for the current requirements, a current revision and a target that revision does not contain. It can run before Harden; there is no reason to harden code that Sync will replace. An existing Land attempt or incompatible work state prevents code writes.
 
-A passed Sync produces R′ containing the exact requested T. R′ is new code. Harden must attest R′ before Integrate and Review Security can authorize it. Earlier results remain historical; Sync does not copy their permission onto its output or move a global workflow cursor.
+A passed Sync produces R′ containing the exact requested T. R′ is new code. Harden must attest R′ before Integrate and Review Security can authorize it. Sync does not copy earlier results' permission onto its output or move a global workflow cursor.
 
 A revision that already contains T needs no Sync. A passed binding does not rerun. A changed target is a different binding, not permission to replay an uncertain rebase or push. Retired `maxSyncs` and `maxConflictFixes` controls do not authorize retries.
 
@@ -51,7 +51,3 @@ Read-only effect reconciliation settles the original attempt rather than opening
 | Contradictory or unreadable evidence | Any state | Held |
 
 To recover retained work, first stop new dispatch for the affected issue and inspect its authenticated attempt, checkpoint, ownership and retained paths. Preserve the checkout, conflict stages, bundles and patches until an authorized recovery establishes what happened. Do not erase records, raise retired counters or restart an old stage. Unsupported retry and continuation remain unsupported.
-
-## Historical behavior
-
-The old merge-stage synchronization and later caller-launched Sync jobs are retired. Their records and recovery files remain historical evidence. No adapter turns an old stage request, assignment or integration receipt into a current Sync grant.

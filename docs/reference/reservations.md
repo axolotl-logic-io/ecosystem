@@ -76,19 +76,18 @@ Only the holder's own release frees a slot. These events release nothing:
 
 These conditions hold every slot, and `reserveModelSession` resolves to `held`:
 
-- A coordination record is malformed, unreadable or written by an account other than the landing account.
+- A coordination record anywhere in the repository is malformed, unreadable, of an unknown version such as 1, or written by an account other than the landing account.
 - A record in a slot's scope isn't version 3, or a version 3 record names another scope.
-- The trusted capacity setting is missing or invalid, or the caller's cap differs from it.
+- The caller's cap differs from the trusted capacity setting. A missing or invalid setting stops the config from loading at all.
 - A slot request doesn't declare a cap, or a live claim declares a cap other than the caller's.
 - A consumer is registered twice, or reports done without a registration.
 - A release record appears while a consumer isn't done.
 
 A slot that a dead holder keeps needs a person: no expiry, lease age or restart frees it.
 
-## Compatibility and limits
+## Versions and limits
 
-- **Record versions stay explicit.** Slot records are version 3. Their requests declare a `cap`, and they add `register` and `done` records, which name a `consumer`. Issue and integration records stay version 2, and older version 1 records still read. A slot record in any other version grants nothing.
-- **Every job must run the same release.** An older release can't read version 3 records. Because slot records are on the holder's issue, an older job on that issue holds. Drain every old job before installing.
+- **Record versions stay explicit.** Slot records are version 3. Their requests declare a `cap`, and they add `register` and `done` records, which name a `consumer`. Issue and integration records are version 2. A record in any other version, including version 1 records an earlier release wrote, holds every slot.
 - **Capacity is per repository and base.** Two repositories, or two bases of one repository, have separate pools.
 - **A crash between requesting and cancelling leaves a request.** The request counts against the cap and is first in its slot's queue. Only that invocation can acquire or cancel it, so the slot stays held until a person reconciles it.
 
@@ -101,8 +100,8 @@ Each row names the scenario and the test that proves it through real processes a
 | Concurrent invocations in separate processes fill the cap once, and a waiting one leaves no request | `test/model-session-reservations.test.ts` |
 | A reservation outlives its process; release waits for every registered consumer's done report | `test/model-session-reservations.test.ts` |
 | A lost done report, a malformed record and an untrusted record each keep the slot held | `test/model-session-reservations.test.ts` |
-| Old version 1 records still read; a slot record without version 3 grants nothing | `test/model-session-reservations.test.ts` |
-| A caller cap that differs from the trusted capacity, or a missing or invalid setting, holds and writes nothing | `test/model-session-reservations.test.ts` |
+| A record of another version holds; a slot record without version 3 grants nothing | `test/model-session-reservations.test.ts` |
+| A caller cap that differs from the trusted capacity holds and writes nothing | `test/model-session-reservations.test.ts` |
 | Concurrent machines whose trusted capacities differ never hold slots under both caps | `test/model-session-reservations.test.ts` |
 | After the trusted capacity changes, callers hold until the pool drains | `test/model-session-reservations.test.ts` |
 | A slot request without a declared cap grants nothing | `test/model-session-reservations.test.ts` |

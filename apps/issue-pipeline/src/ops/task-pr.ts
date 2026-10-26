@@ -57,9 +57,6 @@ function createPr(cfg: Config, n: number): void {
 
 function recordPr(cfg: Config, n: number, pr: number): void {
   const stored = readWorkState(cfg, n);
-  if (stored.kind === "historical") {
-    throw new OpsError(`#${n}'s historical state is never adopted`);
-  }
   let state = newWorkState(n);
   if (stored.kind === "current") {
     ({ state } = stored);

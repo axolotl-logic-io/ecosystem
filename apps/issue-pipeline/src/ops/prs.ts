@@ -70,16 +70,4 @@ function openPrFor(cfg: Config, n: number): number | undefined {
   return prFor(cfg, n, "open")?.number;
 }
 
-// The number of a merged PR from issue `n`'s branch, or undefined when it has
-// none.
-function mergedPrFor(cfg: Config, n: number): number | undefined {
-  return prFor(cfg, n, "merged")?.number;
-}
-
-// The merge commit of a merged PR from issue `n`'s branch: the base's head
-// just after it merged. Undefined when it has none.
-function mergeCommitFor(cfg: Config, n: number): string | undefined {
-  return prFor(cfg, n, "merged")?.mergeCommit?.oid;
-}
-
-export { historicalPrFor, mergeCommitFor, mergedPrFor, openPrFor };
+export { historicalPrFor, openPrFor };

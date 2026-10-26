@@ -5,14 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { z } from "zod";
-import { PROGRAMS, RETIRED_PROGRAMS } from "../programs.ts";
+import { PROGRAMS } from "../programs.ts";
 
 const SOURCE = path.resolve(import.meta.dirname, "..");
 const DEPENDENCIES = path.resolve(SOURCE, "..", "..", "node_modules");
 const TEST_TIMEOUT_MS = 120_000;
-const OPS_REFUSAL = z.object({ ok: z.literal(false), error: z.string() });
-const RETIRED_GRANT = /assignment grants are retired/u;
 
 function command(cwd: string, program: string, args: string[]): string {
   const result = spawnSync(program, args, {
@@ -50,15 +47,12 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
   };
 }
 
-test("build retires old delivery executables without deleting historical evidence", () => {
+test("build writes every program and leaves other output files alone", () => {
   const sandbox = fixture();
   try {
     const output = path.join(sandbox.root, "output");
     fs.mkdirSync(output);
-    for (const file of RETIRED_PROGRAMS) {
-      fs.writeFileSync(path.join(output, file), "obsolete executable");
-    }
-    const evidence = path.join(output, "historical-receipt.json");
+    const evidence = path.join(output, "receipt.json");
     fs.writeFileSync(evidence, "preserved bytes\n");
     command(sandbox.source, process.execPath, ["build.ts", output]);
     for (const { file } of PROGRAMS) {
@@ -67,41 +61,8 @@ test("build retires old delivery executables without deleting historical evidenc
         path.join(output, file),
       ]);
     }
-    for (const file of RETIRED_PROGRAMS) {
-      assert.equal(fs.existsSync(path.join(output, file)), false, file);
-    }
     assert.equal(fs.readFileSync(evidence, "utf8"), "preserved bytes\n");
     assert.ok(fs.existsSync(path.join(output, "standards-python-tools.txt")));
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test("built ops refuses a retired assignment grant before loading configuration", () => {
-  const sandbox = fixture();
-  try {
-    const output = path.join(sandbox.root, "output");
-    const runtime = path.join(sandbox.root, "operator-root");
-    command(sandbox.source, process.execPath, ["build.ts", output]);
-    const request = JSON.stringify({
-      op: "post",
-      config: path.join(sandbox.root, "missing-config.json"),
-      grant: { login: "former-grantor" },
-    });
-    const result = spawnSync(process.execPath, [path.join(output, "ops.mjs")], {
-      cwd: sandbox.source,
-      encoding: "utf8",
-      input: `BEGIN_OPS_REQUEST\n${request}\nEND_OPS_REQUEST`,
-      timeout: TEST_TIMEOUT_MS,
-      env: {
-        ...process.env,
-        ...Object.fromEntries([["ISSUE_PIPELINE_ROOT", runtime]]),
-      },
-    });
-    assert.equal(result.status, 0, result.stderr);
-    const reply = OPS_REFUSAL.parse(JSON.parse(result.stdout));
-    assert.match(reply.error, RETIRED_GRANT);
-    assert.equal(fs.existsSync(runtime), false);
   } finally {
     sandbox.cleanup();
   }
@@ -113,10 +74,7 @@ test("installer dry run plans the buddy distribution and preserves operator file
     const root = path.join(sandbox.root, "operator-root");
     const agent = path.join(sandbox.root, "agent");
     fs.mkdirSync(root);
-    for (const file of RETIRED_PROGRAMS) {
-      fs.writeFileSync(path.join(root, file), `old ${file}\n`);
-    }
-    const historical = path.join(root, "historical-work.json");
+    const historical = path.join(root, "work.json");
     fs.writeFileSync(historical, "do not change\n");
     const result = spawnSync(process.execPath, ["install.ts", "--dry-run"], {
       cwd: sandbox.source,
@@ -134,16 +92,6 @@ test("installer dry run plans the buddy distribution and preserves operator file
     for (const { file } of PROGRAMS) {
       assert.ok(result.stdout.includes(path.join(root, file)), file);
       assert.equal(fs.existsSync(path.join(root, file)), false, file);
-    }
-    for (const file of RETIRED_PROGRAMS) {
-      assert.ok(
-        result.stdout.includes(`retired  ${path.join(root, file)}`),
-        file,
-      );
-      assert.equal(
-        fs.readFileSync(path.join(root, file), "utf8"),
-        `old ${file}\n`,
-      );
     }
     assert.ok(result.stdout.includes("standards-python-tools.txt"));
     assert.ok(result.stdout.includes("vendor/node_modules/typescript-"));

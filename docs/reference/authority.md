@@ -13,9 +13,9 @@ The repository configuration names distinct `devAccount` and `landingAccount` lo
 | Authenticated pipeline records, authority reads and issue lifecycle | Landing |
 | The guarded target-branch Land effect | Landing |
 
-Neither machine account qualifies as a human producer, even if its name appears in a trusted-input list. `legacyAccount` only classifies historical machine content for display and exclusion; it grants no authority.
+Neither machine account qualifies as a human producer, even if its name appears in a trusted-input list.
 
-`credentialsEnvFile` must be an absolute path to a regular file with no group or other permissions. A privileged call selects one token variable, verifies its login, and supplies only that token as `GH_TOKEN`. Git uses a per-call, non-storing credential helper for the configured repository. The old single-account configuration is refused.
+`credentialsEnvFile` must be an absolute path to a regular file with no group or other permissions. A privileged call selects one token variable, verifies its login, and supplies only that token as `GH_TOKEN`. Git uses a per-call, non-storing credential helper for the configured repository. The config must name both accounts; there is no single-account mode.
 
 A safe login read can retry transient failures; the operation it guards is not repeated. A wrong login or rejected token fails immediately. Exhausted identity reads remain unverifiable, not authenticated. Successful identity checks are cached only for the same account/token within that process.
 
@@ -39,7 +39,7 @@ Live GitHub edit-metadata semantics still require operator verification. Source 
 
 The v4 `WORK_STATE` checkpoint preserves the assigned branch, current work and authenticated execution receipt. It is not a scheduler stage or a prerequisite pass. The v2 task records separately describe attempts and outcomes with their run, binding and provenance. See [task results](task-results.md).
 
-A current result binds its exact code/trusted-input revision, target state and checking policy. A result for another subject cannot clear the current one. Historical state and v1 results remain conservative evidence or reconciliation barriers, never current task clearance.
+A current result binds its exact code/trusted-input revision, target state and checking policy. A result for another subject cannot clear the current one. Saved state other than v4 and task records other than v2 hold the work item until an operator reconciles them; they never clear a task.
 
 A state checkpoint makes one write attempt and confirms the exact transmitted body through an authenticated read. A lost response may resolve through that read-back. An unresolved result preserves the transmitted body, record identity and execution binding in its uncertainty journal. It grants neither a repeated write nor release to a successor.
 
@@ -51,7 +51,7 @@ Ownership and capacity are distinct. A model-session reservation grants no issue
 
 ## Controlled writes
 
-Task operations reread the trusted buddy authorization, current cause, relevant stop evidence, ownership and task-specific prerequisites at their controlled effects. The authoritative request envelope overrides payload fields. The retired assignment `grant` envelope is refused.
+Task operations reread the trusted buddy authorization, current cause, relevant stop evidence, ownership and task-specific prerequisites at their controlled effects. The authoritative request envelope overrides payload fields.
 
 Source pushes, including `pipeline_commit`, require substantive write authority. A new human stop, loss of qualification, unknown stop evidence, a Security refusal or already-landed work cannot grant another code write. Evidence-only settlement uses a separate, limited recording authorization; it does not hide a substantive mutation.
 

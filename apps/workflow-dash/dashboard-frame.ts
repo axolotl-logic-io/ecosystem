@@ -4,20 +4,12 @@ import type { Snapshot } from "./data.ts";
 import { statusSegments } from "./status-view.ts";
 import { chip, layout, pill } from "./ui-format.ts";
 
-const tabNames = [
-  "Buddy runs",
-  "Action runs",
-  "Issues",
-  "Subagent runs",
-  "Job history",
-  "Time",
-];
+const tabNames = ["Buddy runs", "Action runs", "Issues", "Subagent runs"];
 const listTitles = [
   "Buddy runs",
   "Action runs",
   "Issues / PRs",
   "Subagent runs",
-  "Job history · historical records",
 ];
 function tabBar(theme: Theme, tab: number, width: number): string {
   return tabNames
