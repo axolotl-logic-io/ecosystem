@@ -35,6 +35,7 @@ const BOUND = z.strictObject({
   authorization: z.strictObject({
     config: z.string(),
     repository: z.string(),
+    organization: z.string(),
     run: z.string(),
     task: z.string(),
     digest: SHA256,
@@ -350,6 +351,7 @@ test("bindBuddyAuthorization binds the action's digest without touching the shar
     assert.deepEqual(result.authorization, {
       config: file,
       repository: box.repository,
+      organization: "owner",
       run: RUN,
       task: "implement",
       digest,
