@@ -77,6 +77,7 @@ const CONFIG_SCHEMA = z.looseObject({
   legacyAccount: z.string().optional(),
   allowedUsers: z.array(z.string()),
   baseBranch: z.string(),
+  requireCi: z.boolean(),
   cloneUrl: OPTIONAL_TEXT,
   commands: z.looseObject({
     teardown: OPTIONAL_TEXT,

@@ -109,6 +109,8 @@ type BuddyChoice =
 interface MachineSetup {
   landPermission: boolean;
   laneSlots?: number;
+  // Operator CI policy; absence keeps the production default.
+  requireCi?: boolean;
   setup?: string;
   teardown?: string;
   test?: string;
@@ -350,9 +352,13 @@ function provisionRuntime(root: string): ProvisionedRuntime {
 
 // The `kind` records (`<!-- agent-pipeline:KIND` comments) on issue ISSUE
 // in `world`, parsed, oldest first.
-function marked(world: World, kind: string): z.infer<typeof RECORD>[] {
+function marked(
+  world: World,
+  kind: string,
+  number = ISSUE,
+): z.infer<typeof RECORD>[] {
   const mark = `<!-- agent-pipeline:${kind}\n`;
-  const issue = world.issues.find((item) => item.number === ISSUE);
+  const issue = world.issues.find((item) => item.number === number);
   return (issue?.comments ?? []).flatMap((comment) => {
     const start = comment.body.indexOf(mark);
     if (start === -1) {
@@ -476,6 +482,7 @@ function machine(
     credentialsEnvFile: credentials,
     allowedUsers: [HUMAN],
     permissions: { land: setup.landPermission },
+    requireCi: setup.requireCi,
     ...laneSlotsOf(setup),
     models: { author: MODEL, developer: MODEL, reviewer: MODEL },
     runtime: provisionRuntime(root),

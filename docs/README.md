@@ -38,7 +38,7 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Review](reference/review.md): hardening, deterministic verification, the review bundle and the Security review.
 
-[Check gates](reference/check-gates.md): the fast default, opt-in full suite, known cost and remaining optimization work.
+[Check gates](reference/check-gates.md): fast and full gate scope, deadlines, evidence and the separate installation boundary.
 
 [Sessions](reference/sessions.md): model sessions, access profiles, prompt pages and the `pipeline_commit` tool.
 

@@ -40,7 +40,7 @@ A process exit, expired lease, removed label or new buddy activation does not re
 
 ## Reconciliation
 
-Read-only effect reconciliation settles the original attempt rather than opening a fresh attempt. It may preserve local recovery evidence and update settlement records under current recording authority. It never repeats a credentialed push or rebase.
+Read-only effect reconciliation settles the original attempt rather than opening a fresh attempt. It may update settlement records under current recording authority, but leaves code, the index and synchronization journals unchanged. It never pushes, rebases, resets or performs cleanup. Unpublished rebased work stays held for explicit recovery rather than being reset to the remote branch.
 
 | Remote work branch | Retained checkout | Result |
 |---|---|---|

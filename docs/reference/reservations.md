@@ -61,7 +61,7 @@ A consumer is something that uses the slot, such as one model launch. It's named
 
 - `done` for a consumer that was never registered.
 - `register` for a consumer that already reported done. Use a new `id`.
-- A write whose outcome is unknown. Its journal holds the holder's issue, as for any [coordination problem](coordination.md#recover-from-a-coordination-problem).
+- A write whose outcome is unknown. Its journal holds the holder's issue, as for any [coordination problem](coordination.md#preserve-interrupted-work).
 
 Registering a running consumer again, and reporting done twice, change nothing.
 

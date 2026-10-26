@@ -8,6 +8,7 @@
 // only gh (fake-gh.ts) and pi (fake-pi.ts) are fakes.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
@@ -163,10 +164,14 @@ const PASSED_AND_RELEASED = {
   preserved: { checkout: null, patches: [] },
 };
 
-test("a Developer and a Gatekeeper deliver a started issue from Implement to Complete", async ({
+test("a Developer and a Gatekeeper deliver through Complete with lane slots and an explicit no-CI policy", async ({
   signal,
 }) => {
-  const box = machine(undefined, { landPermission: true });
+  const box = machine(undefined, {
+    landPermission: true,
+    laneSlots: 1,
+    requireCi: false,
+  });
   let passed = false;
   try {
     const target = box.git(["rev-parse", "main"]);
@@ -198,11 +203,9 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
       HARDENS.commit?.message,
     );
 
-    // CI rejection and the effect-time race have their own regression.
-    // Keep this flow focused on successful delivery.
-    box.change((reported) => {
-      reported.checks = { [hardened]: [{ name: "ci", bucket: "pass" }] };
-    });
+    // No required checks exist. Only the trusted boolean waiver permits
+    // their absence; the separate CI regression checks effect-time failure.
+    assert.deepEqual(box.world().checks ?? {}, {});
     const gatekeeper = await box.runBuddy(
       [REVIEWS],
       CLEARED_POLLS,
@@ -336,6 +339,23 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
     for (const launch of launches) {
       assert.equal(fs.existsSync(launch.cwd), false);
     }
+    assert.deepEqual(
+      launches.map((launch) => launch.laneSlot),
+      ["1", "1", "1"],
+    );
+    // Land and Complete also closed successfully without declaring a test
+    // consumer; their closure left no fabricated or stranded lane lease.
+    const store = z
+      .looseObject({ leases: z.array(z.unknown()) })
+      .parse(
+        JSON.parse(
+          fs.readFileSync(
+            path.join(box.pipeline, "runs", "acme__widgets", "lane-slots.json"),
+            "utf8",
+          ),
+        ),
+      );
+    assert.deepEqual(store.leases, []);
     // The project's check ran once, by Integrate, on the hardened code;
     // nothing reran it for Land or Complete.
     assert.deepEqual(box.checksRun(), [hardened]);

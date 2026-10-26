@@ -9,10 +9,10 @@
 //                    checkout for one resolver session.
 //   sync-task-finish continue the resolved stop, or retain or reject it
 //   sync-reconcile   settle an interrupted run as its original run, from
-//                    the branch and checkout alone; never push or rebase:
+//                    the branch and checkout alone; never push, rebase,
+//                    reset or clear a synchronization journal:
 //       branch at a new head containing T, checkout there → passed
-//       branch at R, checkout rebased past R → push never landed: the
-//           rebased work is kept in recovery, back to R, failed
+//       branch at R, checkout rebased past R → held for explicit recovery
 //       branch at R, nothing changed → failed
 //       a stopped rebase, or anything else → held (unknown)
 
@@ -171,7 +171,6 @@ function reconciled(sync: SyncRun): EffectOutcome {
   const local = head(wt);
   const syncing = readCodeSync(wt) !== undefined;
   if (remote === local && local !== from && isAncestor(wt, target, local)) {
-    clearCodeSync(wt);
     return {
       verdict: "passed",
       reason: `reconciled: the branch holds ${local}, containing ${target}`,
@@ -182,9 +181,10 @@ function reconciled(sync: SyncRun): EffectOutcome {
     return { verdict: "failed", reason: "reconciled: no effect was made" };
   }
   if (remote === from && syncing && local !== from) {
-    const reason = `reconciled: the push of ${local} never landed; the rebased work is kept in recovery`;
-    resetToRemote(open.cfg, open.number, reason);
-    return { verdict: "failed", reason };
+    return {
+      verdict: "unknown",
+      reason: `the push of ${local} never landed; the rebased work stays retained for explicit recovery; read-only reconciliation resets nothing`,
+    };
   }
   return {
     verdict: "unknown",

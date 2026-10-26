@@ -1,8 +1,10 @@
 # Ecosystem
 
-Ecosystem is the home of the issue pipeline, which executes caller-assigned
-GitHub issues against a configured repository. Its source, operator instructions
-and tests live in [`apps/issue-pipeline/`](apps/issue-pipeline/README.md).
+Ecosystem is the home of the issue pipeline. Configured buddies run tasks
+against GitHub issues. Qualified human label events authorize initial work;
+later effects need their own prerequisites and standing permissions. Its source,
+operator instructions and tests live in
+[`apps/issue-pipeline/`](apps/issue-pipeline/README.md).
 It runs from an operator-installed copy; landing source does not install it.
 
 The opt-in Pi [workflow dashboard](apps/workflow-dash/README.md) lives in
@@ -12,7 +14,7 @@ pipeline's.
 
 ## Check
 
-You need Node 24 and npm, nothing else. The root `package.json` declares the
+You need Node 24, npm and Git. The root `package.json` declares the
 Node major in `engines`. From the root of a fresh clone:
 
 ```bash
@@ -24,13 +26,14 @@ npm run check:full                             # fast gate plus every Node test
 The commands need no file under `$HOME` and no absolute path. The pipeline
 uses the same setup and gate, from `commands` in `.issue-pipeline.json`.
 
-The fast gate typechecks source and tests, lints, builds and checks syntax.
-The pipeline's Node test suite was deleted on 2026-10-25. `check:full` still
-runs every `apps/issue-pipeline/test/**/*.test.ts`, so new tests there are
-picked up with no change to the scripts.
-The fast gate does not run the integration/flow suite or prove runtime authority, recovery,
-isolation or landing behavior. Read the
-[gate scope and cost report](docs/reference/check-gates.md) before selecting
+The pipeline's fast gate typechecks source and tests, lints, builds and checks
+syntax. Its full gate runs every `apps/issue-pipeline/test/**/*.test.ts`, including
+real public-entrypoint delivery, authority, recovery and resource flows. New
+test files are picked up with no change to the scripts. The fast gate does not
+run that suite or prove runtime authority, recovery, isolation or landing behavior.
+
+Read the
+[check gates](docs/reference/check-gates.md) before selecting
 the expensive full suite. Both root scripts also run the dashboard's gates,
 which you can run alone:
 
@@ -48,13 +51,13 @@ takes `commands` from this repository's `.issue-pipeline.json`.
 The dashboard's source gates do not replace operator acceptance before
 cutover. Read [AGENTS.md](AGENTS.md) before changing code.
 
-`main` is the only long-lived branch. The operator disabled the GitHub Check
-workflow; this change does not enable it. There is no production deployment.
+`main` is the only long-lived branch. The GitHub Check workflow defines fast
+gates; source changes do not enable repository workflows or deploy either app.
 The operator can configure the pipeline to work on ecosystem's own issues as
-well as other repositories. Issue jobs develop and review pipeline fixes; the
+well as other repositories. Tasks develop and review pipeline fixes; the
 operator coordinates installation separately from landing them.
 
 The [pipeline docs](docs/README.md) hold its decisions and reference. The sessions'
 behavioral prompts ship with the pipeline in
-`apps/issue-pipeline/prompts/`, and the caller assigns each issue, branch,
-lane and stage explicitly.
+`apps/issue-pipeline/prompts/`. The operator configures each buddy's scope,
+role, identity and task responsibilities; there is no shared stage cursor.

@@ -385,15 +385,7 @@ const CHECK_STATES = {
   cancel: "CANCELLED",
 } as const;
 
-// The required checks on PR `number`'s head as the origin has it, as
-// `gh pr checks --required --json` prints them and exits.
-function requiredChecks(world: World, number: string | undefined): boolean {
-  const found = (world.pulls ?? []).find(
-    (pull) => String(pull.number) === number,
-  );
-  if (found === undefined) {
-    return fail("gh: Could not resolve to a PullRequest");
-  }
+function checkReply(world: World): World["checksReply"] {
   const reply = world.checksReply;
   const after = reply?.afterComment ?? [];
   if (
@@ -405,6 +397,22 @@ function requiredChecks(world: World, number: string | undefined): boolean {
         ),
       ))
   ) {
+    return reply;
+  }
+  return world.checksSequence?.shift();
+}
+
+// The required checks on PR `number`'s head as the origin has it, as
+// `gh pr checks --required --json` prints them and exits.
+function requiredChecks(world: World, number: string | undefined): boolean {
+  const found = (world.pulls ?? []).find(
+    (pull) => String(pull.number) === number,
+  );
+  if (found === undefined) {
+    return fail("gh: Could not resolve to a PullRequest");
+  }
+  const reply = checkReply(world);
+  if (reply !== undefined) {
     if (
       reply.moveHeadTo !== undefined &&
       !git(["update-ref", `refs/heads/${found.head}`, reply.moveHeadTo]).ok
@@ -488,8 +496,13 @@ function flowCall(
   args: readonly string[],
   login: string,
 ): { handled: boolean; changed: boolean } {
+  const queued = world.checksSequence?.length ?? 0;
   if (pr(world, args, login)) {
-    return { handled: true, changed: args[1] === "create" };
+    return {
+      handled: true,
+      changed:
+        args[1] === "create" || (world.checksSequence?.length ?? 0) !== queued,
+    };
   }
   if (issueClose(world, args, login)) {
     return { handled: true, changed: true };

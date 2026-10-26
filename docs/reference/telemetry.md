@@ -1,55 +1,57 @@
 # Telemetry
 
-This page describes what the pipeline records about sessions and jobs, where those records live, how commits trace back to sessions, and the usage report. Usage is telemetry, not a budget: nothing stops a session for its spend or context size.
+The pipeline records buddy runs, task actions and model sessions. These observations describe what happened; they grant no authority, continuation or retry. Usage measures are not a spending budget.
 
-## Usage records on GitHub
+## Current local records
 
-Each finished session and job adds a schema-checked JSON line to a hidden block in the issue's usage comments, posted by the review/merge account. A full comment rolls over to another. Records hold numbers, booleans, times and constrained identifiers, never task text, free-text replies, prompts or raw tool output.
+Under `$ISSUE_PIPELINE_ROOT`, the current runtime writes:
 
-A **session record** names the repository, issue, job, job start, launch key, stage, phase, role, agent, model and attempt. It also records:
+| Path | Content |
+|---|---|
+| `runs/buddy-runs/BUDDY_RUN_ID/run.json` | The buddy's scope, identity, task loops and end observation |
+| `runs/SLUG/issue-N/actions/ACTION_ID/run.json` | The action's binding, cause, mode, operations, sessions, reservations, checkpoint, ownership and preserved work |
+| `runs/SLUG/issue-N/actions/ACTION_ID/sessions/KEY.jsonl` | One model session's transcript |
+| `runs/SLUG/issue-N/actions/ACTION_ID/context.jsonl` | Bounded measures for each ended session |
+| `runs/SLUG/issue-N/pushes.jsonl` | The pipeline's own push records |
 
-- how it ended (`reply`, `error` or `aborted`), the reply name, seconds and turns;
-- tokens: `input`, `output`, `cacheRead`, `cacheWrite`, optional `cacheWrite1h` (the subset written at the one-hour rate) and optional `cost` in US dollars, summed from Pi's per-message cost. A missing cost isn't zero spend;
-- context: `first`, `peak` and `atFinish` per-turn context, counted as input plus cache-read plus cache-write tokens. This isn't cumulative spend;
-- prompt provenance: the page name and the SHA-256 of its pinned bytes. Its `head` is null for pages that ship with the pipeline.
+`BUDDY_RUN_ID` and `ACTION_ID` are separate run UUIDs. `SLUG` is the repository name with `/` replaced by `__`, `N` is the issue number, and `KEY` is a launch key such as `developer-hardening-1`. A session also has its own UUID and an explicit parent action. See [runtime run observations](runtime-runs.md) for schemas, lineage and conservative process observations, and [checkouts](checkouts.md) for recovery artifacts.
 
-A **job record** names the repository, issue, job, job start and role, with the stages visited, outcome, duration and summed session tokens. Don't add job totals to session totals; that counts them twice.
+The action runtime writes no current `job.json` or `job.log`. Preserve older files as historical evidence; do not interpret them as a current stage cursor.
 
-Logging is best effort and never stops an issue. A serializer refusal is dropped with its reason in `job.log`; a failed append is retried once, then dropped.
+A context entry records its launch key, session file, model role, task label, measured tokens and turns, context measures, and code heads when available. Its technical `job` field names the action, and `stage` holds the task ID; neither introduces a separate job or scheduler stage. `interrupted` describes a local interruption, not a fabricated accepted human stop. `unrecorded` means launch evidence is missing. Missing measures do not prove zero use or cost.
 
-## Local records
-
-In `runs/SLUG/issue-N/` (see [checkouts](checkouts.md)):
-
-- `sessions/KEY.jsonl` holds each session's transcript. Reusing a key moves the earlier transcript to `KEY.STAMP.jsonl`.
-- `context.jsonl` adds one entry per ended session with `key`, `job`, `session`, and the code head at session end.
-- `job.json` records each launch, its pinned prompt pages and its verified `runtimePolicy` (see [runtime](runtime.md)). A null policy means no policy was accepted, for example for an op or a launch refused before verification.
-- `pushes.jsonl` adds `{key, job, repo, sha, at}` for each push.
-
-Local logs are diagnostic and recovery evidence, not permission to change GitHub. The usage serializer's limits don't make local logs safe to publish.
+Local transcripts can contain prompts, replies, tool output and private paths. Bounded serialization does not make them safe to publish.
 
 ## Commit attribution
 
-Each commit made through `pipeline_commit` carries `Pipeline-Session: LAUNCH_KEY@JOB_START`. Match it to the session's usage record by launch key and job start, and to push records by launch key and job. A trailer attributes a commit to a session, not a share of its cost. A trailer or a local commit isn't proof of a push.
+A commit made through `pipeline_commit` carries `Pipeline-Session: LAUNCH_KEY@ACTION_START`. Match its launch key and start time to the action and its session observations. The trailer attributes a commit to a session, not a share of its cost. Neither a trailer nor a local commit proves that a push succeeded.
 
-## Usage report
+## Historical GitHub usage records
+
+The standalone `usage` op and usage-report reader remain available for the older hidden usage-comment format. The current buddy runtime does not append those session or job totals. A usage report can therefore omit current buddy sessions; it is not a complete activity or liveness report.
+
+Historical records contain constrained identifiers and numerical measures, including token counts, context and optional cost in US dollars. A session total and its containing job total count the same work; do not add them together. Missing cost is not zero spend.
+
+## Read the usage report
 
 ```bash
 node "$ISSUE_PIPELINE_ROOT/report.mjs" usage --config CONFIG \
   --since 2026-01-01 --role reviewer --issue ISSUE
 ```
 
-`--since` (an ISO date or time), `--role` and `--issue` are optional. The report reads the review/merge account's usage records and groups sessions by role, state and model, with median, p90 and maximum context and tokens, flagged sessions, and each role's tools with the most output.
+`CONFIG` is the operator's repository config file. `ISSUE` is an issue number. `--since`, `--role` and `--issue` are optional; the date is an ISO date or timestamp.
+
+The report selects hidden usage records by the configured landing account's login. It groups session records by model role, historical state label and model, with median, 90th-percentile and maximum context and tokens, flagged sessions, and tools with the most output. This telemetry selection is not authentication of task results or current workflow authority.
 
 Flags annotate the report; nothing acts on them. `usageFlags` in the repository config sets their thresholds:
 
 | Flag | Raised when | Setting |
 |---|---|---|
-| `first-context` | First-turn context is above the threshold | `firstContext`, default 40,000 |
-| `tool-output` | The largest tool output is above a share of peak context | `toolOutputShare`, default 0.25 |
+| `first-context` | First-turn context exceeds the threshold | `firstContext`, default 40,000 |
+| `tool-output` | The largest tool output exceeds a share of peak context | `toolOutputShare`, default 0.25 |
 | `first-grew` | A later attempt's first-turn context exceeds the latest earlier session's at the same issue and state | — |
-| `past-soft` | A historical record contains a soft threshold; current jobs don't emit one | — |
+| `past-soft` | A historical record contains a soft threshold | — |
 
-## Recover missing telemetry
+## Investigate missing telemetry
 
-Telemetry gaps need no recovery for the issue to proceed. To investigate, read `job.log` for dropped records, then `job.json`, `context.jsonl` and `pushes.jsonl` for the same job. If a trailer or record is missing, exact attribution isn't available; don't reconstruct it from guesses.
+Read the canonical buddy and action observations, the action's `context.jsonl` and session transcripts, and the issue's push records. Check explicit run and session links rather than inferring them from filenames or process age. Gaps in telemetry grant no permission to repeat an effect. If exact attribution is missing, preserve the gap rather than reconstruct it from guesses.
