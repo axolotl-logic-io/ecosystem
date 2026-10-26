@@ -15,6 +15,9 @@
 //   submits no review.
 // - A Verify whose result post is lost settles its original run from the
 //   review it already submitted, and never submits a second one.
+// - A person's push gets no Verify from Implement's result, which names the
+//   older head; a person's start:verify reviews the head it was accepted
+//   for.
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";
@@ -27,7 +30,13 @@ import type {
   Machine,
   PlannedSession,
 } from "./buddy-flow-test-kit.ts";
-import { HARDENING, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import {
+  HARDENING,
+  HUMAN,
+  ISSUE,
+  machine,
+  marked,
+} from "./buddy-flow-test-kit.ts";
 
 const IMPLEMENTS: PlannedSession = {
   commit: {
@@ -50,6 +59,8 @@ const DEVELOPER_POLLS = 2;
 const GATEKEEPER_POLLS = 3;
 // Verify's uncertain run, its read-only recovery, an idle poll, then stop.
 const RECOVERY_POLLS = 4;
+// The start's acceptance, Verify, its passed binding's idle poll, then stop.
+const START_POLLS = 4;
 const BRANCH = `agent/issue-${ISSUE}`;
 const RESULT = z.looseObject({
   kind: z.literal("result"),
@@ -57,6 +68,7 @@ const RESULT = z.looseObject({
   verdict: z.string(),
   receipt: z.unknown(),
 });
+const START_SIGNAL = /^github-label:[^#]+#\d+:\d+$/u;
 const MARK = /\n\n<!-- agent-pipeline:verify-review\n\{.*\}\n-->$/su;
 
 function reviewOf(findings: unknown[]): PlannedSession {
@@ -92,6 +104,48 @@ async function implemented(
     world.checks = { [head]: [{ name: "ci", bucket: ci }] };
   });
   return { box, head };
+}
+
+// A person's own commit on top of the PR's branch, made in the origin;
+// returns the PR's new head.
+function pushByHand(box: Machine): string {
+  const commit = box.git([
+    "-c",
+    "user.name=A Person",
+    "-c",
+    "user.email=person@example.com",
+    "commit-tree",
+    `${BRANCH}^{tree}`,
+    "-p",
+    BRANCH,
+    "-m",
+    "Note the count",
+  ]);
+  box.git(["update-ref", `refs/heads/${BRANCH}`, commit]);
+  return commit;
+}
+
+// A person applies `label` to the issue now.
+function applyLabel(box: Machine, label: string): void {
+  box.change((world) => {
+    const issue = world.issues.find((item) => item.number === ISSUE);
+    if (issue === undefined) {
+      throw new Error(`the world has no issue ${ISSUE}`);
+    }
+    issue.labels = [...issue.labels, label];
+    issue.events = [
+      ...issue.events,
+      {
+        id: world.nextId,
+        event: "labeled",
+        label,
+        actor: HUMAN,
+        viaApp: false,
+        createdAt: "2026-10-26T10:00:00Z",
+      },
+    ];
+    world.nextId += 1;
+  });
 }
 
 function verifyActions(outcome: BuddyOutcome): ActionRun[] {
@@ -550,6 +604,58 @@ test("a Verify whose result post is lost settles from its submitted review witho
     });
     assert.deepEqual(reviewPosts(box), [LANDING]);
     assert.deepEqual(box.checksRun(), [head]);
+    passed = true;
+  } finally {
+    finish(box, passed);
+  }
+});
+
+test("a person's start:verify reviews the head they pushed, which Implement's result doesn't wake Verify for", async ({
+  signal,
+}) => {
+  const { box } = await implemented("pass", signal);
+  let passed = false;
+  try {
+    const head = pushByHand(box);
+    box.change((world) => {
+      world.checks = { [head]: [{ name: "ci", bucket: "pass" }] };
+    });
+    // Implement's result names the older head, so nothing wakes Verify.
+    const idle = await box.runBuddy(
+      [],
+      GATEKEEPER_POLLS,
+      { role: "gatekeeper", tasks: ["verify"] },
+      signal,
+    );
+    signal.throwIfAborted();
+    assert.equal(idle.status, 0, idle.stderr);
+    assert.deepEqual(verifyActions(idle), []);
+
+    applyLabel(box, "start:verify");
+    const gatekeeper = await box.runBuddy(
+      [reviewOf([])],
+      START_POLLS,
+      { role: "gatekeeper", tasks: ["verify"] },
+      signal,
+    );
+    signal.throwIfAborted();
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const verify = onlyVerify(gatekeeper);
+    assert.deepEqual(
+      [verify.mode, verify.verdict],
+      ["act", "passed"],
+      verify.reason ?? "",
+    );
+    // The accepted start caused it, and it bound and reviewed the pushed head.
+    assert.match(verify.cause.signal, START_SIGNAL);
+    assert.ok("revision" in verify.binding);
+    assert.equal(verify.binding.revision.code, head);
+    const [review, ...others] = pullOf(box.world()).reviews ?? [];
+    assert.deepEqual(others, []);
+    assert.deepEqual(
+      [review?.author, review?.state, review?.commitId],
+      [LANDING, "APPROVED", head],
+    );
     passed = true;
   } finally {
     finish(box, passed);

@@ -4,7 +4,8 @@
 // responsible for Land merges the PR with a merge commit pinned to that
 // head and closes the issue, or, when the PR conflicts with its base or
 // doesn't contain it, marks the PR a draft and refuses for Fix. A person's
-// standing request for changes holds it. The built buddy.mjs runs the real
+// standing request for changes holds it, and a person's approval alone,
+// with no Verify, lands it. The built buddy.mjs runs the real
 // tasks, ops, ledger and Git; only gh (fake-gh.ts) and pi (fake-pi.ts) are
 // fakes.
 import assert from "node:assert/strict";
@@ -28,6 +29,9 @@ import { HUMAN, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 // The Land acts on the first poll; the second stops the run.
 const LAND_POLLS = 2;
+// The review's acceptance, the Land it wakes, then stop.
+const REVIEW_POLLS = 3;
+const REVIEW_SIGNAL = /^github-review:[^#]+#\d+:\d+$/u;
 
 // Required CI passes on `head`.
 function greenCi(box: Machine, head: string): void {
@@ -265,5 +269,43 @@ test("a person's standing request for changes holds an approved Land until they 
     passed = true;
   } finally {
     retainOnFailure(box, passed, "Land review hold");
+  }
+});
+
+test("a qualified person's approval alone, with no Verify, lands the head it approved", async ({
+  signal,
+}) => {
+  const box = machine(undefined, { landPermission: true });
+  let passed = false;
+  try {
+    const target = box.git(["rev-parse", "main"]);
+    const head = await implemented(box, signal);
+    greenCi(box, head);
+    box.change((world) => {
+      review(world, HUMAN, "APPROVED", head);
+    });
+
+    const gatekeeper = await box.runBuddy([], REVIEW_POLLS, GATEKEEPER, signal);
+    signal.throwIfAborted();
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const [land, ...more] = landsOf(gatekeeper);
+    assert.ok(land !== undefined);
+    assert.deepEqual(more, []);
+    assert.equal(land.verdict, "passed", land.reason ?? "");
+    // The person's accepted review woke it; no Verify result exists.
+    assert.match(land.cause.signal, REVIEW_SIGNAL);
+    assert.equal(
+      JSON.stringify(marked(box.world(), "task-result")).includes(
+        '"task":"verify"',
+      ),
+      false,
+    );
+    assert.deepEqual(
+      box.git(["rev-list", "--parents", "-n", "1", "main"]).split(" ").slice(1),
+      [target, head],
+    );
+    passed = true;
+  } finally {
+    retainOnFailure(box, passed, "Land on a person's approval");
   }
 });
