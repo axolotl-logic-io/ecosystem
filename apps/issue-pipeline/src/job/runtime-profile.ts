@@ -16,6 +16,12 @@ import {
 import { profileEndpoint } from "./runtime-provider.ts";
 import { probeVersion } from "./runtime-version.ts";
 
+// The native providers' fallback API keys. A model child gets one only when
+// the runtime names it as the proxy's credential.
+const NATIVE_FALLBACK_KEYS: ReadonlySet<string> = new Set([
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+]);
 const CHANGED_PROFILE =
   "runtime: generated settings or provisioned provider profile changed before the first prompt";
 const PROVIDER_PACKAGE = z.object({
@@ -167,7 +173,7 @@ function generatedEnvironment(
   const env = Object.fromEntries([
     ...Object.entries(input.env).filter(
       ([name]) =>
-        name !== "OPENAI_API_KEY" || runtime.credentialEnv.includes(name),
+        !NATIVE_FALLBACK_KEYS.has(name) || runtime.credentialEnv.includes(name),
     ),
     ...Object.entries(toolchain),
     ...Object.entries(managed),

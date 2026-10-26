@@ -60,6 +60,8 @@ const SESSION = z.strictObject({
 const PLAN = z.strictObject({ next: z.int(), sessions: z.array(SESSION) });
 const HUMAN = "autumn";
 const ISSUE = 7;
+const TRAILING_SLASHES = /\/+$/u;
+const V1_SUFFIX = /\/v1$/u;
 const PROFILE = z.looseObject({
   proxy: z.looseObject({ endpoint: z.string() }),
 });
@@ -67,6 +69,7 @@ const CACHE = z.looseObject({
   discovery: z.looseObject({
     builtinProviders: z.array(
       z.looseObject({
+        name: z.string(),
         api: z.string(),
         models: z.array(
           z.looseObject({ id: z.string(), contextWindow: z.number() }),
@@ -275,6 +278,16 @@ interface PiState {
   autoCompactionEnabled: true;
 }
 
+// The base URL pi-cliproxyapi registers a model at: the endpoint, less its
+// trailing /v1 for the Anthropic SDK, which takes the host root.
+function baseUrlOf(api: string | undefined, endpoint: string): string {
+  const trimmed = endpoint.replace(TRAILING_SLASHES, "");
+  if (api === "anthropic-messages") {
+    return trimmed.replace(V1_SUFFIX, "");
+  }
+  return trimmed;
+}
+
 // pi's state, as pi answers `get_state` with the provisioned provider
 // profile in HOME, the runtime home.
 function stateOf(args: readonly string[]): PiState {
@@ -289,14 +302,16 @@ function stateOf(args: readonly string[]): PiState {
   );
   const model = args[args.indexOf("--model") + 1] ?? "";
   const [provider = "", id = ""] = model.split("/");
-  const [entry] = cache.discovery.builtinProviders;
+  const entry = cache.discovery.builtinProviders.find(
+    (item) => item.name === provider,
+  );
   const cached = entry?.models.find((item) => item.id === id);
   return {
     model: {
       provider,
       id,
       contextWindow: cached?.contextWindow ?? 0,
-      baseUrl: config.proxy.endpoint,
+      baseUrl: baseUrlOf(entry?.api, config.proxy.endpoint),
       api: entry?.api,
     },
     autoCompactionEnabled: true,
