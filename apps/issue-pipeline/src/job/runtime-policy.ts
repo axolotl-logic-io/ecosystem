@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const TARGET_TOKENS = 175_000;
 const KEEP_RECENT_TOKENS = 30_000;
-const NATIVE_VERSION = "1.2.0";
+const NATIVE_VERSION = "1.4.0";
 const PROVIDER_VERSION = "0.4.3";
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const MODEL_REFERENCE =
