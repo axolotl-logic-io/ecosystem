@@ -7,7 +7,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { isLegacyPipelineComment } from "./comment-marks.ts";
 import type { IssueComment } from "./comments.ts";
 import { listComments, pipelineRole } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -32,8 +31,8 @@ interface IssueContext {
 }
 
 // How issue.md shows a comment: under a heading naming its author, hidden
-// (the state, claim and usage comments, which are the pipeline's records), or
-// withheld because its author isn't trusted.
+// (the state comment, which is the pipeline's record), or withheld because
+// its author isn't trusted.
 type Shown =
   | { kind: "shown"; heading: string }
   | { kind: "hidden" }
@@ -41,12 +40,9 @@ type Shown =
 
 function shownAs(cfg: Config, item: IssueComment): Shown {
   const login = item.user?.login;
-  if (isLegacyPipelineComment(cfg, item)) {
-    return { kind: "hidden" };
-  }
   const role = pipelineRole(cfg, item);
   const at = item.created_at;
-  if (role === "state" || role === "claim" || role === "usage") {
+  if (role === "state") {
     return { kind: "hidden" };
   }
   if (role !== null) {
@@ -127,15 +123,12 @@ function writeIssueContext(cfg: Config, number: number): IssueContext {
 }
 
 // Whether `item` is a trusted person's input: a comment by an allowed user who
-// is still a collaborator, and not one the pipeline wrote (its state, claim,
-// usage, Gherkin, review and stop comments, and the installed version's
-// markers). A comment an allowed user posts without the pipeline's marker,
+// is still a collaborator, and not one the pipeline wrote (any comment with
+// the pipeline's marker). A comment an allowed user posts without the pipeline's marker,
 // such as an answer from their own operating session, stays theirs.
 function isTrustedInput(cfg: Config, item: IssueComment): boolean {
   return (
-    !isLegacyPipelineComment(cfg, item) &&
-    pipelineRole(cfg, item) === null &&
-    isAllowedUser(cfg, item.user?.login)
+    pipelineRole(cfg, item) === null && isAllowedUser(cfg, item.user?.login)
   );
 }
 

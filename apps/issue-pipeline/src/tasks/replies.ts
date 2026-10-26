@@ -27,8 +27,4 @@ const SECURITY_REVIEW_REPLY = z.strictObject({
     .nullable(),
 });
 
-type WriterReply = z.infer<typeof WRITER_REPLY>;
-type SecurityReviewReply = z.infer<typeof SECURITY_REVIEW_REPLY>;
-
-export type { SecurityReviewReply, WriterReply };
 export { SECURITY_REVIEW_REPLY, WRITER_REPLY };

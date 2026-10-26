@@ -21,13 +21,10 @@ function instanceOf(cfg: Config): string {
   return cfg.execution.instance;
 }
 
-// Whether every Land run of the item, v2 or historical, is settled.
+// Whether every Land run of the item is settled.
 function landSettled(cfg: Config, number: number): boolean {
   const records = readRecords(cfg, number, listComments(cfg, number));
-  return (
-    records.historical.unsettledLand === null &&
-    unsettled(records.rows, "land").length === 0
-  );
+  return unsettled(records.rows, "land").length === 0;
 }
 
 // Retires what earlier invocations of this item left of the turn, once its

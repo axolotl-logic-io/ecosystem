@@ -6,6 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
+import { committedPolicy } from "./project-policy-test-kit.ts";
 
 // What Land's effect stands on, against a real local origin: the exact
 // remote target read, the R-contains-T check, the trusted Land grant, and
@@ -84,24 +85,6 @@ interface Sandbox {
   cleanup: () => void;
 }
 
-function policyRevision(root: string): string {
-  const policy = path.join(root, "policy");
-  fs.mkdirSync(policy);
-  git(policy, ["init", "--initial-branch=main"]);
-  git(policy, ["config", "user.name", "Land test"]);
-  git(policy, ["config", "user.email", "land@example.test"]);
-  git(policy, ["remote", "add", "origin", path.join(root, "origin.git")]);
-  fs.writeFileSync(
-    path.join(policy, ".issue-pipeline.json"),
-    JSON.stringify({
-      commands: { test: "true" },
-      resources: { modelSessions: 1 },
-    }),
-  );
-  git(policy, ["add", ".issue-pipeline.json"]);
-  return commit(policy, "Pin settings");
-}
-
 function sandbox(): Sandbox {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-land-"));
   const origin = path.join(root, "origin.git");
@@ -117,15 +100,15 @@ function sandbox(): Sandbox {
   commit(work, "Target");
   git(work, ["push", "origin", "main"]);
   git(root, ["clone", origin, clone]);
-  const pinned = policyRevision(root);
+  const projectPolicy = committedPolicy(path.join(root, "policy"), origin, {
+    commands: { test: "true" },
+    resources: { modelSessions: 1 },
+  });
   const example = z
     .record(z.string(), z.unknown())
     .parse(
       JSON.parse(
-        fs.readFileSync(
-          path.join(SOURCE, "repos", "committed-settings.example.json"),
-          "utf8",
-        ),
+        fs.readFileSync(path.join(SOURCE, "repos", "example.json"), "utf8"),
       ),
     );
   return {
@@ -141,10 +124,7 @@ function sandbox(): Sandbox {
           ...example,
           repo: "owner/repo",
           cloneUrl: origin,
-          projectPolicy: {
-            repository: path.join(root, "policy"),
-            revision: pinned,
-          },
+          projectPolicy,
           ...extra,
         }),
       );

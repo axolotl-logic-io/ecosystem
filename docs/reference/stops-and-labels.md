@@ -21,14 +21,11 @@ Readability returning does not replay a spent start. The runtime does not kill a
 
 Evidence-only result, checkpoint and read-only reconciliation operations may settle original work after source loss or a stop only while current recording authorization and ownership permit it. Their trusted operation class cannot conceal a code, PR or target mutation.
 
-## Status and historical labels
+## Status labels
 
 `agent:working`, `agent:needs-info`, `agent:split` and `agent:landed` describe historical or application status. `agent:merged` is an older landed label. None activates a current task, proves a successful effect or supplies a missing result.
 
-Old `agent:stopped-CODE` labels and signed stop-recovery records remain evidence. Common historical codes include Security categories, `no-ci`, `not-doable`, `branch-changed`, `conflict`, `push-rejected`, `merge-refused` and `error`. Old `check-fixes`, `sync-limit`, `review-rounds`, `job` and `wiki-check` codes describe retired controls; they do not reinstate their counters or scheduler behavior.
-
-A historical stop can have a local `stop-recovery` record whose phase is `signed-stop-confirmed` or `reconciliation-required`. Preserve its confirmed and unresolved effects. A lost state, claim or label response may have applied. Missing labels are not proof of success, and these files grant no current continuation.
-
+Old `agent:stopped-CODE` labels are not read. They neither stop nor start a task.
 ## Recovery boundaries
 
 To investigate a stop or hold:
@@ -39,6 +36,6 @@ To investigate a stop or hold:
 4. Reconcile uncertain remote effects by reading the original operation's subject.
 5. Establish the supported authorization before any further substantive action.
 
-Do not clear a durable stop, erase a rejection, discard a checkout or release claims to make work look new. A new claim, expired lease or ended process grants nothing. Unsupported continuation remains unsupported; no command restarts an old saved stage.
+Do not clear a durable stop, erase a rejection or discard a checkout to make work look new. An expired lease or ended process grants nothing. Unsupported continuation remains unsupported; no command restarts an old saved stage.
 
 For a possible Land, preserve the original revision, pre-Land target, policy and own proof. Follow [Land reconciliation](merge.md#uncertain-effects), not another push, writer, suite or Security session. Already-landed code stays landed while evidence is reconciled.

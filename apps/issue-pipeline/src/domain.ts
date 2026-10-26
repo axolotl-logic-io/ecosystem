@@ -165,7 +165,6 @@ const ACTION_END = z.strictObject({
 type TaskId = z.infer<typeof TASK_ID>;
 type RoleId = z.infer<typeof ROLE_ID>;
 type AccessProfile = z.infer<typeof ACCESS_PROFILE>;
-type RunState = z.infer<typeof RUN_STATE>;
 type Verdict = z.infer<typeof VERDICT>;
 type WorkItemRef = z.infer<typeof WORK_ITEM_REF>;
 type TargetState = z.infer<typeof TARGET_STATE>;
@@ -173,7 +172,6 @@ type Revision = z.infer<typeof REVISION>;
 type RunRef = z.infer<typeof RUN_REF>;
 type Binding = z.infer<typeof BINDING>;
 type RevisionBinding = Extract<Binding, { revision: unknown }>;
-type RequirementsBinding = Extract<Binding, { requirements: unknown }>;
 type HumanProvenance = z.infer<typeof HUMAN_PROVENANCE>;
 type QualifiedSignal = z.infer<typeof QUALIFIED_SIGNAL>;
 type EvidenceHold = z.infer<typeof EVIDENCE_HOLD>;
@@ -295,12 +293,10 @@ export type {
   QualifiedSignal,
   Readiness,
   Receipt,
-  RequirementsBinding,
   Revision,
   RevisionBinding,
   RoleId,
   RunRef,
-  RunState,
   SessionResult,
   SessionSpec,
   SignalInbox,

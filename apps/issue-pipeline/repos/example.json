@@ -6,7 +6,6 @@
   "credentialsEnvFile": "/absolute/operator-checkout/project/.env",
   "allowedUsers": ["MAINTAINER"],
   "permissions": { "land": false },
-  "resources": { "modelSessions": 1 },
   "models": {
     "author": "openai/gpt-6.1-sol",
     "developer": "openai/gpt-6.1-sol",
@@ -14,30 +13,15 @@
   },
   "runtime": {
     "home": null,
-    "toolchainEnv": {},
     "providerExtension": "/opt/pipeline/providers/pi-cliproxyapi/index.ts",
     "credentialEnv": ["PIPELINE_MODEL_KEY"],
-    "compaction": { "targetTokens": 175000, "keepRecentTokens": 30000 },
-    "modelContextWindows": { "openai/gpt-6.1-sol": 272000 }
-  },
-  "commands": {
-    "setup": "npm ci",
-    "test": "npm test",
-    "lint": "npm run lint",
-    "typecheck": "npx tsc --noEmit",
-    "teardown": "echo nothing to free"
-  },
-  "lockfiles": [
-    {
-      "path": "package-lock.json",
-      "regenerate": "npm install --package-lock-only --ignore-scripts"
+    "compaction": {
+      "targetTokens": 175000,
+      "keepRecentTokens": 30000
+    },
+    "modelContextWindows": {
+      "openai/gpt-6.1-sol": 272000
     }
-  ],
-  "migrations": {
-    "pathGlobs": ["migrations/**"],
-    "setup": "docker rm -f pipeline-scratch-db >/dev/null 2>&1; docker run -d --name pipeline-scratch-db -e POSTGRES_PASSWORD=x -p 55432:5432 postgres:16 && sleep 5",
-    "up": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:up",
-    "down": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:down"
   },
   "requireCi": true,
   "ciWaitMinutes": 30,
@@ -47,5 +31,8 @@
   },
   "commandTimeoutMinutes": 20,
   "leaseHours": 3,
-  "usageFlags": { "firstContext": 40000, "toolOutputShare": 0.25 }
+  "projectPolicy": {
+    "repository": "/absolute/trusted/checkout",
+    "revision": "0000000000000000000000000000000000000000"
+  }
 }

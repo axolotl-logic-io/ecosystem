@@ -401,8 +401,6 @@ export type {
 export {
   assertScope,
   bodyOf,
-  END as RECORD_END,
-  HEADER as RECORD_HEADER,
   hold,
   own,
   recordsOf,

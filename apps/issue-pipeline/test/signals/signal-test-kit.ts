@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { committedPolicy } from "../project-policy-test-kit.ts";
 import {
   type FakeIssue,
   readWorld,
@@ -185,7 +186,11 @@ function harness(edit: (world: World) => void = () => undefined): Harness {
       landingAccount: LANDING,
       credentialsEnvFile: credentials,
       allowedUsers: ["autumn"],
-      commands: { test: "true" },
+      projectPolicy: committedPolicy(
+        path.join(root, "policy"),
+        `https://github.com/${REPO}.git`,
+        { commands: { test: "true" }, resources: { modelSessions: 1 } },
+      ),
       models: { author: "m", developer: "m", reviewer: "m" },
     }),
   );

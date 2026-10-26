@@ -10,7 +10,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { ModelRole } from "../config-legacy.ts";
+import type { ModelRole } from "../config-schema.ts";
 import { head } from "../git-state.ts";
 import { ROOT } from "../pipeline-root.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";

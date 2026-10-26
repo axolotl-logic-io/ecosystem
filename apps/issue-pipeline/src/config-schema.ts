@@ -35,16 +35,11 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   commandTimeoutMinutes: 20,
   lockfiles: [],
   migrations: null,
-  // What the usage report (report.mjs usage) flags: a session whose first turn
-  // passed `firstContext` tokens of context, or whose largest tool output
-  // passed `toolOutputShare` of its peak context (#302).
-  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
 };
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 const OPTIONAL_TEXT = z.string().nullish();
-const TOKENS = z.number().int().positive();
 // Access-profile metadata and credential-variable names to strip from model
 // children (src/job/roles.ts). Declared hosts do not enforce a sandbox.
 const JOB_ROLE = z
@@ -58,23 +53,27 @@ const JOB_ROLES = z.object({
   writer: JOB_ROLE,
   lander: JOB_ROLE,
 });
-// What the ops modules read from a config. Every other key passes through as
-// it is; config.ts warns about the keys the pipeline no longer reads.
+// The model a role gets when the config names none for it.
+const DEFAULT_MODEL = "openai/gpt-6.1-sol";
+const MODEL = z.string().min(1).default(DEFAULT_MODEL);
 // The model of each of the three model roles (`three-configurable-models`).
-// config.ts fills each from the config's own models, through the documented
-// mapping from the installed version's role names.
-const MODELS = z.object({
-  author: z.string().min(1),
-  developer: z.string().min(1),
-  reviewer: z.string().min(1),
-});
+const MODELS = z
+  .object({ author: MODEL, developer: MODEL, reviewer: MODEL })
+  .default({
+    author: DEFAULT_MODEL,
+    developer: DEFAULT_MODEL,
+    reviewer: DEFAULT_MODEL,
+  });
 
+type ModelRole = keyof z.infer<typeof MODELS>;
+
+// What the ops modules read from a config. Every other key passes through as
+// it is.
 const CONFIG_SCHEMA = z.looseObject({
-  projectPolicy: PROJECT_POLICY_SOURCE.optional(),
+  projectPolicy: PROJECT_POLICY_SOURCE,
   devAccount: z.string(),
   landingAccount: z.string(),
   credentialsEnvFile: z.string(),
-  legacyAccount: z.string().optional(),
   allowedUsers: z.array(z.string()),
   baseBranch: z.string(),
   requireCi: z.boolean(),
@@ -111,10 +110,6 @@ const CONFIG_SCHEMA = z.looseObject({
   }),
   practices: z.array(z.string()),
   repo: z.string(),
-  usageFlags: z.object({
-    firstContext: TOKENS,
-    toolOutputShare: z.number().gt(0).max(1),
-  }),
 });
 
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
@@ -126,31 +121,13 @@ function checkIdentities(
   configPath: string,
   raw: Readonly<Record<string, unknown>>,
 ): void {
-  const {
-    account,
-    tokenFile,
-    devAccount,
-    landingAccount,
-    credentialsEnvFile,
-    legacyAccount,
-  } = raw;
-  if (account !== undefined || tokenFile !== undefined) {
-    throw new OpsError(
-      "legacy account/tokenFile config is unsupported; migrate to distinct devAccount, landingAccount and an absolute credentialsEnvFile",
-    );
-  }
+  const { devAccount, landingAccount, credentialsEnvFile } = raw;
   for (const [key, value] of Object.entries({ devAccount, landingAccount })) {
     if (typeof value !== "string" || !GITHUB_USERNAME.test(value)) {
       throw new OpsError(
         `config ${configPath} must set ${key} to a GitHub username`,
       );
     }
-  }
-  if (
-    typeof legacyAccount === "string" &&
-    !GITHUB_USERNAME.test(legacyAccount)
-  ) {
-    throw new OpsError("legacyAccount must be a GitHub username");
   }
   if (
     String(devAccount).toLowerCase() === String(landingAccount).toLowerCase()
@@ -204,21 +181,6 @@ function checkPractices(configPath: string, practices: unknown): void {
   }
 }
 
-// The repo's docs are ordinary tracked Markdown under its own docs/, changed
-// and reviewed with the code, so a config that still names a wiki was written
-// for the wiki flow, which is gone: it fails rather than silently dropping it.
-function checkNoWiki(
-  configPath: string,
-  raw: Readonly<Record<string, unknown>>,
-): void {
-  const { wiki } = raw;
-  if (wiki !== undefined) {
-    throw new OpsError(
-      `config ${configPath} sets "wiki", which the pipeline no longer supports: docs are ordinary tracked Markdown in the repo's docs/, changed and reviewed with the code. Remove "wiki" from the config`,
-    );
-  }
-}
-
 function present(value: unknown): boolean {
   return value !== undefined && value !== null && value !== "";
 }
@@ -232,7 +194,6 @@ function checkRequired(
   raw: Readonly<Record<string, unknown>>,
 ): void {
   checkIdentities(configPath, raw);
-  checkNoWiki(configPath, raw);
   const { allowedUsers, commands, practices, repo } = raw;
   if (!present(repo)) {
     throw new OpsError(`config ${configPath} is missing "repo"`);
@@ -252,5 +213,5 @@ function checkRequired(
 
 type JobRolesConfig = z.infer<typeof JOB_ROLES>;
 
-export type { JobRolesConfig };
+export type { JobRolesConfig, ModelRole };
 export { CONFIG_SCHEMA, checkRequired, DEFAULTS, MAX_LANE_SLOTS };

@@ -61,16 +61,6 @@ function actionTemplates(selection: Selection | undefined): string[] {
     }
     return templates;
   }
-  if (selection.kind === "job") {
-    const { run } = selection;
-    let ref = `${run.repo} #${run.issue}`;
-    if (run.data.id !== undefined) {
-      ref += ` · job ${run.data.id}`;
-    }
-    return [
-      `investigate historical job record ${ref}; it is retired-runtime evidence, not a current run`,
-    ];
-  }
   if (selection.kind === "issue" && selection.item.isPr !== true) {
     const ref = `${selection.item.repo} #${selection.item.number}`;
     return [

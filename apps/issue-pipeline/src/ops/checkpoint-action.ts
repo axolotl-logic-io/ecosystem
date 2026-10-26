@@ -3,8 +3,8 @@
 // Request `{number, detail}` (detail: a JSON object); reply
 // `{checkpointed: true, action}`, the action's execution instance. It
 // writes the action's checkpoint and one log line, and nothing else: no
-// stage, approval, clearance or claim. A historical state (versions 1 to 3)
-// is never adopted, so it refuses, and the caller keeps its local work.
+// stage, approval, clearance or claim. Saved state of another version is
+// never adopted, so it refuses, and the caller keeps its local work.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -32,11 +32,6 @@ function checkpointAction(
     throw new OpsError("a checkpoint is its action's; it needs an execution");
   }
   const stored = readWorkState(cfg, req.number);
-  if (stored.kind === "historical") {
-    throw new OpsError(
-      `#${req.number}'s historical state is never adopted; keep the local work and reconcile it explicitly`,
-    );
-  }
   let state = newWorkState(req.number);
   if (stored.kind === "current") {
     ({ state } = stored);

@@ -175,8 +175,6 @@ type ActionRunObservation = z.infer<typeof ACTION_RUN>;
 type LoopObservation = z.infer<typeof LOOP>;
 type StopObservation = z.infer<typeof STOP>;
 type SessionObservation = z.infer<typeof SESSION>;
-type OperationObservation = z.infer<typeof OPERATION>;
-type ReservationObservation = z.infer<typeof RESERVATION>;
 type ProcessObservation = z.infer<typeof PROCESS>;
 
 function messageOf(error: unknown): string {
@@ -282,8 +280,6 @@ export type {
   BuddyRunObservation,
   LoopObservation,
   Observed,
-  OperationObservation,
-  ReservationObservation,
   SessionObservation,
   StopObservation,
 };

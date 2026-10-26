@@ -7,8 +7,6 @@ import path from "node:path";
 import { parseEnv } from "node:util";
 import { z } from "zod";
 import { hideCredentialVariable } from "./child-env.ts";
-import { withoutRemovedKeys } from "./config-legacy.ts";
-import { withRenamedKeys } from "./config-renamed.ts";
 import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
 import { JOB_REPO } from "./job/layout.ts";
 import { OpsError } from "./ops-error.ts";
@@ -73,15 +71,8 @@ function loadConfig(configPath: string | undefined): Config {
     throw new OpsError(`config not found: ${String(configPath)}`);
   }
   const fromFile = RAW.parse(JSON.parse(fs.readFileSync(file, "utf8")));
-  const renamed = withRenamedKeys(fromFile);
-  const { kept: raw, warnings } = withoutRemovedKeys({
-    ...DEFAULTS,
-    ...resolveProjectSettings(renamed.config),
-  });
+  const raw = { ...DEFAULTS, ...resolveProjectSettings(fromFile) };
   checkRequired(String(configPath), raw);
-  for (const warning of [...renamed.warnings, ...warnings]) {
-    process.stderr.write(`config ${String(configPath)}: ${warning}\n`);
-  }
   const parsed = CONFIG_SCHEMA.safeParse(raw);
   if (!parsed.success) {
     throw new OpsError(
@@ -108,12 +99,6 @@ function loadConfig(configPath: string | undefined): Config {
   };
 }
 
-// Public and model-facing config never exposes the operator credential path.
-function publicConfig(cfg: Config): Omit<Config, "credentialsEnvFile"> {
-  const { credentialsEnvFile: _hidden, ...rest } = cfg;
-  return rest;
-}
-
 // `cfg` for one ops request: with a checkout, issue `checkout.issue` works
 // in `checkout.dir`; other issues keep their worktrees.
 function withCheckout(
@@ -127,12 +112,12 @@ function withCheckout(
 }
 
 const paths = {
-  // The branch issue `n` works on: the one its job was assigned
-  // (cfg.checkout), else the legacy `agent/issue-<n>`. A branch that isn't
-  // one safe literal name, or is the configured base branch, throws, so no
-  // op can push, reset or delete it as an issue's.
+  // The branch issue `n` works on: its action checkout's (cfg.checkout),
+  // else `agent/issue-<n>`. A branch that isn't one safe literal name, or is
+  // the configured base branch, throws, so no op can push, reset or delete
+  // it as an issue's.
   branch: (cfg: Config, n: number): string => {
-    let branch: string = paths.legacyBranch(n);
+    let branch = `agent/issue-${n}`;
     if (cfg.checkout?.issue === n) {
       ({ branch } = cfg.checkout);
     }
@@ -148,9 +133,6 @@ const paths = {
     }
     return branch;
   },
-  // The branch of an issue no caller assigned one: a state saved before
-  // assignments, whose branch is null, works here.
-  legacyBranch: (n: number): string => `agent/issue-${n}`,
   clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
   // Stage job `stage`'s own folder for issue `n`, which holds its code
   // checkout.
@@ -193,11 +175,6 @@ const VARIABLES: Readonly<Record<Account, string>> = {
   dev: "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
   landing: "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN",
 };
-// The credential file key each account's token had before #166. A file may
-// set the old key or the new one, never both.
-const OLD_VARIABLES: Readonly<Partial<Record<Account, string>>> = {
-  landing: "ISSUE_PIPELINE_MERGE_GITHUB_TOKEN",
-};
 const TOKEN = /^\S+$/u;
 const NON_OWNER_PERMISSION_RANGE = 0o100;
 
@@ -221,16 +198,7 @@ function credential(cfg: Config, identity: Account): string {
     );
   }
   const values = new Map(Object.entries(parseEnv(contents)));
-  const old = OLD_VARIABLES[identity];
-  if (old !== undefined && values.has(old) && values.has(VARIABLES[identity])) {
-    throw new OpsError(
-      `credential file sets both ${old} and ${VARIABLES[identity]}; keep only ${VARIABLES[identity]}`,
-    );
-  }
-  let selected = values.get(VARIABLES[identity]);
-  if (selected === undefined && old !== undefined) {
-    selected = values.get(old);
-  }
+  const selected = values.get(VARIABLES[identity]);
   if (selected === undefined || !TOKEN.test(selected)) {
     throw new OpsError(
       `credential file must set ${VARIABLES[identity]} to a nonempty token`,
@@ -240,4 +208,4 @@ function credential(cfg: Config, identity: Account): string {
 }
 
 export type { Account, BuddyAuthorization, Config, JobCheckout };
-export { credential, loadConfig, paths, publicConfig, withCheckout };
+export { credential, loadConfig, paths, withCheckout };

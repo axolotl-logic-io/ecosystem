@@ -5,7 +5,7 @@
 // A failed append reports its error without changing the action outcome.
 
 import path from "node:path";
-import type { ModelRole } from "../config-legacy.ts";
+import type { ModelRole } from "../config-schema.ts";
 import type { Control } from "./control.ts";
 import type { LaunchRecord } from "./launch-record.ts";
 import { appendRunLine } from "./run-log.ts";

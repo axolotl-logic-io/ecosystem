@@ -10,28 +10,27 @@ Programs run from `$ISSUE_PIPELINE_ROOT`, which defaults to `~/.pi/agent/issue-p
 | --- | --- |
 | `buddy.mjs` | Validate a buddy file or activate its task loops |
 | `ops.mjs` | Guarded deterministic operations through framed JSON requests |
-| `report.mjs` | Read usage observations |
 | `shell-supervisor.mjs` | Run configured commands in owned process groups |
 | `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commits |
 | `git-review.mjs` | Read-only Git queries for review sessions |
 | `safe-refactor.mjs` | Explicit standalone Safe Refactor |
 | `standards-upgrade.mjs` | Read-only assessment and human-start handoff |
 
-`job.mjs`, `orchestrate.mjs`, `caller-jobs.mjs` and `sweep.mjs` are retired. The installer backs up and removes their installed files; it does not leave a compatibility runtime. `apps/issue-pipeline/programs.ts` is the shared build, install and syntax-check manifest.
+`apps/issue-pipeline/programs.ts` is the shared build, install and syntax-check manifest. `ops.mjs` accepts only the canonical task operations that buddy actions send; it has no standalone operations.
 
 ## Configuration
 
-Repository operator configs live in `$ISSUE_PIPELINE_ROOT/repos/`. Project settings may instead come from an explicitly pinned full commit of `.issue-pipeline.json`; candidate edits never activate their own policy. See [project settings](project-settings.md) for the split between project policy and operator identity/safety settings.
+Repository operator configs live in `$ISSUE_PIPELINE_ROOT/repos/`, starting from the installed `repos/example.json`. Each must pin a full commit of the repository's `.issue-pipeline.json`, the only source of project settings; candidate edits never activate their own policy. See [project settings](project-settings.md) for the split between project policy and operator identity/safety settings.
 
 A separate private buddy JSON file defines organization scope, repository config paths, role, responsibilities, identity and access profiles. Unknown or obsolete scheduler/assignment controls are refused there. Capacity comes only from required repository `resources.modelSessions`, with no buddy-level override or default. See [buddy configuration](runtime-runs.md#buddy-configuration).
 
 Land needs literal `permissions.land: true` in both the repository config and the Gatekeeper buddy file, plus the correct account, profile, task responsibility and current exact-binding evidence. A check pass or accepted start cannot substitute for those grants.
 
-The removed `wiki` key is refused even when false or null. Repository compatibility warnings identify other obsolete fields; a warning does not make the former scheduler or assignment model active. Historical records grant no current permission.
+Obsolete fields are ignored without a warning; setting one does not make the former scheduler or assignment model active. Keys that #166 renamed, such as `mergeAccount` and `models.implementor`, are read only under their new names.
 
 ## Credentials
 
-Keep `credentialsEnvFile` outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`; see [GitHub accounts](authority.md#github-accounts).
+Keep `credentialsEnvFile` outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`. The old `ISSUE_PIPELINE_MERGE_GITHUB_TOKEN` key is no longer read; see [GitHub accounts](authority.md#github-accounts).
 
 - Verify each selected account without printing its token.
 - Keep the file out of web application folders and build/deploy environment files.
@@ -76,9 +75,9 @@ mise //apps/issue-pipeline:install:dry-run
 mise //apps/issue-pipeline:install
 ```
 
-The installer builds and copies managed programs, prompts and examples into the pipeline root, and agent definitions into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`). It records the source commit in `INSTALLED.json` and backs up replaced or retired files under `$ISSUE_PIPELINE_ROOT-backups/TIMESTAMP-install/`.
+The installer builds and copies managed programs, prompts and examples into the pipeline root, and agent definitions into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`). It records the source commit in `INSTALLED.json` and backs up replaced files under `$ISSUE_PIPELINE_ROOT-backups/TIMESTAMP-install/`.
 
-It refuses dirty source unless explicitly overridden, and refuses installation from inside the pipeline root. It does not rewrite operator configs, credentials, runtime HOME, setup/teardown scripts, clones, work or recovery evidence. A source base named `main` is not deployment authority.
+It refuses dirty source unless explicitly overridden, and refuses installation from inside the pipeline root. It does not remove files an earlier release installed, and it does not rewrite operator configs, credentials, runtime HOME, setup/teardown scripts, clones, work or recovery evidence. A source base named `main` is not deployment authority.
 
 ## Installation acceptance
 
@@ -87,7 +86,7 @@ Keep activation stopped until the operator accepts the installed artifacts separ
 1. Confirm `INSTALLED.json` identifies the accepted clean source.
 2. Compare managed programs with its built artifacts and prompts/examples with reviewed source bytes.
 3. Compare copied agent definitions after filling documented root placeholders.
-4. Confirm retirements, backups and preservation match the reviewed dry-run.
+4. Confirm backups and preservation match the reviewed dry-run.
 5. Run bounded installed-CLI parsing and invalid-input checks that launch no buddy, model, server or credentialed operation.
 6. Record installed identity, comparisons, exact commands/results and operator acceptance.
 
@@ -99,22 +98,12 @@ These checks accept installed artifacts, not runtime integration coverage. Do no
 2. Drain every old job, action, model session and resource consumer; let in-flight writes and Land settle without killing them.
 3. Preserve configs, saved authority, uncertain-write journals, checkouts, patches, bundles and receipts.
 4. Confirm exact-source pre-Land gate and independent Security evidence.
-5. Review the installation dry-run and planned retirements.
+5. Review the installation dry-run.
 6. Install the accepted source under separate operator authorization.
 7. Complete installation acceptance.
-8. Reconcile historical work and verify current credentials, membership capability, policy, grants and capacity before authorizing activation.
+8. Verify current credentials, membership capability, policy, grants and capacity before authorizing activation.
 
-Do not run old and new runtimes together or translate historical assignments/stages into accepted starts. A model-session pool resize requires all its holders and consumers to drain. Never erase attempt evidence, Security rejections, landed truth or retained work to make the upgrade pass. Installing or rolling back binaries does not undo source Land.
-
-### Historical names
-
-Old account/model aliases may remain read-only or warning-producing compatibility inputs where their current readers explicitly support them. That is not rolling-runtime compatibility. Historical state and receipts do not gain new permission through renamed fields. The removed stage CLI, scheduler controls and assignment grants have no executable alias.
-
-### Upgrade from the removed wiki flow
-
-Drain wiki-era jobs and preserve their work before cutover. Remove the refused `wiki` config key and obsolete `--brain-path` wrappers. Do not replace them with a retired stage launcher.
-
-Retain private wiki commits, patches and bundles outside any cache scheduled for removal. Old wiki mirrors and sibling docs checkouts are no longer maintained; delete them only after explicit operator confirmation that all work is safe and no consumer remains. Never delete a published wiki branch as routine cleanup. The installer does not perform this migration or remove remote branches.
+Do not run old and new runtimes together or translate old assignments or stages into accepted starts. Saved state, task records and coordination records that an earlier release wrote in another version hold their work item or scope; reconcile them explicitly. A model-session pool resize requires all its holders and consumers to drain. Never erase attempt evidence, Security rejections, landed truth or retained work to make the upgrade pass. Installing or rolling back binaries does not undo source Land.
 
 ## Recover after a source defect
 

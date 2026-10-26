@@ -16,7 +16,6 @@ import type { Config } from "../config.ts";
 import { paths, withCheckout } from "../config.ts";
 import { run } from "../process.ts";
 import { rebaseInProgress } from "../rebase.ts";
-import type { Stage } from "../stages.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 import type { Pushed, PushReply } from "./control-protocol.ts";
 import type { LaunchPush } from "./launch-record.ts";
@@ -31,8 +30,6 @@ const PIPELINE_COMMIT_OP = "pipeline-commit";
 // caller assigned, and its random id.
 interface PushJob {
   issue: number;
-  // The stage job's stage; a buddy action has none. The push never reads it.
-  stage?: Stage;
   checkout: string;
   branch: string;
   id: string;

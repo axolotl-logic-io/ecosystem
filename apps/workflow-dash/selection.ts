@@ -1,7 +1,5 @@
 import type { Snapshot } from "./data.ts";
 import type { GitHubItem, Remote } from "./github.ts";
-import type { HistoricalJob } from "./job-history.ts";
-import { jobLabel } from "./job-view.ts";
 import type { ActionRunEntry, BuddyRunEntry } from "./runtime-runs.ts";
 import {
   actionRunFacts,
@@ -9,24 +7,15 @@ import {
   coverageFacts,
 } from "./runtime-view.ts";
 import type { SubagentRun } from "./subagent-runs.ts";
-import { today } from "./time.ts";
 
-/** Pane order; the Time pane is last. */
-const panes = [
-  "buddy-runs",
-  "action-runs",
-  "issues",
-  "subagent-runs",
-  "job-history",
-  "time",
-] as const;
+/** Pane order. */
+const panes = ["buddy-runs", "action-runs", "issues", "subagent-runs"] as const;
 type Selection =
   | { kind: "buddy-run"; entry: BuddyRunEntry }
   | { kind: "action-run"; entry: ActionRunEntry }
   | { kind: "coverage"; state: Snapshot }
   | { kind: "issue"; item: GitHubItem }
-  | { kind: "subagent"; run: SubagentRun }
-  | { kind: "job"; run: HistoricalJob };
+  | { kind: "subagent"; run: SubagentRun };
 interface Entry {
   value: string;
   label: string;
@@ -37,7 +26,6 @@ type Choice =
   | { kind: "global" }
   | { kind: "tell" }
   | { kind: "thread"; item: GitHubItem }
-  | { kind: "detail"; item: HistoricalJob }
   | { kind: "observation"; title: string; text: string }
   | { kind: "refresh" }
   | { kind: "plan" }
@@ -53,21 +41,6 @@ function coverageEntry(state: Snapshot): Entry {
     label: "Coverage",
     selection: { kind: "coverage", state },
   };
-}
-function jobEntries(state: Snapshot): Entry[] {
-  return [...state.jobHistory]
-    .filter(
-      (run) =>
-        run.live !== false ||
-        today(run.data.startedAt) ||
-        today(run.data.endedAt),
-    )
-    .sort((a, b) => Number(b.live) - Number(a.live))
-    .map((run) => ({
-      value: `${run.repo}#${run.issue}/${run.data.id ?? "current"}`,
-      label: jobLabel(run),
-      selection: { kind: "job", run },
-    }));
 }
 function entries(tab: number, state: Snapshot, remote: Remote): Entry[] {
   switch (panes[tab]) {
@@ -108,8 +81,6 @@ function entries(tab: number, state: Snapshot, remote: Remote): Entry[] {
         label: run.mission,
         selection: { kind: "subagent", run },
       }));
-    case "job-history":
-      return jobEntries(state);
     default:
       return [];
   }
@@ -124,8 +95,6 @@ function observationText(facts: string[], value: unknown): string {
 }
 function drill(selection: Selection | undefined): Choice {
   switch (selection?.kind) {
-    case "job":
-      return { kind: "detail", item: selection.run };
     case "issue":
       if (selection.item.isPr === true) {
         return undefined;
@@ -153,10 +122,7 @@ function drill(selection: Selection | undefined): Choice {
       return {
         kind: "observation",
         title: "Observation coverage",
-        text: coverageFacts(
-          selection.state.runtime,
-          selection.state.configWarnings,
-        ).join("\n"),
+        text: coverageFacts(selection.state.runtime).join("\n"),
       };
     default:
       return undefined;

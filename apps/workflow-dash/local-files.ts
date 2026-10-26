@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 
 const credentialRoot = /\/runtime\/home(?:\/|$)|\/runtime\/model-key\.env$/u;
 const defaultReadBytes = 262_144;
-const sourceReadBytes = 1_048_576;
 
 /** Refuse credential paths after resolving symlinks as well as before opening. */
 async function safePath(path: string): Promise<string> {
@@ -178,13 +177,4 @@ async function files(path: string): Promise<string[]> {
 }
 
 export type { BoundedRead, DatedDirectory };
-export {
-  dirs,
-  fileState,
-  files,
-  newestDirs,
-  readCap,
-  readWhole,
-  safePath,
-  sourceReadBytes,
-};
+export { dirs, fileState, files, newestDirs, readCap, readWhole, safePath };

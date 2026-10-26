@@ -4,15 +4,12 @@
 // approval, clearance or Land intent. Task readiness comes from the
 // authenticated task records (src/tasks/records.ts), and a Land's durable
 // intent is its own v2 attempt record. The lease is an observation of
-// liveness only.
-//
-// Versions 1 to 3 (state.ts, saved-state.ts) are history. This reader
-// returns them as historical, never adopted, and the writer refuses to
-// overwrite them: their bytes stay where they are for the fences and
-// explanations that read them.
+// liveness only. Any other version holds the item: it is never adopted or
+// overwritten.
 
 import { z } from "zod";
-import { STATE_HEADER, STATE_MARK } from "./comment-marks.ts";
+import { assertCommentAuthority } from "./comment-authority.ts";
+import { isStateBody, STATE_HEADER, STATE_MARK } from "./comment-marks.ts";
 import type { IssueComment } from "./comments.ts";
 import { listComments, rawComment } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -20,7 +17,6 @@ import { gh, redactGhArgs } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import { redactLocalPaths } from "./pipeline-root.ts";
 import { redactAddresses } from "./redact-addresses.ts";
-import { latestStateComment, rawStateBody } from "./saved-state.ts";
 
 const WORK_STATE_VERSION = 4;
 const MAX_LOG_ENTRIES = 40;
@@ -30,6 +26,7 @@ const MARK_END_PATTERN = /-->/gu;
 const ESCAPED_MARK_END = "--\\u003e";
 // Leaves room under GitHub's comment limit for the header and footer.
 const MAX_STATE_LENGTH = 60_000;
+const MARK_END = "-->";
 
 const LEASE = z.strictObject({
   lane: z.string().min(1),
@@ -58,12 +55,10 @@ const VERSIONED = z.looseObject({ version: z.unknown(), number: z.unknown() });
 
 type WorkState = z.infer<typeof WORK_STATE>;
 
-// The item's saved state as read: none, version 4, or a historical version
-// whose bytes are kept but never adopted.
+// The item's saved state as read: none, or version 4.
 type StoredWork =
   | { kind: "none" }
-  | { kind: "current"; id: number; state: WorkState }
-  | { kind: "historical"; id: number; version: unknown; raw: unknown };
+  | { kind: "current"; id: number; state: WorkState };
 
 function newWorkState(number: number): WorkState {
   return {
@@ -91,10 +86,45 @@ function withWorkLog(state: WorkState, entry: string, now: Date): WorkState {
   return { ...state, log };
 }
 
-// The item's saved state in `comments`. A version 4 state that doesn't
-// parse, or names another item, throws: it holds the item.
+// The landing account's latest state comment in `comments`. A state body
+// anyone else wrote has no authority and throws, rather than reading as no
+// state.
+function latestStateComment(
+  cfg: Pick<Config, "landingAccount">,
+  comments: readonly IssueComment[],
+): IssueComment | undefined {
+  const landing = cfg.landingAccount.toLowerCase();
+  const own = comments.filter(
+    (item) => item.user?.login.toLowerCase() === landing,
+  );
+  for (const item of own) {
+    assertCommentAuthority(cfg, item);
+  }
+  const latest = own.filter((item) => isStateBody(item.body ?? "")).at(-1);
+  if (
+    latest === undefined &&
+    comments.some((item) => isStateBody(item.body ?? ""))
+  ) {
+    throw new OpsError(
+      "saved pipeline state has no landing authority; stop for reconciliation",
+    );
+  }
+  return latest;
+}
+
+function rawStateBody(body: string): unknown {
+  const start = body.indexOf(STATE_MARK);
+  const end = body.indexOf(MARK_END, start);
+  if (start < 0 || end < 0) {
+    throw new OpsError("saved work state is unreadable");
+  }
+  return JSON.parse(body.slice(start + STATE_MARK.length, end));
+}
+
+// The item's saved state in `comments`. A state of another version, one that
+// doesn't parse, or one that names another item throws: it holds the item.
 function storedWork(
-  cfg: Pick<Config, "landingAccount" | "legacyAccount">,
+  cfg: Pick<Config, "landingAccount">,
   number: number,
   comments: readonly IssueComment[],
 ): StoredWork {
@@ -105,7 +135,9 @@ function storedWork(
   const raw = rawStateBody(latest.body ?? "");
   const { version } = VERSIONED.parse(raw);
   if (version !== WORK_STATE_VERSION) {
-    return { kind: "historical", id: latest.id, version, raw };
+    throw new OpsError(
+      `#${number} has version ${String(version)} saved state, which is never adopted; reconcile it explicitly`,
+    );
   }
   const parsed = WORK_STATE.safeParse(raw);
   if (!parsed.success || parsed.data.number !== number) {
@@ -184,7 +216,7 @@ function publicWorkState(state: WorkState): WorkState {
 
 // Writes `state` as the item's version 4 state: a new state comment when it
 // has none, else an edit of its version 4 comment, then confirms it by a
-// fresh read. A historical state is never overwritten or adopted.
+// fresh read. A state of another version is never overwritten or adopted.
 function writeWorkState(cfg: Config, state: WorkState): void {
   const expected = publicWorkState(state);
   const body = workStateBody(expected);
@@ -194,11 +226,6 @@ function writeWorkState(cfg: Config, state: WorkState): void {
     );
   }
   const stored = readWorkState(cfg, state.number);
-  if (stored.kind === "historical") {
-    throw new OpsError(
-      `#${state.number} has historical version ${String(stored.version)} state, which is never adopted; reconcile it explicitly`,
-    );
-  }
   if (stored.kind === "none") {
     rawComment(cfg, state.number, body, true);
     confirmWritten(cfg, expected);

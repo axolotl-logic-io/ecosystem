@@ -119,22 +119,6 @@ function portOf(
       }),
   };
 }
-// New invocations get a fresh identity even when their stable lane is shared.
-// This does not acquire either scope or activate a runtime caller.
-function executionBinding(
-  cfg: Config,
-  issue: number,
-  lane: string,
-): InvocationBinding {
-  return INVOCATION_BINDING.parse({
-    instance: crypto.randomUUID(),
-    lane,
-    issue,
-    branch: paths.branch(cfg, issue),
-    repo: cfg.repo,
-    base: cfg.baseBranch,
-  });
-}
 function bindingOf(cfg: Config, issue: number): InvocationBinding {
   const identity = INVOCATION_BINDING.parse(cfg.execution);
   if (
@@ -282,7 +266,6 @@ function withExecution(
 
 export {
   assertExecution,
-  executionBinding,
   guardExecution,
   integrationTurn,
   issueExecution,

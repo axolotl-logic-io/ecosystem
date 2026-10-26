@@ -14,8 +14,6 @@ interface PromptProvenance {
   page: string;
   path: string;
   sha256: string;
-  // Historical wiki-pinned records used a commit here; current pages do not.
-  head: null;
 }
 
 interface PinnedPrompt {
@@ -81,7 +79,7 @@ function pinPage(dir: string, page: string): PinnedPrompt {
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   return {
     text,
-    provenance: { page, path: path.join(folder, page), sha256, head: null },
+    provenance: { page, path: path.join(folder, page), sha256 },
   };
 }
 

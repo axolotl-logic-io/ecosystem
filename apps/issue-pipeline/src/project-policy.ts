@@ -134,10 +134,12 @@ function resolveProjectSettings(
     );
   }
   if (!Object.hasOwn(raw, "projectPolicy")) {
-    return { ...raw };
+    throw new OpsError(
+      "config must pin projectPolicy: the repository's committed .issue-pipeline.json is its only project-settings source",
+    );
   }
   // Refuse duplicates even when the committed document omits an optional key:
-  // there is exactly one project-policy authority in committed mode.
+  // there is exactly one project-policy authority.
   for (const key of Object.keys(PROJECT_SETTINGS.shape)) {
     if (Object.hasOwn(raw, key)) {
       throw new OpsError(
@@ -149,7 +151,7 @@ function resolveProjectSettings(
 }
 
 interface PolicyConfig {
-  projectPolicy?: ProjectPolicySource | undefined;
+  projectPolicy: ProjectPolicySource;
   policyBinding?: ProjectPolicyBinding | undefined;
   [key: string]: unknown;
 }
@@ -169,13 +171,6 @@ function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
     ].map((key) => [key, cfg[key]]),
   );
   const source = cfg.projectPolicy;
-  if (source === undefined) {
-    return {
-      mode: "legacy",
-      settings: effective,
-      digest: sha256(canonical({ mode: "legacy", effective })),
-    };
-  }
   const entry = gitObject(source, ["ls-tree", source.revision, "--", DOCUMENT]);
   const match = TREE_ENTRY.exec(entry);
   const { blob } = match?.groups ?? {};

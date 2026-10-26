@@ -20,10 +20,9 @@ import {
 
 const LAUNCH_OUTCOME = z.enum(["ok", "failed"]);
 // One push the job made for a writer session's `pipeline_commit`: the repo,
-// the head it pushed, and when. The job pushes only "code"; "wiki" is
-// legacy, kept so a job.json written while the pipeline had a wiki parses.
+// the head it pushed, and when.
 const PUSH = z.object({
-  repo: z.enum(["code", "wiki"]),
+  repo: z.literal("code"),
   sha: z.string(),
   at: z.string(),
 });
@@ -33,21 +32,17 @@ const LAUNCH = z.object({
   pid: z.number().nullable(),
   session: z.string().nullable(),
   // Whether the session was given commit authority, and the reviewer phase
-  // it was labelled with; null for an ops launch, for a session with no
-  // phase, and in a file written before they were recorded.
-  commits: z.boolean().nullable().default(null),
-  scope: PATH_SCOPE.nullable().default(null),
-  phase: z.enum(SESSION_PHASES).nullable().default(null),
+  // it was labelled with; null for an ops launch and for a session with no
+  // phase.
+  commits: z.boolean().nullable(),
+  scope: PATH_SCOPE.nullable(),
+  phase: z.enum(SESSION_PHASES).nullable(),
   // The prompt page the session's prompt was pinned from and the sha256 of
-  // its bytes (src/job/prompts.ts); null for an ops launch and in a file
-  // written before it was recorded.
-  prompt: z
-    .object({ page: z.string(), sha256: z.string() })
-    .nullable()
-    .default(null),
-  // The sanitized policy accepted before the prompt; null for ops,
-  // unverified launches and files written before this evidence was kept.
-  runtimePolicy: RUNTIME_POLICY.nullable().default(null),
+  // its bytes (src/job/prompts.ts); null for an ops launch.
+  prompt: z.object({ page: z.string(), sha256: z.string() }).nullable(),
+  // The sanitized policy accepted before the prompt; null for ops and
+  // unverified launches.
+  runtimePolicy: RUNTIME_POLICY.nullable(),
   startedAt: z.string(),
   lastEventAt: z.string().nullable(),
   // Consecutive failed calls of the tool that failed last; a success or

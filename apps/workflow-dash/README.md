@@ -1,6 +1,6 @@
 # Workflow dashboard
 
-An opt-in, read-only Pi extension. `/dash` shows the buddy runtime's buddy-run and action-run observations, GitHub items, generic subagent runs and historical job records. It composes editable requests to the caller, not direct control operations. It is not a scheduler.
+An opt-in, read-only Pi extension. `/dash` shows the buddy runtime's buddy-run and action-run observations, GitHub items and generic subagent runs. It composes editable requests to the caller, not direct control operations. It is not a scheduler.
 
 The [shared glossary](../../GLOSSARY.md) and [buddy and task decisions](../../docs/decisions/buddies-and-tasks.md) define the language. A buddy pairs a role with an identity. A buddy run is one activation of the action loops of all the buddy's tasks; it is not one task execution or one model session. Each action that a buddy run admits for one task and work item is an action run. A model session has its own id and names its action run as its parent; session, run and checkpoint identities are not interchangeable.
 
@@ -22,7 +22,7 @@ For persistent cutover, first review the exact source and finish its gates. Pres
 
 ## Views
 
-The panes are **Buddy runs**, **Action runs**, **Issues**, **Subagent runs**, **Job history** and **Time**. Narrow terminals keep the active tab's full name. Tab and Shift+Tab switch panes; Up/Down select; PageUp/PageDown scroll details; Enter opens the whole recorded observation; Escape closes.
+The panes are **Buddy runs**, **Action runs**, **Issues** and **Subagent runs**. Narrow terminals keep the active tab's full name. Tab and Shift+Tab switch panes; Up/Down select; PageUp/PageDown scroll details; Enter opens the whole recorded observation; Escape closes.
 
 ### Buddy runs and action runs
 
@@ -49,19 +49,13 @@ Details also warn about an unknown outcome, an uncertain checkpoint, a retained 
 
 ### Coverage
 
-Each run pane ends with a **Coverage** row. Coverage is partial when any observation is unreadable, the read bounds omit runs, the runs folder can't be listed or the configuration has a warning. Its details list each unreadable file and why.
+Each run pane ends with a **Coverage** row. Coverage is partial when any observation is unreadable, the read bounds omit runs or the runs folder can't be listed. Its details list each unreadable file and why.
 
 A file becomes an unreadable problem, never a run, when it's missing, a symlink, larger than 1 MiB, not JSON, of another kind or version, or doesn't match the schema. A run whose recorded id, repository or issue differs from its folder is a problem too. The dashboard reads the newest 200 buddy runs and the newest 500 action runs by folder time.
 
 ### Subagent runs
 
 The **Subagent runs** pane reads generic pi-subagents harness records (`status.json`, `events.jsonl` and output logs). A subagent run is not a buddy run: it names no buddy, task, action run or parent, and none is inferred from its launch name, model, mission or path. An account appears only when the record has a validated `account` string or `{provider, login}`; it is unverified metadata, never an authenticated identity. Records default to runs started today. Pending questions come from bounded contact events, not an authoritative mailbox.
-
-### Job history
-
-The **Job history** pane reads the retired job runtime's `issue-N/job.json` and `jobs.jsonl` as historical evidence only. Job records aren't the current workflow, map to no task and name no buddy run or action run. Each shows its recorded source stage and raw launch keys. A `job.mjs` process found at a recorded PID is labelled **legacy job process**; it verifies no lease, releases no resource and makes no capacity claim. Earlier jobs named only in `jobs.jsonl` can't be joined with their launches or verification logs after `job.json` was replaced.
-
-Enter on a job record opens its launch timeline, bounded verification summaries and stop reason. The Time pane shows historical launch snapshots, historical source-stage journal totals and approximate session timestamp deltas. These are different populations, not one accounting ledger. Launch timing uses consecutive starts, and large session logs are tailed, so totals are lower bounds.
 
 ### Observation limits
 
@@ -77,14 +71,10 @@ Every request is editable. Cancelled, blank or invalidated dialogs send nothing.
 
 The read-only tools are:
 
-- `buddy_runs {}`: every observed buddy run and action run with its condition and links, the unreadable observations, coverage and configuration warnings.
+- `buddy_runs {}`: every observed buddy run and action run with its condition and links, the unreadable observations and coverage.
 - `action_run {id}`: one action run's whole observation with its buddy run, previous action run and session links, including each session log's path and state.
-- `workflow_runs {}`: historical job records with their legacy job process observations, hold observation, and installed and cached main SHAs. Each record carries its `sourceStage` and `jobProcessObservation`. It maps no stage to a task.
-- `workflow_run {repo, issue}`: one historical job record's launches, recorded outcome, verification summaries and stop reason.
 
 Tools activate only with collection, declare read-only annotations and cap text output at 12 KB.
-
-Deprecated `pipeline_lanes` and `pipeline_job` keep their old JSON contracts. They describe retired job records only, and their capacity counts legacy job processes, not configured caps. Use `buddy_runs` and `action_run` for current runs. Remove the deprecated tools only after callers migrate and receive a breaking-change notice.
 
 Enter on an issue runs only `gh-thread NUMBER -R REPOSITORY`. The filtered text stays UI-local data and is never automatically sent to a model. PR entries are read-only. `r` refreshes local data and requests a cache refresh; `p` opens the plan pager.
 
@@ -104,7 +94,7 @@ Edit `workflow-dash.json` beside `index.ts`, then reload the intended session. M
 
 `UID` is the current Unix user ID. Override `subagentRuns` if the external runtime uses another layout. No private runtime configuration is read to discover it.
 
-`buddyRuns`, `agentRuns` and `operators` are deprecated names for `subagentRuns`. The first one set, in the order `subagentRuns`, `buddyRuns`, `agentRuns`, `operators`, is used. Each deprecated name in use is a configuration warning, and so is one that names a different directory; the dashboard never merges directories. `--workflow-dash` is canonical; `--pipeline-dash` remains a deprecated activation flag. The internal widget key keeps its old technical name. These compatibility boundaries need removal notices, not silent deletion.
+The dashboard no longer reads the former names `buddyRuns`, `agentRuns` and `operators`; set `subagentRuns` instead. `--workflow-dash` is the only activation flag. The widget key keeps the old technical name `pipeline-dash`.
 
 ## Safety
 
@@ -125,4 +115,4 @@ npm run lint --workspace @ecosystem/workflow-dash
 
 The equivalent mise tasks are `//apps/workflow-dash:typecheck`, `:test`, `:lint` and `:check`. `check` includes all three gates. The root design and type rules apply, with the same narrow Node process-boundary and Pi default-export exceptions used by the pipeline. The full app gate passes without suppressing inherited lint debt.
 
-Tests go through a real dependency: temporary files, local fixture snapshots, the runtime's configuration file and watchers, or the extension entrypoint with a fake Pi host. They never activate a live extension or call a real model. Unit tests aren't written ([`no-unit-tests`](../../docs/decisions/code-and-tests.md#no-unit-tests)). [Fixture provenance](test/fixtures/README.md) distinguishes copied source bytes from synthetic evidence. The [preserved pre-import report](docs/history/local-dash-report.md) is historical, not current acceptance evidence. Its terminal captures remain in the original directory and are not imported. The [import validation report](REPORT.md) records the 2026-10-22 import's checks; it predates the buddy-run and action-run views.
+Tests go through a real dependency: temporary files, the runtime's configuration file and watchers, or the extension entrypoint with a fake Pi host. They never activate a live extension or call a real model. Unit tests aren't written ([`no-unit-tests`](../../docs/decisions/code-and-tests.md#no-unit-tests)). The [preserved pre-import report](docs/history/local-dash-report.md) is historical, not current acceptance evidence. Its terminal captures remain in the original directory and are not imported. The [import validation report](REPORT.md) records the 2026-10-22 import's checks; it predates the buddy-run and action-run views.

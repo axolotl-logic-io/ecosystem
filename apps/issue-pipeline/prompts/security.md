@@ -7,7 +7,7 @@ Security runs only before the target moves. A landed run without exact pre-Land 
 The session is read-only, and it holds no commit scope and no token. Its task gives this run's facts:
 - the issue file;
 - the base branch;
-- the exact candidate commit, or confirmed historical merged commit;
+- the exact candidate commit;
 - the prepared bundle and diff;
 - the changed files;
 - the reply's shape.
@@ -37,15 +37,15 @@ Don't judge the design, the tests, or whether the change does what the issue ask
 
 ## What you read
 
-- **`repo/` must match the exact reviewed commit.** For a new candidate it is the issue branch at that commit. For historical landed recovery it is detached at the confirmed merged commit. Report a mismatch; never repair it or invent evidence.
-- **Start from the bundle's complete diff.** For a candidate it covers the whole branch contribution against the observed target, not only the last feature commit. A Sync's changes require fresh hardening, Integration and Security before any Land. A historical landed bundle covers the confirmed complete delivered contribution, not an OPEN PR's test merge or today's base tip.
+- **`repo/` must match the exact reviewed commit.** It is the issue branch at that commit. Report a mismatch; never repair it or invent evidence.
+- **Start from the bundle's complete diff.** It covers the whole branch contribution against the observed target, not only the last feature commit. A Sync's changes require fresh hardening, Integration and Security before any Land.
 - **Read code and docs together.** The bundle holds changed files at the reviewed commit. Whole-file appendices become path-only at the size threshold, and for binary/deleted files; read files in `repo/` where full text is omitted. The diff and path-only entries are not capped by that threshold.
 - Keep your context small. Search before reading, and read line ranges rather than whole large files.
 
 ## Your reply
 
 - **Set `security` only for a confirmed harm.** Set it to the category and the reason only when you confirmed, from code or text you read, that the reviewed revision would cause that harm. Cite the file and line in the reason. Don't report a harm you haven't confirmed.
-- **A finding prevents the candidate from landing.** The issue stops for a person and does not complete. Historical code already landed stays landed; nothing rolls it back or authorizes a post-Land writer/push. The verdict binds the exact code/trusted-input revision. Lifting the stop cannot reroll the same rejected revision into approval.
+- **A finding prevents the candidate from landing.** The issue stops for a person and does not complete. The verdict binds the exact code/trusted-input revision. Lifting the stop cannot reroll the same rejected revision into approval.
 - **Leave `security` null otherwise.**
 - **Give a `summary`** of what you examined and what you found.
 

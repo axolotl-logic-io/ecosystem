@@ -5,12 +5,7 @@
 // op may record.
 
 import type { Config } from "../config.ts";
-import type {
-  ActionEnd,
-  Binding,
-  RevisionBinding,
-  TaskDefinition,
-} from "../domain.ts";
+import type { ActionEnd, Binding, TaskDefinition } from "../domain.ts";
 import { isRevisionBinding, sameBinding } from "../domain.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 import { currentBinding } from "./chain.ts";
@@ -59,13 +54,6 @@ function notWritable(cfg: Config, number: number): string | null {
   return null;
 }
 
-function revisionOf(binding: Binding): RevisionBinding {
-  if (!isRevisionBinding(binding)) {
-    throw new TypeError("a revision task needs a revision binding");
-  }
-  return binding;
-}
-
 function ended(
   verdict: ActionEnd["verdict"],
   reason: string,
@@ -90,4 +78,4 @@ function ended(
 }
 
 export type { Admission, TaskModule };
-export { ended, notCurrent, notWritable, revisionOf };
+export { ended, notCurrent, notWritable };

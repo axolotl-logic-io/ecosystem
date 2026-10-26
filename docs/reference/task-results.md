@@ -8,7 +8,7 @@ Each attempt and result is a separate append-only hidden issue comment under `ag
 
 Current records use version 2. They name the binding, action run, producing buddy run and accepted cause. A stale work-state save cannot erase them. Work state uses its own version 4 schema; its checkout checkpoints never substitute for task results.
 
-Version 1 task records and earlier saved states remain history under their original bytes and names. They do not become current passes. Unsettled historical Land and refused Security subjects still fence work. Unknown versions, malformed records or conflicting provenance hold the item rather than selecting a permissive subset.
+Readers accept only version 2. A record of any other version, including version 1 records an earlier release wrote, holds the item, as do malformed records or conflicting provenance; the reader never selects a permissive subset. Likewise, saved state other than version 4 holds the item.
 
 ## Binding
 

@@ -19,23 +19,15 @@ import fs from "node:fs";
 import process from "node:process";
 import { text } from "node:stream/consumers";
 import { z } from "zod";
-import type { Config } from "./config.ts";
 import { loadConfig, withCheckout } from "./config.ts";
 import { INVOCATION_BINDING } from "./coordination-record-schema.ts";
-import { ciStatus } from "./ops/ci-status.ts";
-import { cleanup } from "./ops/cleanup.ts";
 import { boundOps, unboundOps } from "./ops/execution-envelope.ts";
-import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
+import { postComments, QUEUED_COMMENT } from "./ops/post.ts";
 import { guardedTaskConfig, taskOp } from "./ops/task-ops.ts";
-import { usage } from "./ops/usage.ts";
-import { verify } from "./ops/verify.ts";
 import { OpsError } from "./ops-error.ts";
 import { ROOT } from "./pipeline-root.ts";
 import { parseRequest } from "./process.ts";
 import { assertPolicyDigest } from "./project-policy.ts";
-
-// An op reads its own fields from the whole request and returns its reply.
-type Op = (cfg: Config, request: unknown) => object;
 
 // The line printed for a request: the op's own reply follows ok, op, how
 // many queued comments it posted and their ids in the request's order, or
@@ -52,18 +44,6 @@ interface ErrorReply {
   error: string;
 }
 
-// The ops that are no task's effect. The canonical task ops are
-// ops/task-ops.ts's, each guarded for its buddy action.
-const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
-  ["verify", verify],
-  ["ci-status", ciStatus],
-  ["post", post],
-  // Frees closed issues' worktrees once nothing local is unsaved (#174).
-  ["cleanup", cleanup],
-  // Appends a job's usage record to the issue's usage comments (#302).
-  ["usage", usage],
-]);
-
 // The request runs to the last END marker, not the first: the JSON can carry the
 // marker words inside a string, such as a plan or spec about this protocol (#176).
 const OPS_REQUEST = /BEGIN_OPS_REQUEST\s*(?<json>[\s\S]*)END_OPS_REQUEST/u;
@@ -78,11 +58,6 @@ const ENVELOPE = z.looseObject({
   op: z.string(),
   number: z.number().int().positive().optional(),
   execution: INVOCATION_BINDING.optional(),
-  // Refuse the retired assignment envelope rather than silently accepting
-  // an apparent grant. Only the trusted buddy envelope can bind a task.
-  grant: z
-    .never({ error: "assignment grants are retired; use a bound buddy action" })
-    .optional(),
   // A buddy action's envelope (runtime/buddy-config.ts BUDDY_ENVELOPE),
   // which every task op checks against the trusted files it rereads.
   buddy: z.unknown().optional(),
@@ -117,7 +92,9 @@ async function readRequest(): Promise<unknown> {
 function runRequest(request: unknown): OpsReply {
   const envelope = parseRequest(ENVELOPE, "ops", request);
   const { checkout, comments, config, op, policyDigest } = envelope;
-  const handler = taskOp(op) ?? OPS.get(op);
+  // Every op is a canonical task op (ops/task-ops.ts), guarded for its buddy
+  // action.
+  const handler = taskOp(op);
   if (handler === undefined) {
     throw new OpsError(`unknown op "${op}"`);
   }
@@ -128,9 +105,7 @@ function runRequest(request: unknown): OpsReply {
   } else {
     cfg = boundOps(cfg, envelope.execution, envelope);
   }
-  if (taskOp(op) !== undefined) {
-    cfg = guardedTaskConfig(cfg, op, request, config ?? null);
-  }
+  cfg = guardedTaskConfig(cfg, op, request, config ?? null);
   fs.mkdirSync(ROOT, { recursive: true });
   // Post the signed comments the workflow queued for this issue before running the op,
   // so they land in order and aren't lost if the op fails.

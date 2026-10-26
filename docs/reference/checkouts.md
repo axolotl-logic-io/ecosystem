@@ -27,9 +27,8 @@ Everything lives under `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeli
 | `runs/SLUG/issue-N/verify-*/` | Check command logs, one folder per checked commit |
 | `runs/SLUG/issue-N/pushes.jsonl`, `pushed.json` | The pipeline's own pushes |
 | `runs/SLUG/issue-N/coordination-uncertain.json` | The journal of an uncertain coordination write |
-| `runs/SLUG/issue-N/stop-recovery/` | Stop reconciliation evidence (see [stops and labels](stops-and-labels.md)) |
 
-The `jobs` folder and the `issue-N-` prefix are installed technical names. Each folder belongs to exactly one action run, so a later action never reuses a retained folder. The action runtime writes no `job.json` or `job.log`; any such file is historical evidence.
+The `jobs` folder and the `issue-N-` prefix are installed technical names. Each folder belongs to exactly one action run, so a later action never reuses a retained folder. The action runtime writes no `job.json` or `job.log`.
 
 `clones/`, `work/` and `runs/` are local caches and recovery evidence, not authority. Keep them through upgrades until preserved work is confirmed safe.
 
@@ -57,7 +56,7 @@ The runtime releases the issue's execution only when nothing holds it. Each of t
 - A kept checkout.
 - A held model-session reservation.
 - An uncertain checkpoint.
-- Unresolved stop recovery or an unreconciled coordination journal.
+- An unreconciled coordination journal.
 - A remaining lane-slot consumer.
 
 ## Lane test environments
@@ -103,21 +102,17 @@ A pending barrier keeps its lease even after the registered checkout is gone.
 
 The action runtime runs no configured teardown. While `commands.teardown` is set, every acting `test-slot` action refuses before it creates a checkout or environment, and `prepare-checkout` checks again. Read-only recovery and tasks without a test slot are unaffected. To run `test-slot` tasks, omit `commands.teardown`.
 
-`ops.mjs` still accepts the standalone `verify` and `cleanup` requests, which can run `commands.teardown`. No buddy task sends either request.
+Nothing in the pipeline runs `commands.teardown`.
 
 `commands.prune` is accepted and reserved for lane-resource maintenance. Nothing in the pipeline runs it at this source revision.
 
 ### Pool changes
 
-Changing `laneSlots`, `commands.setup` or `commands.teardown` is an operator configuration change; landing source changes none of them. Before reducing the pool, drain every action and test consumer and remove their checkouts. An issue that still holds an out-of-range slot refuses new checkouts. The lane store can't see manual or legacy test users, so drain those separately.
+Changing `laneSlots`, `commands.setup` or `commands.teardown` is an operator configuration change; landing source changes none of them. Before reducing the pool, drain every action and test consumer and remove their checkouts. An issue that still holds an out-of-range slot refuses new checkouts. The lane store can't see manual test users, so drain those separately.
 
 ## Process cleanup
 
 Configured commands run through `shell-supervisor.mjs` in process groups that the pipeline owns. Ending a command sends `SIGTERM` to its whole group, waits, then sends `SIGKILL` to what's left. A group that is already gone counts as ended. Cleanup stops only the pipeline's own groups.
-
-## Legacy issue worktrees
-
-The older runtime kept per-issue worktrees at `work/SLUG/issue-N`. The action runtime creates none. The standalone `cleanup` request inspects them. For each closed issue whose work is all on GitHub and that nothing still holds, it runs `commands.teardown`, then removes the worktree and its local branch. It keeps anything in doubt, with the reason.
 
 ## Recover a retained checkout
 

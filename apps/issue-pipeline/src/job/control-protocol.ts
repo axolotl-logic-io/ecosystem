@@ -72,25 +72,6 @@ function exchange<T>(
   });
 }
 
-// Sends `message` to session `key` of the job bound to `execution` listening
-// on `socket`, and resolves to null once pi accepted it, or else to the
-// reason it didn't.
-async function steerJob(
-  socket: string,
-  execution: InvocationBinding,
-  steer: { key: string; message: string },
-): Promise<string | null> {
-  const request: ControlRequest = { type: "steer", ...steer, execution };
-  const answer = await exchange(socket, request, STEER_REPLY);
-  if ("error" in answer) {
-    return answer.error;
-  }
-  if (answer.reply.ok) {
-    return null;
-  }
-  return answer.reply.error ?? "pi rejected the steer";
-}
-
 // Asks the job bound to `execution` listening on `socket` to push what
 // session `key` committed. Never rejects: a job that can't be reached pushed
 // nothing, and says why.
@@ -108,4 +89,4 @@ async function requestPush(
 }
 
 export type { ControlRequest, Pushed, PushReply, SteerReply };
-export { CONTROL_REQUEST, requestPush, steerJob };
+export { CONTROL_REQUEST, requestPush };

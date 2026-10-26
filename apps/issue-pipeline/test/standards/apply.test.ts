@@ -7,6 +7,7 @@ import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
 import { POLICY_VERSION } from "../../src/standards/schema.ts";
+import { committedPolicy } from "../project-policy-test-kit.ts";
 
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const ISSUE = 7;
@@ -98,8 +99,10 @@ function world(): World {
       landingAccount: "land-bot",
       allowedUsers: ["alice"],
       credentialsEnvFile: credentials,
-      resources: { modelSessions: 1 },
-      commands: { test: "true" },
+      projectPolicy: committedPolicy(path.join(directory, "policy"), origin, {
+        resources: { modelSessions: 1 },
+        commands: { test: "true" },
+      }),
     }),
   );
   const { PATH: searched = "" } = process.env;

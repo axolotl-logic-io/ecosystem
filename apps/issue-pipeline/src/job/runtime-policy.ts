@@ -124,23 +124,6 @@ const MISMATCHED_STATE =
 
 type StateRefusal = typeof INVALID_STATE | typeof MISMATCHED_STATE | null;
 
-interface RuntimeBoundary {
-  nativeVersion: typeof NATIVE_VERSION;
-  providerVersion: typeof PROVIDER_VERSION;
-  home: string;
-  providerExtension: string | null;
-  credentialEnv: string[];
-  toolchainEnv: RuntimeConfig["toolchainEnv"];
-  projectConfiguration: "disabled";
-  resources: "explicit extensions only";
-  mode: "rpc";
-  providerCacheOnlyFlag: "--print";
-  providerScope: "OpenAI builtin via distinct proxy endpoint only";
-  ambientAuth: "OPENAI_API_KEY only when explicitly declared";
-  nativeOffline: true;
-  policies: (NativePolicy & { role: string })[];
-}
-
 const NATIVE_STATE = z.object({
   model: z.object({
     provider: z.string(),
@@ -219,31 +202,6 @@ function stateRefusal(
   return null;
 }
 
-function runtimeBoundary(
-  runtime: RuntimeConfig,
-  models: Readonly<Record<string, string>>,
-): RuntimeBoundary {
-  return {
-    nativeVersion: NATIVE_VERSION,
-    providerVersion: PROVIDER_VERSION,
-    home: runtime.home ?? "$ISSUE_PIPELINE_ROOT/runtime/home",
-    providerExtension: runtime.providerExtension,
-    credentialEnv: runtime.credentialEnv,
-    toolchainEnv: runtime.toolchainEnv,
-    projectConfiguration: "disabled",
-    resources: "explicit extensions only",
-    mode: "rpc",
-    providerCacheOnlyFlag: "--print",
-    providerScope: "OpenAI builtin via distinct proxy endpoint only",
-    ambientAuth: "OPENAI_API_KEY only when explicitly declared",
-    nativeOffline: true,
-    policies: Object.entries(models).map(([role, model]) => ({
-      role,
-      ...policyOf(model, runtime),
-    })),
-  };
-}
-
 export type { NativePolicy, RuntimeConfig };
 export {
   NATIVE_VERSION,
@@ -252,6 +210,5 @@ export {
   policyOf,
   RUNTIME_POLICY,
   RUNTIME_SCHEMA,
-  runtimeBoundary,
   stateRefusal,
 };

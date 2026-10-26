@@ -69,4 +69,4 @@ const integrate: TaskModule = {
   writesCode: false,
 };
 
-export { blocked as integrateBlocked, integrate };
+export { integrate };

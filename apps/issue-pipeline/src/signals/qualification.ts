@@ -68,18 +68,14 @@ function rejected(reason: string): Qualification {
 
 // Why `actor` is a machine whose labels grant nothing, or null for a person.
 function machineReason(cfg: Config, actor: EventActor): string | null {
-  const accounts = [cfg.devAccount, cfg.landingAccount, cfg.legacyAccount];
+  const accounts = [cfg.devAccount, cfg.landingAccount];
   if (actor.viaApp) {
     return `@${actor.login} acted through a GitHub App`;
   }
   if (actor.type !== "User" || BOT_LOGIN.test(actor.login)) {
     return `@${actor.login} is a ${actor.type} account, not a person`;
   }
-  if (
-    accounts.some(
-      (account) => account !== undefined && same(account, actor.login),
-    )
-  ) {
+  if (accounts.some((account) => same(account, actor.login))) {
     return `@${actor.login} is a configured pipeline account`;
   }
   return null;

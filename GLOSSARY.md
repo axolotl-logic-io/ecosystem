@@ -10,19 +10,7 @@ These definitions describe the intended domain. They do not claim that existing 
 
 The human responsible for installation and operational configuration.
 
-An operator can also act as a caller, but these are different responsibilities. Starting a run does not by itself make someone an operator, and a buddy is not an operator.
-
-### Caller
-
-The person or program that selects work, invokes tools and handles their results.
-
-Use caller instead of orchestrator wherever both name this responsibility. A caller may coordinate multiple runs. That coordination does not grant installation, landing or other action authority.
-
-### Assignee
-
-The person or buddy explicitly assigned to a work item.
-
-Use assignee rather than owner when the meaning is work assignment. Do not infer assignment from execution or from who must answer a question. Ownership of resources remains a separate concept.
+Starting a run does not by itself make someone an operator, and a buddy is not an operator.
 
 ### Role
 
@@ -56,19 +44,19 @@ A thin configuration wrapper pairing scope, responsibilities and identity. Scope
 
 A task stands on its own. The buddy does not own the task's sensors, inbox, signal matching or actions, and does not duplicate its behavior. Pairing a task with a different scope or identity does not redefine that task. Trusted configuration grants standing permission within the paired scope and responsibilities; task prerequisites and action-specific guards still apply. GitHub issue assignment is not required.
 
-Buddy replaces the historical use of actor for a role/identity pairing; actor-pattern tasks are a separate concept. A buddy run activates its configured tasks' action loops. Work discovery uses the tasks' declared sensors within the configured scope.
+A buddy run activates its configured tasks' action loops. Work discovery uses the tasks' declared sensors within the configured scope.
 
 Buddies whose duties must stay independent have decoupled identities. Security and Hardening are performed by separate buddies with separate identities and accounts. [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) record the current buddies.
 
 ### Executing buddy
 
-The buddy performing a particular run. It may differ from the work item's assignee.
+The buddy performing a particular run.
 
 ## Work and execution
 
 ### Work item
 
-An independently tracked intended outcome, separate from its executions. A work item can have dependencies, an assignee and a completion condition. It may require several runs or have no active run.
+An independently tracked intended outcome, separate from its executions. A work item can have dependencies and a completion condition. It may require several runs or have no active run.
 
 A plan task and a GitHub issue can represent the same work item, but equivalence requires explicit linkage. Similar titles or bare issue numbers do not establish identity.
 
@@ -86,7 +74,7 @@ A stop propagates from the buddy run to its task loops and their active actions,
 
 Stop propagation stays within the stop's scope. An issue-level `agents:stop` affects work for that issue, not unrelated issues served by the same buddy run. Unknown action results require reconciliation, not blind repetition.
 
-The earlier one-task-per-buddy-run definition is superseded. Dash's historical Operators, Agent runs and Actor runs labels and existing launch records need explicit mapping to this lifecycle; a model launch is not automatically a buddy run.
+A model launch is not a buddy run.
 
 ### Retry
 
@@ -126,15 +114,11 @@ Each run retains its own identity. Establish parent–child links from explicit 
 
 An actor in a workflow: it declares the sensors it wants, receives their signals in an inbox, and matches signals to actions. A task may act when its prerequisites hold and produces one result for its binding. A role's tasks are its responsibilities. A task may use a model or run deterministically.
 
-Actor here means the actor-pattern execution model, not the retired name for a buddy. A task stands on its own, independently of the buddy configuration that pairs it with scope and identity. It owns its sensor declarations, inbox, signal matching and actions. A task is not a buddy, identity, model session or individual run. Inbox storage, delivery guarantees and actor-instance boundaries remain to be designed.
+Actor here means the actor-pattern execution model. A task stands on its own, independently of the buddy configuration that pairs it with scope and identity. It owns its sensor declarations, inbox, signal matching and actions. A task is not a buddy, identity, model session or individual run. Inbox storage, delivery guarantees and actor-instance boundaries remain to be designed.
 
 Tasks replace stages. A work item has no single current position. Its **ready tasks** are those whose prerequisites are current and whose own result for the current binding is missing. Each task owns its prerequisites, result, receipt, attempts, stop conditions and recovery, so it can change without reaching into another task's internals.
 
 Plans also call their items tasks. Where that could be confused with a workflow task, call a plan item a work item or a plan task.
-
-### Stage
-
-Retired. Stage named a position in a fixed sequence, which hid the dependencies between tasks. It survives only as an installed technical name; the [domain alignment inventory](docs/domain-alignment.md) maps each installed stage onto tasks.
 
 ### Change
 
@@ -283,13 +267,13 @@ Shared execution guards enforce scope, responsibility, authority, ownership, cap
 
 Permission to perform a specific action within defined scope and conditions.
 
-Work assignment, a role, an observation or possession of a capability does not by itself establish authorization.
+A role, an observation or possession of a capability does not by itself establish authorization.
 
 ### Capability
 
 The technical means to perform an action, such as an available tool, credential or identity. Capability does not establish authorization.
 
-Dash composes requests for its caller; it does not directly control workflow execution. Status-report observes work; it does not manage it.
+Dash composes requests for the session it runs in; it does not directly control workflow execution. Status-report observes work; it does not manage it.
 
 ### Artifact
 
@@ -355,7 +339,7 @@ Generate matching Markdown and JSON reports from the same assessment data, with 
 
 ## Definitions still required
 
-[Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks and their bindings, including Author's and the first Implementation's; repeated checks and task order; run states and retries; the capacity unit, slot release and shared reservations; observation sources, freshness and coverage; assignment permission and who lands and installs; and additive record versions. Ecosystem #166 renamed the historical configuration, commands and saved records, keeping the old names readable. These contracts remain open:
+[Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks and their bindings, including Author's and the first Implementation's; repeated checks and task order; run states and retries; the capacity unit, slot release and shared reservations; observation sources, freshness and coverage; who lands and installs; and additive record versions. These contracts remain open:
 
 - Which binding parts apply to each task, and the remaining prerequisite and result schemas.
 - Observation schemas.

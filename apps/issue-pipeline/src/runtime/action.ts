@@ -24,7 +24,7 @@ import process from "node:process";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { withCheckout } from "../config.ts";
-import type { ModelRole } from "../config-legacy.ts";
+import type { ModelRole } from "../config-schema.ts";
 import type { InvocationBinding } from "../coordination.ts";
 import type {
   ActionCause,

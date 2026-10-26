@@ -3,8 +3,6 @@ import type { Component } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Snapshot } from "./data.ts";
 import { pendingRequest } from "./item-view.ts";
-import { legacyJobProcesses } from "./job-conditions.ts";
-import { capacity } from "./legacy-capacity.ts";
 import { buddyRunRow, partialCoverage } from "./runtime-view.ts";
 import { type Badge, pill } from "./ui-format.ts";
 
@@ -32,7 +30,7 @@ function versionBadge(state: Snapshot, short: boolean): Badge {
   return { icon: "\ue0a0", text, ink: "warning" };
 }
 function webBadge(state: Snapshot): Badge {
-  const web = state.pbWeb ?? capacity(state.jobHistory).pbWeb;
+  const web = state.pbWeb ?? [];
   let text = "pb-web not observed";
   if (web.length > 0) {
     text = `pb-web busy #${web.join(",#")}`;
@@ -52,7 +50,7 @@ function runtimeBadge(state: Snapshot, compact: boolean): Badge {
       .length;
   }
   const uncertain = count("stale") + count("unknown");
-  const partial = partialCoverage(state.runtime, state.configWarnings);
+  const partial = partialCoverage(state.runtime);
   let text = `buddy runs ${count("process-observed")} process-observed · ${uncertain} stale/unknown`;
   if (compact) {
     text = `buddy ${count("process-observed")} · ? ${uncertain}`;
@@ -81,14 +79,6 @@ function statusSegments(
     webBadge(state),
     versionBadge(state, shortVersion),
   ];
-  const legacy = legacyJobProcesses(state.jobHistory);
-  if (legacy.observed + legacy.unknown > 0) {
-    badges.push({
-      icon: "◷",
-      text: `legacy jobs ${legacy.observed} observed · ${legacy.unknown} unknown`,
-      ink: "muted",
-    });
-  }
   const pending = state.subagentRuns.filter(pendingRequest).length;
   if (pending > 0) {
     badges.push({
@@ -129,7 +119,7 @@ function widget(get: () => Snapshot, theme: Theme): Component {
           theme.fg(
             "muted",
             state.error ??
-              "◷ No running buddy run recorded · /dash for history and coverage",
+              "◷ No running buddy run recorded · /dash for coverage",
           ),
         );
       }

@@ -1,13 +1,15 @@
 // The sole target mutation: a strict fast-forward with an explicit old-OID
 // lease. The lease is server CAS, not permission to replace non-ancestor work.
 // No fallback or retry is safe, including after an ambiguous transport error.
+import { z } from "zod";
 import type { Config } from "../config.ts";
 import { assertGitPushDestination } from "../git-remote.ts";
 import { gitIn } from "../git-state.ts";
 import { git } from "../github.ts";
-import { FULL_SHA } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
+
+const FULL_SHA = z.string().regex(/^[0-9a-f]{40}$/u);
 
 function targetRef(cfg: Config): string {
   const ref = `refs/heads/${cfg.baseBranch}`;
@@ -65,7 +67,7 @@ function landBranch(
       "origin",
       `${head}:${ref}`,
     ],
-    // The Land attempt saved before this push reconciles it (landing-attempt.ts).
+    // The Land attempt recorded before this push reconciles it.
     { allowFail: true, reconciles: true },
   );
   // Acknowledgement is only response evidence, never a confirmed receipt.

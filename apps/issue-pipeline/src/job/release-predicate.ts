@@ -1,11 +1,8 @@
 // Issue-wide barriers to releasing execution. The action runtime separately
 // requires a settled result/checkpoint and lossless checkout preservation.
-// Historical unresolved stop records still hold; removing their old writer
-// does not make the evidence disappear or authorize release.
 import type { Config } from "../config.ts";
 import { assertReconciled } from "../coordination-journal.ts";
 import { registeredConsumers } from "../lane-slots.ts";
-import { assertStopRecoveryResolved } from "../stop-recovery.ts";
 
 function messageOf(error: unknown): string {
   if (error instanceof Error) {
@@ -34,7 +31,6 @@ function assertNoConsumer(cfg: Config, issue: number): void {
 
 function issueRefusal(cfg: Config, issue: number): string | null {
   return (
-    refusalOf((): void => assertStopRecoveryResolved(cfg, issue)) ??
     refusalOf((): void => assertReconciled(cfg, issue)) ??
     refusalOf((): void => assertNoConsumer(cfg, issue))
   );

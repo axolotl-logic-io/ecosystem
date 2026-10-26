@@ -6,15 +6,9 @@
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import { fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
 import { ghJson } from "./github.ts";
-import { trustedInputsHash, writeIssueContext } from "./issue-context.ts";
-import { historicalPrFor } from "./ops/prs.ts";
 import { OpsError } from "./ops-error.ts";
 import { assertPrBase } from "./pr-authority.ts";
-import { run } from "./process.ts";
-import { policyRevision } from "./project-policy.ts";
-import type { CodeLanded, IssueState, Revision } from "./state.ts";
 
 const PR_FIELDS =
   "number,state,mergeCommit,headRefName,headRefOid,baseRefName,isCrossRepository";
@@ -37,19 +31,6 @@ interface PullRequest {
   state: "OPEN" | "CLOSED" | "MERGED";
   mergeCommit: string | null;
   headSha: string;
-}
-
-// The current revision and what it was read from (`current-revision`).
-interface CurrentRevision {
-  revision: Revision;
-  // The base branch's tip on GitHub, freshly fetched.
-  baseSha: string;
-  pr: PullRequest | null;
-  // The code Land GitHub reports, by the claim's rule (codeLandedOf).
-  codeMerged: CodeLanded | null;
-  checkoutHead: string;
-  remoteHead: string | null;
-  issueFile: string;
 }
 
 // PR `pr` of issue `n` as GitHub reports it. A PR from another branch or
@@ -109,103 +90,5 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
   };
 }
 
-// Confirms on GitHub that issue `n`'s PR `codeMerged.pr` merged as
-// `codeMerged.sha`, and that the commit is on the base branch fetched into
-// the worktree `wt`; throws otherwise, so a Land is never assumed.
-function confirmLanded(
-  cfg: Config,
-  n: number,
-  { wt, codeMerged }: { wt: string; codeMerged: CodeLanded },
-): void {
-  const { pr, sha } = codeMerged;
-  const found = pullRequest(cfg, n, pr);
-  if (found.state !== "MERGED" || found.mergeCommit !== sha) {
-    throw new OpsError(
-      `GitHub doesn't report PR #${pr} merged as ${sha} (${found.state}, merge commit ${found.mergeCommit ?? "none"})`,
-    );
-  }
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const base = `origin/${cfg.baseBranch}`;
-  const reachable = run(
-    "git",
-    ["-C", wt, "merge-base", "--is-ancestor", sha, base],
-    { allowFail: true },
-  );
-  if (reachable.code !== 0) {
-    throw new OpsError(`merge commit ${sha} is not on ${base}`);
-  }
-}
-
-// A null saved PR requires all-state discovery, not an open-only search. A
-// closed PR the saved state doesn't name grants no code writes: it needs
-// operator recovery.
-function issuePullRequest(
-  cfg: Config,
-  n: number,
-  state:
-    | (Pick<IssueState, "pr"> & Partial<Pick<IssueState, "flows" | "headSha">>)
-    | null,
-): PullRequest | null {
-  const pr = state?.pr ?? historicalPrFor(cfg, n);
-  if (pr === null) {
-    return null;
-  }
-  const found = pullRequest(cfg, n, pr);
-  if ((state === null || state.pr === null) && found.state === "CLOSED") {
-    throw new OpsError(
-      `PR #${found.number} is closed; code authority needs operator recovery`,
-    );
-  }
-  return found;
-}
-
-// The code Land `pr` records, or null when it hasn't merged.
-function codeLandedOf(pr: PullRequest | null): CodeLanded | null {
-  if (pr === null || pr.mergeCommit === null) {
-    return null;
-  }
-  return { pr: pr.number, sha: pr.mergeCommit };
-}
-
-// Issue `n`'s current revision, read afresh: its trusted inputs from GitHub
-// (rewriting the issue file), its PR from `state.pr` or its branch, its code
-// head (the merge commit once GitHub says the PR merged, else the checkout's
-// HEAD).
-function currentRevision(
-  cfg: Config,
-  n: number,
-  state:
-    | (Pick<IssueState, "pr"> & Partial<Pick<IssueState, "flows" | "headSha">>)
-    | null,
-): CurrentRevision {
-  const context = writeIssueContext(cfg, n);
-  const inputs = trustedInputsHash(cfg, context.issue, context.comments);
-  const pr = issuePullRequest(cfg, n, state);
-  const codeMerged = codeLandedOf(pr);
-  const wt = paths.worktree(cfg, n);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const baseSha = gitIn(wt, ["rev-parse", `origin/${cfg.baseBranch}`]).trim();
-  const checkoutHead = head(wt);
-  return {
-    revision: {
-      code: codeMerged?.sha ?? checkoutHead,
-      inputs,
-      ...policyRevision(cfg),
-    },
-    baseSha,
-    pr,
-    codeMerged,
-    checkoutHead,
-    remoteHead: remoteHead(cfg, n),
-    issueFile: context.file,
-  };
-}
-
-export type { CurrentRevision, PullRequest };
-export {
-  codeLandedOf,
-  confirmLanded,
-  currentRevision,
-  issuePullRequest,
-  pullRequest,
-};
+export type { PullRequest };
+export { pullRequest };

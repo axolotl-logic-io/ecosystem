@@ -1,13 +1,11 @@
 import { execFile } from "node:child_process";
 import process from "node:process";
 import { promisify } from "node:util";
-import type { JobData } from "./source-records.ts";
 
 const exec = promisify(execFile);
 const processReadTimeout = 3000;
 const commandReadBytes = 8192;
 const processListBytes = 1_048_576;
-type ProcessCheck = (pid: number | null | undefined) => Promise<boolean | null>;
 type ProcessInspection =
   | { state: "running"; command: string; startedAt: number | null }
   | { state: "absent" }
@@ -54,34 +52,6 @@ async function inspectProcess(
     return { state: "unknown", reason: "process command unreadable" };
   }
 }
-async function pidLegacyJob(
-  pid: number | null | undefined,
-): Promise<boolean | null> {
-  const inspection = await inspectProcess(pid);
-  if (inspection.state === "running") {
-    return inspection.command.includes("job.mjs");
-  }
-  if (inspection.state === "absent") {
-    return false;
-  }
-  return null;
-}
-async function live(
-  run: Pick<JobData, "pid" | "outcome">,
-  check: ProcessCheck = pidLegacyJob,
-): Promise<boolean | null> {
-  if (run.outcome === undefined) {
-    return null;
-  }
-  if (run.outcome !== null) {
-    return false;
-  }
-  try {
-    return await check(run.pid);
-  } catch {
-    return null;
-  }
-}
 async function processList(): Promise<string> {
   try {
     return (
@@ -95,5 +65,5 @@ async function processList(): Promise<string> {
   }
 }
 
-export type { ProcessCheck, ProcessInspection };
-export { exec, inspectProcess, live, pidLegacyJob, processList };
+export type { ProcessInspection };
+export { exec, inspectProcess, processList };

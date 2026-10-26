@@ -21,22 +21,11 @@ class DashboardExtension {
       default: false,
       description: "Opt in to the read-only workflow dashboard (TUI only)",
     });
-    this.pi.registerFlag("pipeline-dash", {
-      type: "boolean",
-      default: false,
-      description: "Deprecated: use --workflow-dash",
-    });
     this.pi.on("session_start", async (_event, ctx) => {
       this.runtime.stop();
       if (ctx.mode === "tui") {
         this.registerCommands();
-        if (
-          enabled(
-            ctx.mode,
-            this.pi.getFlag("workflow-dash") === true ||
-              this.pi.getFlag("pipeline-dash") === true,
-          )
-        ) {
+        if (enabled(ctx.mode, this.pi.getFlag("workflow-dash") === true)) {
           await this.activate(ctx);
         }
       }

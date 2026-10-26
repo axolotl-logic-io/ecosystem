@@ -120,11 +120,6 @@ const ASSESSMENT_V2 = ASSESSMENT_V1.extend({
 
 // What `assess` writes.
 const ASSESSMENT: typeof ASSESSMENT_V2 = ASSESSMENT_V2;
-// What a reader accepts: any version.
-const ANY_ASSESSMENT = z.discriminatedUnion("version", [
-  ASSESSMENT_V1,
-  ASSESSMENT_V2,
-]);
 
 // The tag that opens the marker a plan's upgrade issue carries:
 // `<!-- standards-upgrade:plan {PLAN_MARKER JSON} -->`.
@@ -158,4 +153,4 @@ export type {
   SandboxRecord,
   Workflow,
 };
-export { ANY_ASSESSMENT, ASSESSMENT, PLAN_MARKER, PLAN_TAG, POLICY_VERSION };
+export { ASSESSMENT, PLAN_MARKER, PLAN_TAG, POLICY_VERSION };

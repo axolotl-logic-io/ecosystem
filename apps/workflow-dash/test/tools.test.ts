@@ -20,7 +20,6 @@ const options = { timeout: 30_000 };
 const issue = 3;
 const notObserved = /Action run not observed/u;
 const notAuthority = /never authority/u;
-const notCurrent = /not the current workflow/u;
 const textSchema = z.object({
   content: z.tuple([z.object({ type: z.literal("text"), text: z.string() })]),
 });
@@ -28,7 +27,6 @@ const runtimeSummarySchema = z.object({
   note: z.string(),
   coverage: z.object({
     repositories: z.array(z.string()),
-    configWarnings: z.array(z.string()),
   }),
   problems: z.array(z.object({ path: z.string(), reason: z.string() })),
   buddyRuns: z.array(
@@ -137,10 +135,6 @@ test(
       [
         ["buddy_runs", true],
         ["action_run", true],
-        ["workflow_runs", true],
-        ["workflow_run", true],
-        ["pipeline_lanes", true],
-        ["pipeline_job", true],
       ],
     );
 
@@ -185,10 +179,5 @@ test(
       tool(tools, "action_run").execute("call", { id: randomUUID() }),
       notObserved,
     );
-
-    const history = z
-      .object({ history: z.string() })
-      .parse(await invoke(tools, "workflow_runs", {}));
-    assert.match(history.history, notCurrent);
   },
 );
