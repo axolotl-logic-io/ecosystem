@@ -144,7 +144,11 @@ function keepConflict(fix: FixRun, reason: string): string {
     }
   }
   run("git", ["-C", fix.wt, "merge", "--abort"]);
-  return `${reason}: ${files.join(", ")}; its conflict stages and commits are saved in the issue's recovery folder, and nothing was pushed`;
+  let unresolved = "";
+  if (files.length > 0) {
+    unresolved = `: ${files.join(", ")}`;
+  }
+  return `${reason}${unresolved}; the stopped merge's evidence and commits are saved in the issue's recovery folder, and nothing of it was pushed`;
 }
 
 // Merges target T into the checkout's head: no change when the head
