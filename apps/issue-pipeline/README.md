@@ -200,7 +200,7 @@ npm run check:full   # pipeline fast gate and Node tests, then dashboard gate
 
 From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` with file concurrency 2 and per-test timeout 180000 ms.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
 
 Tests are sorted by ISTQB test level, as the [project practices](../../docs/project-practices.md#tests) define them. Each level has its own folder and script, with the full gate's flags:
 
@@ -210,6 +210,8 @@ Tests are sorted by ISTQB test level, as the [project practices](../../docs/proj
 | `test/component-integration/` | Component integration | `npm run test:component-integration` | signals, reservations, Land's Git effects, project policy, buddy authorization binding |
 | `test/system/` | System | `npm run test:system` | buddy flows of the built `buddy.mjs`, `buddy --check`, `standards-upgrade apply`, the distribution |
 | `test/support/` | none | none | helpers more than one level uses, such as the fake GitHub server and signal kit |
+
+[Writing a test](test/README.md) says what each level fakes, which kit to start from and how to run it.
 
 Fake GitHub is one server process per test machine (`test/support/signals/fake-gh-server.ts`). The `gh` on the machine's `PATH` is a small sh script that forwards each call to it with `curl --unix-socket`.
 
