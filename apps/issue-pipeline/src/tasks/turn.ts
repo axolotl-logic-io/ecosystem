@@ -32,6 +32,7 @@ function landSettled(cfg: Config, number: number): boolean {
 
 // Retires what earlier invocations of this item left of the turn, once its
 // Land is settled; while one is unsettled they stay and the turn holds.
+// The turn's owner is one of its pending requests, so each is retired once.
 function retireEarlier(cfg: Config, number: number, turn: Turn): void {
   const mine = instanceOf(cfg);
   const stale = turn
@@ -39,14 +40,6 @@ function retireEarlier(cfg: Config, number: number, turn: Turn): void {
     .pending.filter(
       (row) => row.binding.issue === number && row.binding.instance !== mine,
     );
-  const { owner } = turn.read();
-  if (
-    owner !== null &&
-    owner.binding.issue === number &&
-    owner.binding.instance !== mine
-  ) {
-    stale.push(owner);
-  }
   if (stale.length === 0 || !landSettled(cfg, number)) {
     return;
   }
