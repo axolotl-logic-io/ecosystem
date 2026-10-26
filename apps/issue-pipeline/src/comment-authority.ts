@@ -67,31 +67,40 @@ function checkedNode(
   cfg: Config,
   item: IssueComment,
   node: CurrentNode | null | undefined,
+  relevant: (body: string) => boolean = (): boolean => true,
 ): CurrentNode {
   if (node === null || node === undefined || node.databaseId !== item.id) {
     throw new OpsError(
       `comment ${item.id} has unreadable editor provenance; stop for reconciliation`,
     );
   }
-  assertCommentAuthority(cfg, {
-    ...item,
-    body: node.body,
-    user: node.author,
-    lastEditedAt: node.lastEditedAt,
-    editor: node.editor,
-  });
+  // Check both reads: an edit between listing and reread must not hide a record.
+  if (relevant(item.body ?? "") || relevant(node.body)) {
+    assertCommentAuthority(cfg, {
+      ...item,
+      body: node.body,
+      user: node.author,
+      lastEditedAt: node.lastEditedAt,
+      editor: node.editor,
+    });
+  }
   return node;
 }
 
-// All landing-authored comments are checked, including edits removing markers.
-// Body, author and editor must come from the same GraphQL read.
-function currentComment(cfg: Config, item: IssueComment): CurrentNode | null {
+// Reread landing-authored comments together with their provenance. By default,
+// check every one, including edits removing markers; a narrower reader supplies
+// the content it consumes. Body, author and editor come from one GraphQL read.
+function currentComment(
+  cfg: Config,
+  item: IssueComment,
+  relevant?: (body: string) => boolean,
+): CurrentNode | null {
   if (!isLandingAuthored(cfg, item)) {
     return null;
   }
   const fields = [`query=${COMMENT_QUERY}`, `id=${nodeIdOf(item)}`];
   const current = CURRENT_COMMENT.safeParse(graphql(cfg, fields));
-  return checkedNode(cfg, item, current.data?.data.node);
+  return checkedNode(cfg, item, current.data?.data.node, relevant);
 }
 
 // currentComment for each of `items`, with every landing-authored one read in
@@ -100,10 +109,11 @@ function currentComment(cfg: Config, item: IssueComment): CurrentNode | null {
 function currentComments(
   cfg: Config,
   items: readonly IssueComment[],
+  relevant?: (body: string) => boolean,
 ): (CurrentNode | null)[] {
   const merged = items.filter((item) => isLandingAuthored(cfg, item));
   if (merged.length < 2) {
-    return items.map((item) => currentComment(cfg, item));
+    return items.map((item) => currentComment(cfg, item, relevant));
   }
   const names = merged.map((_item, at) => `c${at}`);
   const params = names.map((name) => `$${name}:ID!`).join(",");
@@ -115,7 +125,7 @@ function currentComments(
   const nodes = new Map(
     merged.map((item, at) => [
       item,
-      checkedNode(cfg, item, batch.data?.data[`c${at}`]),
+      checkedNode(cfg, item, batch.data?.data[`c${at}`], relevant),
     ]),
   );
   return items.map((item) => nodes.get(item) ?? null);

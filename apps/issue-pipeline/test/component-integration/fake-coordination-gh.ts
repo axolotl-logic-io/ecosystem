@@ -25,6 +25,8 @@ const COMMENT = z.object({
   id: z.number(),
   login: z.string(),
   body: z.string(),
+  currentBody: z.string().optional(),
+  editor: z.string().nullable().optional(),
 });
 const COMMIT = z.object({ sha: z.string(), tree: z.string() });
 const STORE = z.object({
@@ -93,6 +95,18 @@ function restComment(comment: Comment): unknown {
     ["body", comment.body],
   ]);
 }
+function editedAt(comment: Comment): typeof CREATED | null {
+  if (comment.editor === undefined || comment.editor === null) {
+    return null;
+  }
+  return CREATED;
+}
+function editorOf(comment: Comment): { login: string } | null {
+  if (comment.editor === undefined || comment.editor === null) {
+    return null;
+  }
+  return { login: comment.editor };
+}
 function nodeOf(store: Store, nodeId: string): unknown {
   const comment = store.comments.find((item) => `IC_${item.id}` === nodeId);
   if (comment === undefined) {
@@ -100,12 +114,12 @@ function nodeOf(store: Store, nodeId: string): unknown {
   }
   return {
     databaseId: comment.id,
-    body: comment.body,
+    body: comment.currentBody ?? comment.body,
     createdAt: CREATED,
     updatedAt: CREATED,
-    lastEditedAt: null,
+    lastEditedAt: editedAt(comment),
     author: { login: comment.login },
-    editor: null,
+    editor: editorOf(comment),
   };
 }
 
