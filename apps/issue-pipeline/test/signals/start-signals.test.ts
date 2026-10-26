@@ -55,7 +55,7 @@ test("a member's start label is accepted once and delivered as a start", () => {
   });
   const [record] = records(kit.world(), ISSUE);
   assert.deepEqual(record, {
-    version: 1,
+    version: 2,
     kind: "accepted",
     id: SIGNAL,
     workItem: { repo: REPO, number: ISSUE },

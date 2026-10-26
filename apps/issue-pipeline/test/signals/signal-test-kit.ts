@@ -1,6 +1,7 @@
 // The signal tests' kit: a temporary pipeline root with a config, a private
-// credential file, a world file and a `gh` on PATH that runs fake-gh.ts,
-// and a driver subprocess per inbox call. Tests change the world between
+// credential file, a world file, a local bare origin whose branches are the
+// PR heads the fake gh reports, a `gh` on PATH that runs fake-gh.ts, and a
+// driver subprocess per inbox call. Tests change the world between
 // calls as GitHub and the task lane would, then read back what the inbox
 // returned, what it posted, which gh calls it made and what it journaled.
 import { spawnSync } from "node:child_process";
@@ -12,6 +13,7 @@ import { z } from "zod";
 import { committedPolicy } from "../project-policy-test-kit.ts";
 import {
   type FakeIssue,
+  type FakeReview,
   readWorld,
   type TaskAnswers,
   type World,
@@ -32,10 +34,16 @@ const OTHER_COMMIT = "b".repeat(SHA1_HEX);
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/gu;
 const EXECUTABLE = 0o755;
 const MARK = "<!-- agent-pipeline:signal\n";
+const MINUTES = 60;
 const LOGGED = z.strictObject({ login: z.string(), args: z.array(z.string()) });
+
+type FakePull = NonNullable<World["pulls"]>[number];
 
 interface Harness {
   root: string;
+  // Commits on issue `number`'s branch in the origin and returns the new
+  // head.
+  push: (number: number) => string;
   world: () => World;
   change: (edit: (world: World) => void) => void;
   poll: (organization?: string) => Inbox;
@@ -152,6 +160,64 @@ function labelledIssue(
   };
 }
 
+// Issue `number`'s open PR from its own branch, authored by the
+// development account.
+function openPull(number: number, pr: number): FakePull {
+  return {
+    number: pr,
+    head: `agent/issue-${number}`,
+    base: "main",
+    title: `Issue ${number}`,
+    body: `Closes #${number}`,
+    author: "lawd-dev",
+    state: "OPEN",
+    isDraft: false,
+    reviews: [],
+  };
+}
+
+// A review by `author` of `commitId`, submitted at minute `id` mod 60.
+function review(
+  id: number,
+  author: string,
+  state: FakeReview["state"],
+  commitId: string,
+): FakeReview {
+  const minute = String(id % MINUTES).padStart(2, "0");
+  return {
+    id,
+    author,
+    state,
+    commitId,
+    body: "",
+    submittedAt: `2026-10-25T11:${minute}:00Z`,
+  };
+}
+
+function git(cwd: string, args: readonly string[]): string {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+// The origin with `main` at one commit, and a work clone to push from.
+function origin(root: string): { origin: string; work: string } {
+  const bare = path.join(root, "origin.git");
+  const work = path.join(root, "work");
+  git(root, ["init", "--quiet", "--bare", "--initial-branch=main", bare]);
+  git(root, ["clone", "--quiet", bare, work]);
+  git(work, ["config", "user.name", "Signal test"]);
+  git(work, ["config", "user.email", "signals@example.test"]);
+  git(work, ["checkout", "--quiet", "-b", "main"]);
+  fs.writeFileSync(path.join(work, "README.md"), "widgets\n");
+  git(work, ["add", "README.md"]);
+  git(work, ["commit", "--quiet", "-m", "Target"]);
+  git(work, ["push", "--quiet", "origin", "main"]);
+  return { origin: bare, work };
+}
+
 function writeShim(bin: string): void {
   const shim = path.join(bin, "gh");
   fs.writeFileSync(
@@ -168,6 +234,7 @@ function harness(edit: (world: World) => void = () => undefined): Harness {
   // The pipeline root, where gh runs and the journal lives.
   fs.mkdirSync(path.join(root, "pipeline"));
   writeShim(bin);
+  const repository = origin(root);
   const worldFile = path.join(root, "world.json");
   const logFile = path.join(root, "gh.log");
   fs.writeFileSync(logFile, "");
@@ -204,6 +271,7 @@ function harness(edit: (world: World) => void = () => undefined): Harness {
     ["ISSUE_PIPELINE_ROOT", path.join(root, "pipeline")],
     ["FAKE_GH_WORLD", worldFile],
     ["FAKE_GH_LOG", logFile],
+    ["FAKE_GH_ORIGIN", repository.origin],
   ]);
   function drive(request: object): unknown {
     const result = spawnSync(
@@ -278,8 +346,28 @@ function harness(edit: (world: World) => void = () => undefined): Harness {
   function world(): World {
     return readWorld(worldFile);
   }
+  function push(number: number): string {
+    const { work } = repository;
+    const branch = `agent/issue-${number}`;
+    const known = spawnSync(
+      "git",
+      ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],
+      { cwd: work },
+    );
+    if (known.status === 0) {
+      git(work, ["checkout", "--quiet", branch]);
+    } else {
+      git(work, ["checkout", "--quiet", "-b", branch, "main"]);
+    }
+    fs.appendFileSync(path.join(work, `issue-${number}.txt`), "change\n");
+    git(work, ["add", "."]);
+    git(work, ["commit", "--quiet", "-m", `Work on #${number}`]);
+    git(work, ["push", "--quiet", "origin", branch]);
+    return git(work, ["rev-parse", "HEAD"]);
+  }
   return {
     root,
+    push,
     world,
     change,
     poll,
@@ -323,8 +411,10 @@ export {
   ORGANIZATION,
   OTHER_COMMIT,
   OTHER_REQUIREMENTS,
+  openPull,
   REPO,
   REQUIREMENTS,
   records,
+  review,
   taskAnswers,
 };
