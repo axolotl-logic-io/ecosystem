@@ -6,8 +6,10 @@
 // (`-e .../pipeline-commit.mjs`), which asks the action's push server to
 // push, and appends the tool's result to FAKE_PI_COMMITS. While it runs, a
 // session can change the fake GitHub world as a person or GitHub would
-// (`change`), write outside any commit (`strayWrite`), and can wait for the
-// runtime's abort instead of replying.
+// (`change`), write outside any commit (`strayWrite`), resolve and stage a
+// conflicted file as its prompt page allows (`resolve`), and can wait for
+// the runtime's abort instead of replying.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -45,6 +47,9 @@ const SESSION = z.strictObject({
   strayWrite: z
     .strictObject({ file: z.string(), content: z.string() })
     .optional(),
+  // A conflicted file the session writes and stages, the one git write a
+  // Fix session's page allows.
+  resolve: z.strictObject({ file: z.string(), content: z.string() }).optional(),
   // Wait for the runtime's abort command rather than replying.
   awaitAbort: z.boolean(),
   reply: z.record(z.string(), z.unknown()).nullable(),
@@ -156,6 +161,17 @@ async function commitThrough(
   fs.appendFileSync(env("FAKE_PI_COMMITS"), `${JSON.stringify(result)}\n`);
 }
 
+// Writes `resolved` over its conflicted file and stages it.
+function resolveConflict(resolved: NonNullable<Session["resolve"]>): void {
+  fs.writeFileSync(path.join("repo", resolved.file), resolved.content);
+  const staged = spawnSync("git", ["-C", "repo", "add", "--", resolved.file], {
+    encoding: "utf8",
+  });
+  if (staged.status !== 0) {
+    throw new Error(`staging ${resolved.file} failed: ${staged.stderr}`);
+  }
+}
+
 // Makes `change` in the world; the human is autumn, the item issue 7.
 function applyChange(change: NonNullable<Session["change"]>): void {
   const file = env("FAKE_GH_WORLD");
@@ -215,6 +231,9 @@ async function play(
 ): Promise<void> {
   if (session.change !== null && session.changeFirst) {
     applyChange(session.change);
+  }
+  if (session.resolve !== undefined) {
+    resolveConflict(session.resolve);
   }
   if (session.commit !== null) {
     await commitThrough(args, session.commit);

@@ -88,9 +88,22 @@ interface PlannedSession {
   changeFirst: boolean;
   // A file left written and uncommitted in the code checkout.
   strayWrite?: { file: string; content: string };
+  // A conflicted file the session resolves to `content` and stages, as a
+  // Fix session does before its merge concludes.
+  resolve?: { file: string; content: string };
   awaitAbort: boolean;
   reply: Record<string, unknown> | null;
 }
+
+// Implement's fresh hardening session, for a test that doesn't look into
+// it: it finds nothing to change and commits nothing.
+const HARDENING: PlannedSession = {
+  commit: null,
+  change: null,
+  changeFirst: false,
+  awaitAbort: false,
+  reply: { outcome: "done", summary: "Hardened: nothing to change." },
+};
 
 // The buddy one activation runs, as its trusted file names it: the
 // Developer hippy, on the development account, or the Gatekeeper lawd, on
@@ -644,4 +657,4 @@ export type {
   MachineSetup,
   PlannedSession,
 };
-export { DEVELOPER, HUMAN, ISSUE, machine, marked };
+export { DEVELOPER, HARDENING, HUMAN, ISSUE, machine, marked };

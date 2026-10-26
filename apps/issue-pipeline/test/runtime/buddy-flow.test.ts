@@ -1,14 +1,21 @@
 // The supported buddy entrypoint, end to end on a disposable machine: the
 // built buddy.mjs admits a human-started Implement, its writer session
-// commits through the real pipeline_commit extension and push server, and
-// the task settles through the real ops, ledger and origin. Only gh
+// commits through the real pipeline_commit extension and push server, a
+// fresh hardening session follows it, and the task settles through the real
+// ops, ledger and origin. Only gh
 // (fake-gh.ts) and pi (fake-pi.ts) are fakes.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import type { PlannedSession } from "./buddy-flow-test-kit.ts";
-import { DEVELOPER, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import {
+  DEVELOPER,
+  HARDENING,
+  ISSUE,
+  machine,
+  marked,
+} from "./buddy-flow-test-kit.ts";
 
 const COMMIT = {
   file: "counter.txt",
@@ -28,15 +35,19 @@ const POOL_SCOPE = '["acme/widgets","main","resource","model-session",1]';
 test("a buddy implements a started issue through its real ops and releases it", async () => {
   const box = machine();
   try {
-    const { status, ended, run, actions } = await box.runBuddy([COUNTS], 2);
+    const { status, ended, run, actions } = await box.runBuddy(
+      [COUNTS, HARDENING],
+      2,
+    );
     assert.equal(status, 0);
     assert.equal(ended.kind, "stopped");
     assert.equal(actions.length, 1);
     const [action] = actions;
     assert.ok(action !== undefined);
     assert.equal(run.loops[0]?.action, action.id);
-    // Ownership, the reservation and its one consumer, the checkout, the
-    // bound ops, the checkpoint and the settlement, in the observation.
+    // Ownership, the reservation and its two consumers, the checkout, the
+    // bound ops, a checkpoint after each session and the settlement, in the
+    // observation.
     assert.deepEqual(
       {
         state: action.state,
@@ -56,9 +67,13 @@ test("a buddy implements a started issue through its real ops and releases it", 
         checkpoint: "saved",
         ownership: { state: "released", reason: null },
         reservations: ["released"],
-        sessions: [["ok", true]],
+        sessions: [
+          ["ok", true],
+          ["ok", true],
+        ],
         operations: [
           ["task-attempt", "ok"],
+          ["checkpoint-action", "ok"],
           ["checkpoint-action", "ok"],
           ["push", "ok"],
           ["open-task-pr", "ok"],
@@ -67,11 +82,11 @@ test("a buddy implements a started issue through its real ops and releases it", 
         preserved: { checkout: null, patches: [] },
       },
     );
-    // The session ran in the action's own checkout, and safe release
+    // The sessions ran in the action's own checkout, and safe release
     // removed it.
     const [launch] = box.launches();
     assert.ok(launch !== undefined);
-    assert.equal(box.launches().length, 1);
+    assert.equal(box.launches().length, 2);
     assert.ok(launch.cwd.endsWith(`issue-${ISSUE}-action-${action.id}`));
     assert.ok(
       launch.args.includes(path.join(box.pipeline, "pipeline-commit.mjs")),
@@ -110,7 +125,7 @@ test("a buddy implements a started issue through its real ops and releases it", 
       produced: { code: head },
     });
     // Coordination: the issue's execution and the pool's slot each
-    // requested, confirmed and released; the session registered as the
+    // requested, confirmed and released; each session registered as the
     // slot's consumer and done before release.
     const coordination = marked(world, "coordination").map((item) => [
       item.scope,
@@ -123,16 +138,21 @@ test("a buddy implements a started issue through its real ops and releases it", 
       [POOL_SCOPE, "confirm"],
       [POOL_SCOPE, "register"],
       [POOL_SCOPE, "done"],
+      [POOL_SCOPE, "register"],
+      [POOL_SCOPE, "done"],
       [POOL_SCOPE, "release"],
       [ISSUE_SCOPE, "release"],
     ]);
-    const consumer = marked(world, "coordination").find(
-      (item) => item.kind === "register",
-    )?.consumer;
-    assert.deepEqual(consumer, {
-      kind: "model-session",
-      id: action.sessions[0]?.id,
-    });
+    const consumers = marked(world, "coordination")
+      .filter((item) => item.kind === "register")
+      .map((item) => item.consumer);
+    assert.deepEqual(
+      consumers,
+      action.sessions.map((session) => ({
+        kind: "model-session",
+        id: session.id,
+      })),
+    );
   } finally {
     box.cleanup();
   }

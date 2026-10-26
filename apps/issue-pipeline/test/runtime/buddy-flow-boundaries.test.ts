@@ -9,13 +9,15 @@ import { test } from "node:test";
 import { z } from "zod";
 import { ACTION_RUN } from "../../src/runtime/observations.ts";
 import type { Machine, PlannedSession } from "./buddy-flow-test-kit.ts";
-import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import { HARDENING, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 const RAW = z.record(z.string(), z.unknown());
 const REPLY = z.looseObject({ ok: z.boolean(), error: z.string().optional() });
 const OTHER = 9;
 const SCOPED_POLLS = 5;
 const STOP_AFTER_IDLE = 3;
+// The interrupted session, then the other issue's writing and hardening.
+const INTERRUPTED_THEN_IMPLEMENTED = 3;
 const REPLAY_REFUSED = /setup already started; it is not replayed/u;
 const TASK_REFUSED = /land|responsibilit/u;
 const PID = /^[1-9][0-9]*$/u;
@@ -135,7 +137,7 @@ test("an issue-scoped interruption leaves another issue able to implement", asyn
   let passed = false;
   try {
     const outcome = await box.runBuddy(
-      [{ ...WAIT, change: "stop-issue" }, COMMIT],
+      [{ ...WAIT, change: "stop-issue" }, COMMIT, HARDENING],
       SCOPED_POLLS,
       undefined,
       signal,
@@ -157,7 +159,7 @@ test("an issue-scoped interruption leaves another issue able to implement", asyn
         ["result", "passed"],
       ],
     );
-    assert.equal(box.launches().length, 2);
+    assert.equal(box.launches().length, INTERRUPTED_THEN_IMPLEMENTED);
     assert.equal(
       box.git(["show", `agent/issue-${OTHER}:counter.txt`]),
       "another counter",

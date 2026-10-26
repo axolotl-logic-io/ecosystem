@@ -2,7 +2,8 @@
 // setup command: the built buddy.mjs registers Implement's own checkout as
 // its issue's lane-slot consumer, runs the pinned setup there through the
 // guarded prepare-checkout op with the leased ISSUE_PIPELINE_LANE_SLOT, and
-// the writer session inherits that slot, never the operator's own. A failed
+// the writing session and its fresh hardening session inherit that slot,
+// never the operator's own, with setup run once for both. A failed
 // setup starts no session, retains the checkout, its untracked work, its
 // slot and its readiness barrier, and holds the issue so nothing replays.
 // Only gh (fake-gh.ts) and pi (fake-pi.ts) are fakes; setup is the
@@ -26,6 +27,15 @@ const COUNTS: PlannedSession = {
   changeFirst: false,
   awaitAbort: false,
   reply: { outcome: "done", summary: "Counted the widgets." },
+};
+const HARDENS: PlannedSession = {
+  ...COUNTS,
+  commit: {
+    file: "counter.txt",
+    content: "3 widgets, checked\n",
+    message: "Check the widget count",
+  },
+  reply: { outcome: "done", summary: "Checked the count." },
 };
 // A project command that records its name, slot and folder outside the
 // checkout, in the machine's root beside the pipeline root.
@@ -74,7 +84,7 @@ function laneStore(box: Machine): unknown {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
-test("configured setup and the writer session use the issue's leased lane slot, released once its checkout is removed", async () => {
+test("configured setup, the writing session and its fresh hardening use the issue's leased lane slot, released once its checkout is removed", async () => {
   const box = machine(() => undefined, {
     landPermission: false,
     laneSlots: 2,
@@ -82,7 +92,7 @@ test("configured setup and the writer session use the issue's leased lane slot, 
   });
   let passed = false;
   try {
-    const { status, actions } = await box.runBuddy([COUNTS], 2);
+    const { status, actions } = await box.runBuddy([COUNTS, HARDENS], 2);
     assert.equal(status, 0);
     const [action] = actions;
     assert.ok(action !== undefined);
@@ -103,6 +113,7 @@ test("configured setup and the writer session use the issue's leased lane slot, 
           ["task-attempt", "ok"],
           ["prepare-checkout", "ok"],
           ["checkpoint-action", "ok"],
+          ["checkpoint-action", "ok"],
           ["push", "ok"],
           ["open-task-pr", "ok"],
           ["task-result", "ok"],
@@ -110,7 +121,7 @@ test("configured setup and the writer session use the issue's leased lane slot, 
         preserved: { checkout: null, patches: [] },
       },
     );
-    // Setup ran once, in the action's own checkout, with slot 1 of the
+    // Setup ran once for both sessions, in the action's own checkout, with slot 1 of the
     // pool rather than the operator's slot 9.
     const runs = commandRuns(box);
     assert.equal(runs.length, 1);
@@ -119,11 +130,16 @@ test("configured setup and the writer session use the issue's leased lane slot, 
       runs[0]?.[2]?.endsWith(`issue-${ISSUE}-action-${action.id}/repo`),
       `setup ran in ${String(runs[0]?.[2])}`,
     );
-    // The model process inherited the same leased slot.
+    // Both model processes inherited the same leased slot, and the
+    // hardening's commit is the head Implement delivered.
     const launches = box.launches();
     assert.deepEqual(
       launches.map((launch) => launch.laneSlot),
-      ["1"],
+      ["1", "1"],
+    );
+    assert.equal(
+      box.git(["show", `agent/issue-${ISSUE}:counter.txt`]),
+      "3 widgets, checked",
     );
     // Closing the checkout removed it, its last consumer, and released the
     // slot.
