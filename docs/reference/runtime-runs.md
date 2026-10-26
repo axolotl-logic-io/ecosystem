@@ -30,7 +30,7 @@ A buddy file is strict JSON. The runtime refuses unknown keys. The file and ever
 - `identity.profiles` must equal exactly the access profiles that its tasks need: `reader`, `writer` or `lander`.
 - `identity.account.login` must be the repository config's `devAccount` for a Developer, or its `landingAccount` for a Gatekeeper.
 - `identity.models` is optional. It may override the repository config's `author`, `developer` or `reviewer` model.
-- `pollSeconds` (5 to 3600, default 60), `stopPollSeconds` (1 to 600, default 15) and `leaseSeconds` (30 to 3600, default 300) are optional.
+- `pollSeconds` (1 to 3600, default 60), `stopPollSeconds` (1 to 600, default 15) and `leaseSeconds` (30 to 3600, default 300) are optional.
 
 The runtime refuses the obsolete scheduler and assignment controls `assignments`, `grant`, `grantor`, `maxJobs`, `stageCaps`, `orchestratorIntervalSeconds`, `takeNewWork`, `stage` and `stages`. It also refuses a buddy-level `modelSessions` or `resources`. Capacity is the repository's shared `resources.modelSessions` pool, which every repository config must supply; see [project settings](project-settings.md).
 

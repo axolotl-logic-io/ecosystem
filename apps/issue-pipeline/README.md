@@ -216,7 +216,20 @@ npm run check:full   # pipeline fast gate and Node tests, then dashboard gate
 
 From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` with file concurrency 8 and per-test timeout 180000 ms. The historical unit suite was removed; the directory now contains new public-entrypoint tests and is not empty.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
+
+Tests are sorted by ISTQB test level, as the [project practices](../../docs/project-practices.md#tests) define them. Each level has its own folder and script, with the full gate's flags:
+
+| Folder | Level | Script | Holds |
+| --- | --- | --- | --- |
+| `test/component/` | Component | `npm run test:component` | the task ledger, read alone in a child process |
+| `test/component-integration/` | Component integration | `npm run test:component-integration` | signals, including Author and Verify starts and PR review signals, reservations, project policy, buddy authorization binding |
+| `test/system/` | System | `npm run test:system` | buddy flows of the built `buddy.mjs`, among them Author, Implement's hardening, Verify, Fix, Land and their recovery, `buddy --check`, `standards-upgrade apply`, the distribution |
+| `test/support/` | none | none | helpers more than one level uses, such as the fake GitHub server and signal kit |
+
+[Writing a test](test/README.md) says what each level fakes, which kit to start from and how to run it.
+
+Fake GitHub is one server process per test machine (`test/support/signals/fake-gh-server.ts`). The `gh` on the machine's `PATH` is a small sh script that forwards each call to it with `curl --unix-socket`.
 
 Tests use temporary HOME/pipeline roots, local Git origins and fake GitHub/model processes, never real credentials, models or production data. Set disposable roots before dynamic imports. Test real files, subprocesses, Git and public operations; do not replace task behavior with success stand-ins and call it integrated acceptance. A failure or flake blocks acceptance; fix the cause instead of repeating the same test for a pass.
 
