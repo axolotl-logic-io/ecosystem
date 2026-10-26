@@ -6,6 +6,8 @@
 // never the operator's own, with setup run once for both. A failed
 // setup starts no session, retains the checkout, its untracked work, its
 // slot and its readiness barrier, and holds the issue so nothing replays.
+// Verify's own checkout, its detached checks checkout and its review
+// session use the same leased slot.
 // Only gh (fake-gh.ts) and pi (fake-pi.ts) are fakes; setup is the
 // project's own shell command.
 import assert from "node:assert/strict";
@@ -37,12 +39,25 @@ const HARDENS: PlannedSession = {
   },
   reply: { outcome: "done", summary: "Checked the count." },
 };
+const REVIEWS: PlannedSession = {
+  commit: null,
+  change: null,
+  changeFirst: false,
+  awaitAbort: false,
+  reply: { summary: "Read the whole diff.", findings: [] },
+};
+// Implement acts on the first poll; the second stops.
+const DEVELOPER_POLLS = 2;
+// Verify acts on the first poll; the second waits; the third stops.
+const GATEKEEPER_POLLS = 3;
+const VERIFY_CHECKOUT = /\/verify-checkout-[^/]+\/repo$/u;
 // A project command that records its name, slot and folder outside the
 // checkout, in the machine's root beside the pipeline root.
 function recording(name: string): string {
   return `printf '%s\\t%s\\t%s\\n' ${name} "$ISSUE_PIPELINE_LANE_SLOT" "$PWD" >> "$ISSUE_PIPELINE_ROOT/../commands.log"`;
 }
 const RECORD_SETUP = recording("setup");
+const RECORD_TEST = recording("test");
 const PARTIAL = "warm.partial";
 const SETUP_EXIT = 3;
 // Polls until the failing run stops: a later poll finds the issue held.
@@ -205,6 +220,68 @@ test("a failed setup starts no session and retains the checkout, its untracked w
     });
     assert.equal(action.ownership.state, "retained");
     assert.match(String(action.ownership.reason), PREPARATION_INCOMPLETE);
+    passed = true;
+  } finally {
+    keepIfFailed(box, passed);
+  }
+});
+
+test("Implement, Verify's checks and Verify's review session each use the issue's leased slot", async () => {
+  const box = machine(() => undefined, {
+    landPermission: false,
+    laneSlots: 2,
+    requireCi: false,
+    setup: RECORD_SETUP,
+    test: RECORD_TEST,
+  });
+  let passed = false;
+  try {
+    const developer = await box.runBuddy([COUNTS, HARDENS], DEVELOPER_POLLS, {
+      role: "developer",
+      tasks: ["implement"],
+    });
+    assert.equal(developer.status, 0, developer.stderr);
+    const gatekeeper = await box.runBuddy([REVIEWS], GATEKEEPER_POLLS, {
+      role: "gatekeeper",
+      tasks: ["verify"],
+    });
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const byTask = new Map(
+      gatekeeper.actions.map((action) => [action.task, action]),
+    );
+    const order = ["implement", "verify"] as const;
+    assert.deepEqual(
+      order.map((task) => {
+        const action = byTask.get(task);
+        return [task, action?.verdict, action?.ownership.state];
+      }),
+      order.map((task) => [task, "passed", "released"]),
+    );
+    // Implement and Verify each ran setup in their own checkout; Verify's
+    // checks ran setup and the test in their own detached checkout. Every
+    // one of them, and every model session, got slot 1.
+    function actionRepo(task: (typeof order)[number]): string {
+      return `issue-${ISSUE}-action-${String(byTask.get(task)?.id)}/repo`;
+    }
+    const runs = commandRuns(box);
+    assert.deepEqual(
+      runs.map(([name, slot]) => [name, slot]),
+      [
+        ["setup", "1"],
+        ["setup", "1"],
+        ["setup", "1"],
+        ["test", "1"],
+      ],
+    );
+    assert.ok(runs[0]?.[2]?.endsWith(actionRepo("implement")));
+    assert.ok(runs[1]?.[2]?.endsWith(actionRepo("verify")));
+    assert.match(runs[2]?.[2] ?? "", VERIFY_CHECKOUT);
+    assert.equal(runs[3]?.[2], runs[2]?.[2]);
+    assert.deepEqual(
+      box.launches().map((launch) => launch.laneSlot),
+      ["1", "1", "1"],
+    );
+    assert.deepEqual(laneStore(box), { leases: [], prunedAt: null });
     passed = true;
   } finally {
     keepIfFailed(box, passed);

@@ -49,7 +49,7 @@
         "src/ops/pr.ts",
         "src/ops/sync.ts",
         "src/ops/verify.ts",
-        "src/ops/integration-task.ts",
+        "src/ops/verify-checks.ts",
         "src/ops/checks.ts",
         "src/ops/push.ts",
         "src/ops/ci-status.ts",
