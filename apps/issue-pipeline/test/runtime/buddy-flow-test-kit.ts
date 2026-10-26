@@ -3,8 +3,8 @@
 // build (buddy.mjs, ops.mjs and the session extensions) and prompt pages,
 // and pi's agent folder the installed agent definitions. The repository is
 // a real local bare origin with a pinned project policy; GitHub is the
-// signal tests' fake gh (test/signals/fake-gh.ts) over one world file,
-// whose git database is that origin; the model is fake-pi.ts, playing the
+// signal tests' fake GitHub (test/signals/fake-github-test-kit.ts) over one
+// world file, whose git database is that origin; the model is fake-pi.ts, playing the
 // sessions of a plan. Nothing here stands in for the runtime, the tasks,
 // the ops or the ledger: tests read back what they wrote to the world, the
 // origin and the run observations.
@@ -13,7 +13,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { buildSync } from "esbuild";
 import { z } from "zod";
 import {
   ACTION_RUN,
@@ -21,6 +20,7 @@ import {
 } from "../../src/runtime/observations.ts";
 import type { PolicyPin } from "../project-policy-test-kit.ts";
 import { committedPolicy } from "../project-policy-test-kit.ts";
+import { startFakeGitHub } from "../signals/fake-github-test-kit.ts";
 import type { FakeIssue, World } from "../signals/fake-github-world.ts";
 import { readWorld, writeWorld } from "../signals/fake-github-world.ts";
 import {
@@ -31,7 +31,6 @@ import {
 } from "../signals/signal-test-kit.ts";
 
 const SOURCE = path.resolve(import.meta.dirname, "../..");
-const FAKE_GH = path.join(SOURCE, "test", "signals", "fake-gh.ts");
 const FAKE_PI = path.join(SOURCE, "test", "runtime", "fake-pi.ts");
 const DEVELOPER = "lawd-dev";
 const HUMAN = "autumn";
@@ -43,6 +42,9 @@ const MODEL = `openai/${MODEL_ID}`;
 const CONTEXT_WINDOW = 272_000;
 const SLUG = REPO.replace("/", "__");
 const OVERSTAY_MS = 140_000;
+// How long `when` waits for its condition, unless told otherwise, before
+// failing the test.
+const WHEN_MS = 30_000;
 const ENDED = z.strictObject({
   buddyRun: z.uuid(),
   kind: z.enum(["stopped", "failed"]),
@@ -154,6 +156,10 @@ interface Machine {
   // What GitHub answers the landing account's `gh args`, as a person
   // reading it would see; the call is logged like any other.
   readGitHub: (args: string[]) => unknown;
+  // Resolves once `ready` holds, rechecked whenever a file directly in
+  // `root` changes, such as the gh, pi or commands log; rejects when
+  // `signal` aborts or after `withinMs` (WHEN_MS by default).
+  when: (ready: () => boolean, options?: WhenOptions) => Promise<void>;
   cleanup: () => void;
 }
 
@@ -174,13 +180,64 @@ function writePrivate(file: string, value: object): void {
   fs.chmodSync(file, PRIVATE);
 }
 
-function writeShim(bin: string, name: string, script: string): void {
+// A `name` on PATH that runs `script` with this Node, caching its compiled
+// code in `cache`.
+function writeShim(
+  bin: string,
+  name: string,
+  script: string,
+  cache: string,
+): void {
   const shim = path.join(bin, name);
   fs.writeFileSync(
     shim,
-    `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`,
+    `#!/bin/sh\nNODE_COMPILE_CACHE="${cache}" exec "${process.execPath}" "${script}" "$@"\n`,
   );
   fs.chmodSync(shim, EXECUTABLE);
+}
+
+interface WhenOptions {
+  signal?: AbortSignal;
+  withinMs?: number;
+}
+
+function when(
+  dir: string,
+  ready: () => boolean,
+  options: WhenOptions,
+): Promise<void> {
+  const { signal, withinMs = WHEN_MS } = options;
+  return new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => {
+      settle(new Error(`the awaited condition never held in ${withinMs} ms`));
+    }, withinMs);
+    const watcher = fs.watch(dir, check);
+    function abort(): void {
+      settle(signal?.reason);
+    }
+    function settle(error: unknown): void {
+      clearTimeout(deadline);
+      watcher.close();
+      signal?.removeEventListener("abort", abort);
+      if (error === undefined) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    }
+    function check(): void {
+      if (ready()) {
+        settle(undefined);
+      }
+    }
+    watcher.on("error", settle);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted === true) {
+      abort();
+    } else {
+      check();
+    }
+  });
 }
 
 // Builds this source into the pipeline root and installs its prompts and
@@ -413,7 +470,7 @@ function writeBuddyConfig(
     responsibilities: buddy.tasks,
     identity: { name, account: { provider: "github", login }, profiles },
     ...permissions,
-    pollSeconds: 5,
+    pollSeconds: 1,
     stopPollSeconds: 1,
   });
 }
@@ -443,19 +500,8 @@ function machine(
     fs.mkdirSync(dir);
   }
   install(pipeline, agentDir);
-  // Bundle only the fake transport, not tasks, ops, state or Git effects.
-  const gh = path.join(bin, "fake-gh.mjs");
-  buildSync({
-    entryPoints: [FAKE_GH],
-    outfile: gh,
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    target: "node24",
-    logLevel: "silent",
-  });
-  writeShim(bin, "gh", gh);
-  writeShim(bin, "pi", FAKE_PI);
+  const compileCache = path.join(root, "compile-cache");
+  writeShim(bin, "pi", FAKE_PI, compileCache);
   const { origin, work, projectPolicy } = repository(root, setup);
   const credentials = path.join(root, "credentials.env");
   fs.writeFileSync(
@@ -509,17 +555,24 @@ function machine(
       ["FAKE_GH_WORLD", worldFile],
       ["FAKE_GH_LOG", ghLog],
       ["FAKE_GH_ORIGIN", origin],
+      ["FAKE_GH_SOCKET", path.join(root, "gh.sock")],
       ["FAKE_PI_PLAN", plan],
       ["FAKE_PI_LOG", piLog],
       ["FAKE_PI_COMMITS", commitLog],
       ["PIPELINE_MODEL_KEY", "fake-model-key"],
     ]),
   };
-  function change(apply: (world: World) => void): void {
-    const current = readWorld(worldFile);
-    apply(current);
-    writeWorld(worldFile, current);
-  }
+  const github = startFakeGitHub({
+    root,
+    bin,
+    world: worldFile,
+    log: ghLog,
+    env: {
+      ...env,
+      ...Object.fromEntries([["NODE_COMPILE_CACHE", compileCache]]),
+    },
+  });
+  const { change } = github;
   async function runBuddy(
     sessions: PlannedSession[],
     stopAtPoll: number,
@@ -626,7 +679,7 @@ function machine(
         .filter((line) => line !== "");
     },
     readGitHub: (args: string[]): unknown => {
-      const read = spawnSync(process.execPath, [FAKE_GH, ...args], {
+      const read = spawnSync(path.join(bin, "gh"), args, {
         encoding: "utf8",
         env: { ...env, ...Object.fromEntries([["GH_TOKEN", "landing-token"]]) },
       });
@@ -636,7 +689,12 @@ function machine(
       const parsed: unknown = JSON.parse(read.stdout);
       return parsed;
     },
-    cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+    when: (ready: () => boolean, options: WhenOptions = {}) =>
+      when(root, ready, options),
+    cleanup: (): void => {
+      github.stop();
+      fs.rmSync(root, { recursive: true, force: true });
+    },
   };
 }
 

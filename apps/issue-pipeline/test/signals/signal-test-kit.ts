@@ -1,5 +1,6 @@
 // The signal tests' kit: a temporary pipeline root with a config, a private
-// credential file, a world file and a `gh` on PATH that runs fake-gh.ts,
+// credential file, a world file and a `gh` on PATH answered by the fake
+// GitHub server (fake-github-test-kit.ts),
 // and a driver subprocess per inbox call. Tests change the world between
 // calls as GitHub and the task lane would, then read back what the inbox
 // returned, what it posted, which gh calls it made and what it journaled.
@@ -10,6 +11,7 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import { committedPolicy } from "../project-policy-test-kit.ts";
+import { startFakeGitHub } from "./fake-github-test-kit.ts";
 import {
   type FakeIssue,
   readWorld,
@@ -30,7 +32,6 @@ const REQUIREMENTS = `sha256:${"1".repeat(SHA256_HEX)}`;
 const OTHER_REQUIREMENTS = `sha256:${"2".repeat(SHA256_HEX)}`;
 const OTHER_COMMIT = "b".repeat(SHA1_HEX);
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/gu;
-const EXECUTABLE = 0o755;
 const MARK = "<!-- agent-pipeline:signal\n";
 const LOGGED = z.strictObject({ login: z.string(), args: z.array(z.string()) });
 
@@ -152,22 +153,12 @@ function labelledIssue(
   };
 }
 
-function writeShim(bin: string): void {
-  const shim = path.join(bin, "gh");
-  fs.writeFileSync(
-    shim,
-    `#!/bin/sh\nexec "${process.execPath}" "${path.join(HERE, "fake-gh.ts")}" "$@"\n`,
-  );
-  fs.chmodSync(shim, EXECUTABLE);
-}
-
 function harness(edit: (world: World) => void = () => undefined): Harness {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "signals-"));
   const bin = path.join(root, "bin");
   fs.mkdirSync(bin);
   // The pipeline root, where gh runs and the journal lives.
   fs.mkdirSync(path.join(root, "pipeline"));
-  writeShim(bin);
   const worldFile = path.join(root, "world.json");
   const logFile = path.join(root, "gh.log");
   fs.writeFileSync(logFile, "");
@@ -204,7 +195,15 @@ function harness(edit: (world: World) => void = () => undefined): Harness {
     ["ISSUE_PIPELINE_ROOT", path.join(root, "pipeline")],
     ["FAKE_GH_WORLD", worldFile],
     ["FAKE_GH_LOG", logFile],
+    ["NODE_COMPILE_CACHE", path.join(root, "compile-cache")],
   ]);
+  const { change } = startFakeGitHub({
+    root,
+    bin,
+    world: worldFile,
+    log: logFile,
+    env: { ...process.env, ...env },
+  });
   function drive(request: object): unknown {
     const result = spawnSync(
       process.execPath,
@@ -228,11 +227,6 @@ function harness(edit: (world: World) => void = () => undefined): Harness {
       .split("\n")
       .filter((line) => line !== "")
       .map((line) => LOGGED.parse(JSON.parse(line)));
-  }
-  function change(apply: (world: World) => void): void {
-    const current = readWorld(worldFile);
-    apply(current);
-    writeWorld(worldFile, current);
   }
   function poll(organization: string = ORGANIZATION): Inbox {
     return INBOX.parse(

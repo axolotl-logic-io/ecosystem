@@ -1,20 +1,24 @@
-// A fake `gh` executable for the signal tests, answering from the world file
-// in FAKE_GH_WORLD and appending each call to FAKE_GH_LOG. It speaks the
-// parts of gh and GitHub that signals rely on: `api user`, `api --include
-// --method GET` with status lines and Link headers on numbered pages,
-// `api graphql` comment provenance, and comment POSTs whose answer can be
-// lost after or before they apply. The buddy flow tests' further gh
-// surface is in fake-gh-flow.ts.
+// The fake `gh` of the signal and buddy flow tests, answering from the
+// world the fake GitHub server holds (fake-gh-server.ts) and appending each
+// call to the server's call log. It speaks the parts of gh and GitHub that
+// signals rely on: `api user`, `api --include --method GET` with status
+// lines and Link headers on numbered pages, `api graphql` comment
+// provenance, and comment POSTs whose answer can be lost after or before
+// they apply. The buddy flow tests' further gh surface is in
+// fake-gh-flow.ts.
 import fs from "node:fs";
-import process from "node:process";
-import { countPoll, flowCall } from "./fake-gh-flow.ts";
 import {
-  type FakeComment,
-  type FakeIssue,
-  readWorld,
-  type World,
-  writeWorld,
-} from "./fake-github-world.ts";
+  answer as answered,
+  type Call,
+  exit,
+  fail,
+  print,
+  printError,
+  type Reply,
+  token,
+} from "./fake-gh-call.ts";
+import { countPoll, flowCall } from "./fake-gh-flow.ts";
+import type { FakeComment, FakeIssue, World } from "./fake-github-world.ts";
 
 interface Answer {
   status: number;
@@ -48,22 +52,6 @@ const REASONS: ReadonlyMap<number, string> = new Map([
   [HTTP_NOT_FOUND, "Not Found"],
 ]);
 
-function fail(message: string): never {
-  process.stderr.write(`${message}\n`);
-  process.exit(1);
-}
-
-function env(name: string): string {
-  const { [name]: value } = process.env;
-  if (value === undefined || value === "") {
-    return fail(`fake gh: ${name} is not set`);
-  }
-  return value;
-}
-
-const WORLD_FILE = env("FAKE_GH_WORLD");
-const LOG_FILE = env("FAKE_GH_LOG");
-
 // GitHub's REST field names, from the camel case the fake keeps.
 function snakeKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -81,8 +69,7 @@ function snakeKeys(value: unknown): unknown {
 }
 
 function login(world: World): string {
-  const { GH_TOKEN: token = "" } = process.env;
-  const found = world.tokens.find((entry) => entry.token === token);
+  const found = world.tokens.find((entry) => entry.token === token());
   if (found === undefined) {
     return fail("gh: HTTP 401: Bad credentials");
   }
@@ -352,12 +339,12 @@ function printAnswer(answer: Answer): void {
   if (answer.link !== null) {
     headers.push(`Link: ${answer.link}`);
   }
-  process.stdout.write(
+  print(
     `${headers.join("\r\n")}\r\n\r\n${JSON.stringify(snakeKeys(answer.body))}`,
   );
   if (answer.status >= HTTP_ERRORS) {
-    process.stderr.write(`gh: injected (HTTP ${answer.status})\n`);
-    process.exit(1);
+    printError(`gh: injected (HTTP ${answer.status})\n`);
+    exit(1);
   }
 }
 
@@ -403,9 +390,7 @@ function node(world: World, id: string | undefined): unknown {
 function graphql(world: World, args: readonly string[]): void {
   const fields = fieldsOf(args);
   if (fields.has("id")) {
-    process.stdout.write(
-      JSON.stringify({ data: { node: node(world, fields.get("id")) } }),
-    );
+    print(JSON.stringify({ data: { node: node(world, fields.get("id")) } }));
     return;
   }
   const data: Record<string, unknown> = {};
@@ -414,10 +399,14 @@ function graphql(world: World, args: readonly string[]): void {
       data[name] = node(world, value);
     }
   }
-  process.stdout.write(JSON.stringify({ data }));
+  print(JSON.stringify({ data }));
 }
 
-function post(world: World, args: readonly string[]): void {
+function post(
+  world: World,
+  args: readonly string[],
+  commit: (world: World) => void,
+): void {
   const path = args.find((arg) => ISSUE_PART.test(arg)) ?? "";
   const { number } = ISSUE_PART.exec(path)?.groups ?? {};
   const issue = issueOf(world, number);
@@ -428,7 +417,7 @@ function post(world: World, args: readonly string[]): void {
   const once = world.failPostOnceContaining;
   if (once !== undefined && body.includes(once)) {
     Reflect.deleteProperty(world, "failPostOnceContaining");
-    writeWorld(WORLD_FILE, world);
+    commit(world);
     fail("gh: HTTP 502: Bad Gateway");
   }
   const marked = world.failPostsContaining;
@@ -462,26 +451,30 @@ function post(world: World, args: readonly string[]): void {
     world.nextId += 1;
     Reflect.deleteProperty(world, "race");
   }
-  writeWorld(WORLD_FILE, world);
+  commit(world);
   if (world.post === "lost-after-apply") {
     fail("gh: HTTP 502: Bad Gateway");
   }
   if (args.includes(".id")) {
-    process.stdout.write(`${id}\n`);
+    print(`${id}\n`);
   }
 }
 
-function main(args: readonly string[]): void {
-  const world = readWorld(WORLD_FILE);
+function call(
+  world: World,
+  args: readonly string[],
+  log: string,
+  commit: (world: World) => void,
+): void {
   const shown = args.map((arg) => arg.replace(BODY_FIELD, "body=<record>"));
   fs.appendFileSync(
-    LOG_FILE,
+    log,
     `${JSON.stringify({ login: login(world), args: shown })}\n`,
   );
   const flow = flowCall(world, args, login(world));
   if (flow.handled) {
     if (flow.changed) {
-      writeWorld(WORLD_FILE, world);
+      commit(world);
     }
     return;
   }
@@ -489,7 +482,7 @@ function main(args: readonly string[]): void {
     fail(`fake gh: unsupported command ${args.join(" ")}`);
   }
   if (args[1] === "user" && args.length <= USER_CHECK_ARGS) {
-    process.stdout.write(`${login(world)}\n`);
+    print(`${login(world)}\n`);
     return;
   }
   if (args[1] === "graphql") {
@@ -497,7 +490,7 @@ function main(args: readonly string[]): void {
     return;
   }
   if (args.includes("POST")) {
-    post(world, args);
+    post(world, args, commit);
     return;
   }
   if (
@@ -507,7 +500,7 @@ function main(args: readonly string[]): void {
     args[4] !== undefined
   ) {
     if (countPoll(world, args[4])) {
-      writeWorld(WORLD_FILE, world);
+      commit(world);
     }
     printAnswer(get(world, args[4]));
     return;
@@ -515,4 +508,18 @@ function main(args: readonly string[]): void {
   fail(`fake gh: unsupported api call ${args.join(" ")}`);
 }
 
-main(process.argv.slice(2));
+// Answers `invocation`'s args, run with its token and standard input, from
+// `world`, logging the call to its `log`. `commit` keeps the world as the
+// call has changed it so far; changes made after the last commit are lost,
+// as they were when a gh process exited without writing its world back.
+function gh(
+  world: World,
+  invocation: Call & { args: readonly string[]; log: string },
+  commit: (world: World) => void,
+): Reply {
+  return answered(invocation, () =>
+    call(world, invocation.args, invocation.log, commit),
+  );
+}
+
+export { gh };

@@ -6,9 +6,16 @@
 // pull request. flowCall answers from the world and says whether the call
 // was one of these.
 import { spawnSync } from "node:child_process";
-import fs from "node:fs";
 import process from "node:process";
 import { z } from "zod";
+import {
+  fail,
+  origin,
+  printError,
+  print as printOut,
+  setStatus,
+  stdin,
+} from "./fake-gh-call.ts";
 import type { FakeComment, FakeIssue, World } from "./fake-github-world.ts";
 
 const COMMENTS = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/comments\?/u;
@@ -34,25 +41,16 @@ const MS_PER_SECOND = 1000;
 
 type Pull = NonNullable<World["pulls"]>[number];
 
-function fail(message: string): never {
-  process.stderr.write(`${message}\n`);
-  process.exit(1);
-}
-
 function print(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value)}\n`);
+  printOut(`${JSON.stringify(value)}\n`);
 }
 
-function origin(): string {
-  const { FAKE_GH_ORIGIN: dir } = process.env;
-  if (dir === undefined || dir === "") {
-    return fail("fake gh: FAKE_GH_ORIGIN is not set");
-  }
-  return dir;
+function repositoryOrigin(): string {
+  return origin() ?? fail("fake gh: FAKE_GH_ORIGIN is not set");
 }
 
 function git(args: string[]): { ok: boolean; out: string } {
-  const run = spawnSync("git", ["-C", origin(), ...args], {
+  const run = spawnSync("git", ["-C", repositoryOrigin(), ...args], {
     encoding: "utf8",
     env: {
       ...process.env,
@@ -194,9 +192,8 @@ function gitGet(endpoint: string): boolean {
   if (ref !== undefined) {
     // Signal-only fixtures have no coordination refs. Flow fixtures read
     // their actual Git database; no successful owner is fabricated here.
-    const { FAKE_GH_ORIGIN: source } = process.env;
     if (
-      (source === undefined || source === "") &&
+      origin() === undefined &&
       ref.startsWith("heads/pipeline-coordination/")
     ) {
       return fail("gh: Not Found (HTTP 404)");
@@ -248,7 +245,7 @@ function gitWrite(args: readonly string[]): boolean {
   if (!args.includes("--input")) {
     return false;
   }
-  const input: unknown = JSON.parse(fs.readFileSync(0, "utf8"));
+  const input: unknown = JSON.parse(stdin());
   if (NEW_COMMIT.test(endpoint)) {
     const { message, tree, parents } = COMMIT_INPUT.parse(input);
     const made = git([
@@ -419,9 +416,9 @@ function requiredChecks(world: World, number: string | undefined): boolean {
     ) {
       return fail("fake gh: could not move the PR head during its CI read");
     }
-    process.stdout.write(reply.stdout);
-    process.stderr.write(reply.stderr);
-    process.exitCode = reply.code;
+    printOut(reply.stdout);
+    printError(reply.stderr);
+    setStatus(reply.code);
     return true;
   }
   const { headRefOid } = pullRow(found);
@@ -439,9 +436,9 @@ function requiredChecks(world: World, number: string | undefined): boolean {
   if (
     checks.some((check) => check.bucket === "fail" || check.bucket === "cancel")
   ) {
-    process.exitCode = CHECKS_FAILING;
+    setStatus(CHECKS_FAILING);
   } else if (checks.some((check) => check.bucket === "pending")) {
-    process.exitCode = CHECKS_PENDING;
+    setStatus(CHECKS_PENDING);
   }
   return true;
 }

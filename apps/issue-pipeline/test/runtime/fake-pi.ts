@@ -1,20 +1,23 @@
 // A fake `pi --mode rpc` for the buddy flow tests: no model runs. Each
 // launch takes the next session of the plan in FAKE_PI_PLAN, logs its
 // arguments, prompt, folder and the ISSUE_PIPELINE_LANE_SLOT it inherited
-// to FAKE_PI_LOG and plays the session over pi's RPC stdio. A committing session writes its file in the code checkout and
-// commits it through the real pipeline_commit extension the launch loads
+// to FAKE_PI_LOG and plays the session over pi's RPC stdio. A committing
+// session writes its file in the code checkout and commits it through the
+// real pipeline_commit extension the launch loads
 // (`-e .../pipeline-commit.mjs`), which asks the action's push server to
 // push, and appends the tool's result to FAKE_PI_COMMITS. While it runs, a
 // session can change the fake GitHub world as a person or GitHub would
-// (`change`), write outside any commit (`strayWrite`), and can wait for the
-// runtime's abort instead of replying.
+// (`change`), through the fake GitHub server on FAKE_GH_SOCKET, write
+// outside any commit (`strayWrite`), and can wait for the runtime's abort
+// instead of replying.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
-import { readWorld, writeWorld } from "../signals/fake-github-world.ts";
+import { changeWorld } from "../signals/fake-github-test-kit.ts";
+import type { World } from "../signals/fake-github-world.ts";
 
 const SESSION = z.strictObject({
   commit: z
@@ -158,8 +161,10 @@ async function commitThrough(
 
 // Makes `change` in the world; the human is autumn, the item issue 7.
 function applyChange(change: NonNullable<Session["change"]>): void {
-  const file = env("FAKE_GH_WORLD");
-  const world = readWorld(file);
+  changeWorld(env("FAKE_GH_SOCKET"), (world) => edit(world, change));
+}
+
+function edit(world: World, change: NonNullable<Session["change"]>): void {
   if (change === "posts-fail") {
     world.post = "lost-before-apply";
   } else if (change === "checkpoint-posts-fail") {
@@ -189,7 +194,6 @@ function applyChange(change: NonNullable<Session["change"]>): void {
     });
     world.nextId += 1;
   }
-  writeWorld(file, world);
 }
 
 // Reads commands until the runtime's abort, which settles the session with

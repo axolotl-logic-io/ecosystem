@@ -139,4 +139,4 @@ For a machine result, `requalify` checks that the task lane's `machineSignals` s
 
 ## Tests
 
-The tests in `apps/issue-pipeline/test/signals/` run the inbox in a driver subprocess. A fake `gh` on `PATH` answers from a world file, and the real journal writes to a temporary pipeline root. A test-only resolve hook, `fake-tasks-hook.ts`, replaces `src/tasks/index.ts` with canned task answers. These tests prove the component's transport and rules, not integration with the real task lane.
+The tests in `apps/issue-pipeline/test/signals/` run the inbox in a driver subprocess. A fake `gh` on `PATH` forwards each call to a fake GitHub server that holds a world file, and the real journal writes to a temporary pipeline root. A test-only resolve hook, `fake-tasks-hook.ts`, replaces `src/tasks/index.ts` with canned task answers. These tests prove the component's transport and rules, not integration with the real task lane.

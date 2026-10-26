@@ -14,6 +14,7 @@
 //   refuses an acting test-slot task before it creates any checkout or
 //   environment.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -217,27 +218,28 @@ test("without laneSlots a failed setup starts no session, is not replayed and re
   }
 });
 
-const CHECK_MS = 200;
+// Setup that records its start, then blocks until the test writes the
+// release FIFO.
+const WAITING_SETUP = `${RECORD_SETUP} && read release < "$ISSUE_PIPELINE_ROOT/../release-setup"`;
+// How long the buddy may take to start the setup.
+const SETUP_START_MS = 60_000;
+const STOP_EVENTS = `repos/acme/widgets/issues/${ISSUE}/events`;
 
-// Whether `ready` came to hold, checked every CHECK_MS, at most `tries`
-// times.
-async function until(ready: () => boolean, tries: number): Promise<boolean> {
-  if (ready()) {
-    return true;
-  }
-  if (tries <= 0) {
-    return false;
-  }
-  await new Promise((resolve) => {
-    setTimeout(resolve, CHECK_MS);
-  });
-  return await until(ready, tries - 1);
+// How many label event reads of the issue the buddy has made.
+function stopReads(box: Machine): number {
+  return box
+    .calls()
+    .filter((call) => call.args.some((arg) => arg.startsWith(STOP_EVENTS)))
+    .length;
 }
-const SETUP_START_TRIES = 300;
 
-// Setup that records its start, then waits for the test to release it.
-const WAITING_SETUP = `${RECORD_SETUP} && i=0 && while [ ! -f "$ISSUE_PIPELINE_ROOT/../release-setup" ] && [ $i -lt 600 ]; do sleep 0.2; i=$((i+1)); done`;
-const STOP_SETTLE_MS = 4000;
+// Lets a setup still waiting on `fifo` finish, without waiting for one:
+// opened for reading and writing, the FIFO needs no reader to open.
+function releaseAnySetup(fifo: string): void {
+  const fd = fs.openSync(fifo, "r+");
+  fs.writeSync(fd, "go\n");
+  fs.closeSync(fd);
+}
 
 test("a person's agents:stop during setup starts no session and replays no setup", async () => {
   const box = machine(() => undefined, {
@@ -245,15 +247,20 @@ test("a person's agents:stop during setup starts no session and replays no setup
     laneSlots: 2,
     setup: WAITING_SETUP,
   });
+  const release = path.join(box.root, "release-setup");
+  const made = spawnSync("mkfifo", [release]);
+  assert.equal(made.status, 0, String(made.stderr));
   let passed = false;
   try {
     const running = box.runBuddy([COUNTS], HELD_POLLS);
-    assert.ok(
-      await until(() => commandRuns(box).length === 1, SETUP_START_TRIES),
-    );
+    await box.when(() => commandRuns(box).length === 1, {
+      withinMs: SETUP_START_MS,
+    });
     // The person stops the issue while its setup runs, as fake-pi's
     // stop-issue change does from a session.
+    let readsBefore = 0;
     box.change((world) => {
+      readsBefore = stopReads(box);
       const issue = world.issues.find((item) => item.number === ISSUE);
       assert.ok(issue !== undefined);
       issue.labels.push("agents:stop");
@@ -267,10 +274,11 @@ test("a person's agents:stop during setup starts no session and replays no setup
       });
       world.nextId += 1;
     });
-    await new Promise((resolve) => {
-      setTimeout(resolve, STOP_SETTLE_MS);
-    });
-    fs.writeFileSync(path.join(box.root, "release-setup"), "");
+    // The action's stop watch reads the label events after the stop, and
+    // decides on them before the buddy can notice the setup end.
+    await box.when(() => stopReads(box) > readsBefore);
+    // Opening the FIFO for writing waits for the setup to read it.
+    await fs.promises.writeFile(release, "go\n");
     const { status, actions } = await running;
     assert.equal(status, 0);
     assert.equal(actions.length, 1);
@@ -300,6 +308,7 @@ test("a person's agents:stop during setup starts no session and replays no setup
     });
     passed = true;
   } finally {
+    releaseAnySetup(release);
     keepIfFailed(box, passed);
   }
 });

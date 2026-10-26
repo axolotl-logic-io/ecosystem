@@ -281,13 +281,14 @@ function main(): void {
 }
 
 // The fake's own path, which a shell wrapper named `gh` in `bin` runs with
-// this Node.
+// this Node, caching its compiled code beside `bin`.
 function writeFakeGh(bin: string): void {
   fs.mkdirSync(bin, { recursive: true });
   const wrapper = path.join(bin, "gh");
+  const cache = path.join(path.dirname(bin), "compile-cache");
   fs.writeFileSync(
     wrapper,
-    `#!/bin/sh\nexec "${process.execPath}" "${import.meta.filename}" "$@"\n`,
+    `#!/bin/sh\nNODE_COMPILE_CACHE="${cache}" exec "${process.execPath}" "${import.meta.filename}" "$@"\n`,
   );
   fs.chmodSync(wrapper, EXECUTABLE);
 }

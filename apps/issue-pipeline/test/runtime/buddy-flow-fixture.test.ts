@@ -3,32 +3,15 @@
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import type { BuddyOutcome, Machine } from "./buddy-flow-test-kit.ts";
 import { machine } from "./buddy-flow-test-kit.ts";
 
 const NO_AUTOMATIC_STOP = 9999;
-const START_TIMEOUT_MS = 30_000;
-const CHECK_MS = 100;
-
-async function observedIssueRead(
-  box: Machine,
-  deadline: number,
-  signal: AbortSignal,
-): Promise<boolean> {
-  signal.throwIfAborted();
-  if (
-    box
-      .calls()
-      .some((call) => call.args.some((arg) => arg.includes("/issues?")))
-  ) {
-    return true;
-  }
-  if (Date.now() >= deadline) {
-    return false;
-  }
-  await delay(CHECK_MS, undefined, { signal });
-  return await observedIssueRead(box, deadline, signal);
+// Whether the buddy has read the repository's issues on GitHub.
+function observedIssueRead(box: Machine): boolean {
+  return box
+    .calls()
+    .some((call) => call.args.some((arg) => arg.includes("/issues?")));
 }
 
 test("fixture cancellation stops only its owned public buddy without creating issue authority", async ({
@@ -47,12 +30,8 @@ test("fixture cancellation stops only its owned public buddy without creating is
       undefined,
       AbortSignal.any([signal, stop.signal]),
     );
-    const observed = await observedIssueRead(
-      box,
-      Date.now() + START_TIMEOUT_MS,
-      signal,
-    );
-    assert(observed, "the actual buddy never reached its GitHub issue read");
+    // Fails the test when the buddy never reaches its GitHub issue read.
+    await box.when(() => observedIssueRead(box), { signal });
     stop.abort();
     const run = await running;
     signal.throwIfAborted();

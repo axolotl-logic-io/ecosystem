@@ -79,7 +79,7 @@ function world(): World {
   const fakeGh = path.join(import.meta.dirname, "fake-gh.ts");
   fs.writeFileSync(
     path.join(bin, "gh"),
-    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeGh)} "$@"\n`,
+    `#!/bin/sh\nNODE_COMPILE_CACHE=${JSON.stringify(path.join(directory, "compile-cache"))} exec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeGh)} "$@"\n`,
     { mode: EXECUTABLE },
   );
   const credentials = path.join(directory, "credentials.env");

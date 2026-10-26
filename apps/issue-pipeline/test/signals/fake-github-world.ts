@@ -1,9 +1,9 @@
 // The JSON world file behind the signal tests' fake gh and fake task seam:
 // accounts, one organization's memberships, issues with their labels,
 // label events and comments, injected read faults, the POST outcome and the
-// task lane's answers. Each fake process reads it fresh and writes it back
-// after a comment POST, so state survives across subprocesses as GitHub's
-// would.
+// task lane's answers. The fake GitHub server (fake-gh-server.ts) holds
+// it and writes it back whole after each change, so every process that
+// reads the file sees GitHub's state after some completed call.
 import fs from "node:fs";
 import { z } from "zod";
 
@@ -193,13 +193,23 @@ type FakeEvent = z.infer<typeof EVENT>;
 type FakeComment = z.infer<typeof COMMENT>;
 type TaskAnswers = z.infer<typeof TASK_ANSWERS>;
 
-function readWorld(file: string): World {
-  return WORLD.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+function parseWorld(text: string): World {
+  return WORLD.parse(JSON.parse(text));
 }
 
-function writeWorld(file: string, world: World): void {
-  fs.writeFileSync(file, `${JSON.stringify(WORLD.parse(world), null, 2)}\n`);
+function readWorld(file: string): World {
+  return parseWorld(fs.readFileSync(file, "utf8"));
+}
+
+// Writes `world` to `file` in one step, a reader never seeing it half
+// written, and returns it as written.
+function writeWorld(file: string, world: unknown): World {
+  const parsed = WORLD.parse(world);
+  const next = `${file}.next`;
+  fs.writeFileSync(next, `${JSON.stringify(parsed, null, 2)}\n`);
+  fs.renameSync(next, file);
+  return parsed;
 }
 
 export type { FakeComment, FakeEvent, FakeIssue, TaskAnswers, World };
-export { readWorld, writeWorld };
+export { parseWorld, readWorld, writeWorld };
