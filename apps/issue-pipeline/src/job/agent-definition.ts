@@ -161,7 +161,7 @@ function piArgs(
   spec: { model: string; prompt: { text: string } },
   files: SessionFiles,
 ): string[] {
-  // Pi 1.2.0 keeps explicit RPC authoritative over --print. The latter
+  // Pi 1.4.0 keeps explicit RPC authoritative over --print. The latter
   // selects pi-cliproxyapi 0.4.3's existing cache-only child behavior.
   const args = [
     "--mode",

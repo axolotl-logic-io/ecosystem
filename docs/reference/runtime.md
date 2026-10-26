@@ -4,7 +4,7 @@ This page summarizes the model runtime every session uses: Pi's native sessions 
 
 ## Supported runtime
 
-Every supported model session runs native **Pi 1.2.0** with the **pi-cliproxyapi 0.4.3** provider extension, over Pi's RPC mode. The only supported profile is OpenAI builtin registration through a distinct CLIProxy endpoint, not `api.openai.com`. Any other version, provider or profile refuses to start; there's no fallback.
+Every supported model session runs native **Pi 1.4.0** with the **pi-cliproxyapi 0.4.3** provider extension, over Pi's RPC mode. The only supported profile is OpenAI builtin registration through a distinct CLIProxy endpoint, not `api.openai.com`. Any other version, provider or profile refuses to start; there's no fallback.
 
 - Each session gets a new private `PI_CODING_AGENT_DIR` holding only pipeline-generated settings. Personal settings, models, auth files, packages, extensions, skills, prompt templates and themes aren't copied. Project settings and resource discovery are off.
 - Model children use a dedicated HOME: `runtime.home`, default `$ISSUE_PIPELINE_ROOT/runtime/home`. The job and its operations keep their own HOME.

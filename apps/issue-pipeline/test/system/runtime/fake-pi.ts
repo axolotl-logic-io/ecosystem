@@ -321,7 +321,7 @@ function stateOf(args: readonly string[]): PiState {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] === "--version") {
-    process.stdout.write("1.2.0\n");
+    process.stdout.write("1.4.0\n");
     return;
   }
   const session = nextSession(env("FAKE_PI_PLAN"));
