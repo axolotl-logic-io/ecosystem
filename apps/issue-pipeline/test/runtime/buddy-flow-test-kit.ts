@@ -13,6 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { buildSync } from "esbuild";
 import { z } from "zod";
 import {
   ACTION_RUN,
@@ -445,7 +446,18 @@ function machine(
     fs.mkdirSync(dir);
   }
   install(pipeline, agentDir);
-  writeShim(bin, "gh", FAKE_GH);
+  // Bundle only the fake transport, not tasks, ops, state or Git effects.
+  const gh = path.join(bin, "fake-gh.mjs");
+  buildSync({
+    entryPoints: [FAKE_GH],
+    outfile: gh,
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    target: "node24",
+    logLevel: "silent",
+  });
+  writeShim(bin, "gh", gh);
   writeShim(bin, "pi", FAKE_PI);
   const { origin, work, policy, revision } = repository(root, setup);
   const credentials = path.join(root, "credentials.env");

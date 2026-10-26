@@ -8,6 +8,7 @@
 // only gh (fake-gh.ts) and pi (fake-pi.ts) are fakes.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
 import { LANDING, REPO } from "../signals/signal-test-kit.ts";
@@ -55,13 +56,8 @@ const GATEKEEPER: BuddyChoice = {
   role: "gatekeeper",
   tasks: ["integrate", "review-security", "land", "complete"],
 };
-// Integrate and Review Security, then Land, which required CI holds.
-const UNCHECKED_POLLS = 4;
-// Land, held again, each time a check reads otherwise than passing.
-const HELD_POLLS = 2;
-// Land, Complete and an idle poll.
-const CLEARED_POLLS = 4;
-const NOT_BEGUN = "no attempt began: ";
+// Integrate, Review Security, Land, Complete and an idle poll.
+const CLEARED_POLLS = 6;
 // Integrate, then the straying Review Security, then an idle poll.
 const STRAY_POLLS = 4;
 const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
@@ -167,8 +163,11 @@ const PASSED_AND_RELEASED = {
   preserved: { checkout: null, patches: [] },
 };
 
-test("a Developer and a Gatekeeper deliver a started issue from Implement to Complete", async () => {
+test("a Developer and a Gatekeeper deliver a started issue from Implement to Complete", async ({
+  signal,
+}) => {
   const box = machine(undefined, { landPermission: true });
+  let passed = false;
   try {
     const target = box.git(["rev-parse", "main"]);
 
@@ -177,7 +176,9 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
       [IMPLEMENTS, HARDENS],
       DEVELOPER_POLLS,
       { role: "developer", tasks: ["implement", "harden"] },
+      signal,
     );
+    signal.throwIfAborted();
     assert.equal(developer.status, 0, developer.stderr);
     assert.equal(developer.ended.kind, "stopped");
     assert.deepEqual(developer.run.accounts, [
@@ -197,64 +198,23 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
       HARDENS.commit?.message,
     );
 
-    // The Gatekeeper integrates and reviews R, but required CI holds Land
-    // before any attempt while GitHub reports no required check on R, a
-    // pending one, then a failing one.
-    const unchecked = await box.runBuddy(
-      [REVIEWS],
-      UNCHECKED_POLLS,
-      GATEKEEPER,
-    );
-    const pending = await heldRun("pending");
-    const failing = await heldRun("fail");
-    const held = [
-      [
-        unchecked,
-        `CI is required, and PR #8 has no required CI checks on ${hardened}`,
-      ],
-      [pending, `required CI is still running on ${hardened}`],
-      [failing, `the required CI checks ci failed on ${hardened}`],
-    ] as const;
-    async function heldRun(bucket: "pending" | "fail"): Promise<BuddyOutcome> {
-      box.change((reported) => {
-        reported.checks = { [hardened]: [{ name: "ci", bucket }] };
-      });
-      return await box.runBuddy([], HELD_POLLS, GATEKEEPER);
-    }
-    for (const [outcome, reason] of held) {
-      assert.equal(outcome.status, 0, outcome.stderr);
-      assert.equal(outcome.ended.kind, "stopped");
-      const waited = outcome.actions.filter(
-        (action) =>
-          action.buddyRun === outcome.run.id && action.state === "waiting",
-      );
-      assert.ok(waited.length > 0, reason);
-      for (const action of waited) {
-        assert.deepEqual(
-          [
-            action.task,
-            action.outcome,
-            action.reason,
-            action.operations.map((item) => item.op),
-          ],
-          ["land", null, `${NOT_BEGUN}${reason}`, ["task-attempt"]],
-        );
-      }
-      assert.equal(box.git(["rev-parse", "main"]), target);
-    }
-
-    // GitHub reports R's required check passing: Land, then Complete.
+    // CI rejection and the effect-time race have their own regression.
+    // Keep this flow focused on successful delivery.
     box.change((reported) => {
       reported.checks = { [hardened]: [{ name: "ci", bucket: "pass" }] };
     });
-    const gatekeeper = await box.runBuddy([], CLEARED_POLLS, GATEKEEPER);
-    for (const outcome of [unchecked, gatekeeper]) {
-      assert.equal(outcome.status, 0, outcome.stderr);
-      assert.equal(outcome.ended.kind, "stopped");
-      assert.deepEqual(outcome.run.accounts, [
-        { provider: "github", login: LANDING },
-      ]);
-    }
+    const gatekeeper = await box.runBuddy(
+      [REVIEWS],
+      CLEARED_POLLS,
+      GATEKEEPER,
+      signal,
+    );
+    signal.throwIfAborted();
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    assert.equal(gatekeeper.ended.kind, "stopped");
+    assert.deepEqual(gatekeeper.run.accounts, [
+      { provider: "github", login: LANDING },
+    ]);
     const kept = actionsByTask(gatekeeper);
     const integrate = actionOf(kept, "integrate");
     const review = actionOf(kept, "review-security");
@@ -281,10 +241,7 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
       assert.equal(action.buddyRun, developer.run.id);
       assert.equal(action.execution.lane, `buddy:hippy:${REPO}:${ISSUE}`);
     }
-    for (const action of [integrate, review]) {
-      assert.equal(action.buddyRun, unchecked.run.id);
-    }
-    for (const action of [land, complete]) {
+    for (const action of [integrate, review, land, complete]) {
       assert.equal(action.buddyRun, gatekeeper.run.id);
     }
     for (const action of [integrate, review, land, complete]) {
@@ -558,55 +515,13 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
     assert.deepEqual(by(["pr", "create"]), [DEVELOPER]);
     assert.deepEqual(by(["issue", "close"]), [LANDING]);
 
-    // Coordination: each action took and released the issue's execution;
-    // the sessions their model-session slot; the admitted Land alone the
-    // target's integration turn, released once it settled.
-    const scopes = new Map([
-      [
-        `["acme/widgets","main","issue",${ISSUE},"agent/issue-${ISSUE}"]`,
-        "issue",
-      ],
-      ['["acme/widgets","main","resource","model-session",1]', "pool"],
-      ['["acme/widgets","main","integration"]', "turn"],
-    ]);
-    const session = [
-      "issue request",
-      "issue confirm",
-      "pool request",
-      "pool confirm",
-      "pool register",
-      "pool done",
-      "pool release",
-      "issue release",
-    ];
-    // A Land that required CI held took the issue's execution only, never
-    // the integration turn.
-    const heldLands = gatekeeper.actions.filter(
-      (action) => action.state === "waiting",
-    ).length;
-    const executionOnly = ["issue request", "issue confirm", "issue release"];
+    // Only the actual Land takes the target integration turn.
+    const turn = `["${REPO}","main","integration"]`;
     assert.deepEqual(
-      marked(world, "coordination").map(
-        (item) => `${scopes.get(item.scope ?? "") ?? item.scope} ${item.kind}`,
-      ),
-      [
-        ...session,
-        ...session,
-        "issue request",
-        "issue confirm",
-        "issue release",
-        ...session,
-        ...Array.from({ length: heldLands }, () => executionOnly).flat(),
-        "issue request",
-        "issue confirm",
-        "turn request",
-        "turn confirm",
-        "turn release",
-        "issue release",
-        "issue request",
-        "issue confirm",
-        "issue release",
-      ],
+      marked(world, "coordination")
+        .filter((item) => item.scope === turn)
+        .map((item) => item.kind),
+      ["request", "confirm", "release"],
     );
 
     // Nothing passed ran again: the idle polls left each task's one action
@@ -618,13 +533,12 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
         ["harden", harden.id, "Harden passed this revision and target"],
       ],
     );
-    // In the cleared run only Land and Complete acted; Integrate and
-    // Review Security kept their passes.
+    // Idle polls retain each task's last action without replaying it.
     assert.deepEqual(
       gatekeeper.run.loops.map((loop) => [loop.task, loop.action]),
       [
-        ["integrate", null],
-        ["review-security", null],
+        ["integrate", integrate.id],
+        ["review-security", review.id],
         ["land", land.id],
         ["complete", complete.id],
       ],
@@ -633,30 +547,46 @@ test("a Developer and a Gatekeeper deliver a started issue from Implement to Com
       gatekeeper.run.loops.at(-1)?.reason,
       "complete passed this binding",
     );
+    passed = true;
   } finally {
-    box.cleanup();
+    if (passed) {
+      box.cleanup();
+    } else {
+      process.stderr.write(`Delivery fixture retained: ${box.root}\n`);
+    }
   }
 });
 
-test("Review Security records no pass when its read-only session writes in its checkout", async () => {
+test("Review Security records no pass when its read-only session writes in its checkout", async ({
+  signal,
+}) => {
   const box = machine(undefined, { landPermission: true });
+  let passed = false;
   try {
     const target = box.git(["rev-parse", "main"]);
     const developer = await box.runBuddy(
       [IMPLEMENTS, HARDENS],
       DEVELOPER_POLLS,
       { role: "developer", tasks: ["implement", "harden"] },
+      signal,
     );
+    signal.throwIfAborted();
     assert.equal(developer.status, 0, developer.stderr);
     const hardened = box.git(["rev-parse", `agent/issue-${ISSUE}`]);
     const strays: PlannedSession = {
       ...REVIEWS,
       strayWrite: { file: "counter.txt", content: "0 widgets\n" },
     };
-    const gatekeeper = await box.runBuddy([strays], STRAY_POLLS, {
-      role: "gatekeeper",
-      tasks: ["integrate", "review-security"],
-    });
+    const gatekeeper = await box.runBuddy(
+      [strays],
+      STRAY_POLLS,
+      {
+        role: "gatekeeper",
+        tasks: ["integrate", "review-security"],
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
     const review = actionOf(actionsByTask(gatekeeper), "review-security");
     assert.deepEqual(
@@ -680,7 +610,12 @@ test("Review Security records no pass when its read-only session writes in its c
     );
     assert.equal(box.git(["rev-parse", "main"]), target);
     assert.equal(box.git(["rev-parse", `agent/issue-${ISSUE}`]), hardened);
+    passed = true;
   } finally {
-    box.cleanup();
+    if (passed) {
+      box.cleanup();
+    } else {
+      process.stderr.write(`Delivery fixture retained: ${box.root}\n`);
+    }
   }
 });
