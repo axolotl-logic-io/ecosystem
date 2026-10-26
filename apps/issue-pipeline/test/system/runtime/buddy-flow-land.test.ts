@@ -4,8 +4,10 @@
 // responsible for Land merges the PR with a merge commit pinned to that
 // head and closes the issue, or, when the PR conflicts with its base or
 // doesn't contain it, marks the PR a draft and refuses for Fix. A person's
-// standing request for changes holds it, and a person's approval alone,
-// with no Verify, lands it. The built buddy.mjs runs the real
+// standing request for changes holds it, and a person's approval waits for
+// Verify's pass of the head, so its Security review always runs before the
+// merge. A close that fails after the merge is made once by the Land's
+// recovery. The built buddy.mjs runs the real
 // tasks, ops, ledger and Git; only gh (fake-gh.ts) and pi (fake-pi.ts) are
 // fakes.
 import assert from "node:assert/strict";
@@ -29,9 +31,10 @@ import { HUMAN, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 // The Land acts on the first poll; the second stops the run.
 const LAND_POLLS = 2;
+// The uncertain Land, its recovery, then stop.
+const RECOVERY_POLLS = 3;
 // The review's acceptance, the Land it wakes, then stop.
 const REVIEW_POLLS = 3;
-const REVIEW_SIGNAL = /^github-review:[^#]+#\d+:\d+$/u;
 
 // Required CI passes on `head`.
 function greenCi(box: Machine, head: string): void {
@@ -272,7 +275,7 @@ test("a person's standing request for changes holds an approved Land until they 
   }
 });
 
-test("a qualified person's approval alone, with no Verify, lands the head it approved", async ({
+test("a qualified person's approval waits for Verify's Security review of the head before it lands", async ({
   signal,
 }) => {
   const box = machine(undefined, { landPermission: true });
@@ -285,20 +288,26 @@ test("a qualified person's approval alone, with no Verify, lands the head it app
       review(world, HUMAN, "APPROVED", head);
     });
 
-    const gatekeeper = await box.runBuddy([], REVIEW_POLLS, GATEKEEPER, signal);
+    // No Verify has passed the head, so the approval lands nothing.
+    const held = await box.runBuddy([], REVIEW_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
-    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
-    const [land, ...more] = landsOf(gatekeeper);
-    assert.ok(land !== undefined);
-    assert.deepEqual(more, []);
-    assert.equal(land.verdict, "passed", land.reason ?? "");
-    // The person's accepted review woke it; no Verify result exists.
-    assert.match(land.cause.signal, REVIEW_SIGNAL);
+    assert.equal(held.status, 0, held.stderr);
+    assert.deepEqual(landsOf(held), []);
     assert.equal(
-      JSON.stringify(marked(box.world(), "task-result")).includes(
-        '"task":"verify"',
-      ),
-      false,
+      held.run.loops.find((loop) => loop.task === "land")?.reason,
+      `Verify, and so its Security review, has not passed ${head}`,
+    );
+    assert.deepEqual(callsOf(box, ["pr", "merge"]), []);
+    assert.equal(box.git(["rev-parse", "main"]), target);
+
+    // Verify's pass of the same head wakes the Land.
+    verified(box, head, "passed");
+    const landed = await box.runBuddy([], LAND_POLLS, GATEKEEPER, signal);
+    signal.throwIfAborted();
+    assert.equal(landed.status, 0, landed.stderr);
+    assert.deepEqual(
+      landsOf(landed).map((action) => action.verdict),
+      ["passed"],
     );
     assert.deepEqual(
       box.git(["rev-list", "--parents", "-n", "1", "main"]).split(" ").slice(1),
@@ -307,5 +316,59 @@ test("a qualified person's approval alone, with no Verify, lands the head it app
     passed = true;
   } finally {
     retainOnFailure(box, passed, "Land on a person's approval");
+  }
+});
+
+test("a Land whose issue close fails closes the issue once when it recovers", async ({
+  signal,
+}) => {
+  const box = machine(undefined, { landPermission: true });
+  let passed = false;
+  try {
+    const head = await implemented(box, signal);
+    verified(box, head, "passed");
+    greenCi(box, head);
+    // No closing reference, and GitHub fails Land's own close once.
+    box.change((reported) => {
+      const pull = reported.pulls?.find((item) => item.number === PR);
+      if (pull !== undefined) {
+        pull.body = "Counts the widgets.";
+      }
+      reported.failIssueCloses = 1;
+    });
+
+    const gatekeeper = await box.runBuddy(
+      [],
+      RECOVERY_POLLS,
+      GATEKEEPER,
+      signal,
+    );
+    signal.throwIfAborted();
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const lands = landsOf(gatekeeper);
+    const original = lands.find((action) => action.mode === "act");
+    const reconciler = lands.find((action) => action.mode === "recover");
+    assert.ok(original !== undefined && reconciler !== undefined);
+    assert.equal(lands.length, 2);
+    assert.equal(original.verdict, "unknown");
+    assert.equal(reconciler.verdict, "passed", reconciler.reason ?? "");
+    assert.equal(reconciler.previous, original.id);
+    const merge = box.git(["rev-parse", "main"]);
+    assert.equal(
+      reconciler.reason,
+      `reconciled by ${reconciler.id}: merged PR #${PR} at ${head} as ${merge} and closed #${ISSUE}`,
+    );
+    // One merge; the failed close, then the recovery's one close.
+    assert.equal(callsOf(box, ["pr", "merge"]).length, 1);
+    assert.equal(callsOf(box, ["issue", "close"]).length, 2);
+    const issue = box.world().issues.find((item) => item.number === ISSUE);
+    assert.deepEqual(issue?.closed, { by: LANDING, reason: "completed" });
+    assert.deepEqual(
+      landResults(box).map((result) => result.verdict),
+      ["unknown", "passed"],
+    );
+    passed = true;
+  } finally {
+    retainOnFailure(box, passed, "Land close recovery");
   }
 });

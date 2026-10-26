@@ -1,10 +1,14 @@
 // What Fix answers on its PR, as GitHub reports it now (pr-reviews.ts): the
 // reviews that request changes on exactly the head it fixes, each one's
-// standing, and the blocking threads they opened. A thread whose first
+// standing, and the blocking threads they opened. Only the landing account
+// (Verify) and a qualified person direct Fix (`fix-answers-reviews`): a
+// request from anyone else, or from someone who can't be qualified now,
+// is neither given to the session nor answered. A thread whose first
 // comment starts by calling itself a nit or non-blocking blocks nothing;
 // Verify marks its nits so (`verify-reviews-the-pr`). Fix replies in each
 // blocking thread through the development account, and each reply carries
-// a hidden mark naming its run, so a later read finds what a run answered.
+// a hidden mark naming its run, so a later read finds what a run answered;
+// a mark in anyone else's comment proves nothing.
 
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";
@@ -12,6 +16,7 @@ import { OpsError } from "../ops-error.ts";
 import type { ReviewComment, StandingReview } from "../pr-reviews.ts";
 import { listReviewComments, listReviews, standingOn } from "../pr-reviews.ts";
 import type { Observation } from "../signals/github-source.ts";
+import { qualifyActor } from "../signals/qualification.ts";
 
 const NIT = /^\W*(?:nit|non-blocking)\b/iu;
 
@@ -50,26 +55,46 @@ function whole<T>(observation: Observation<T>, what: string): T {
   throw new OpsError(`${what} can't be read whole: GitHub has none`);
 }
 
-function isRequest(review: StandingReview): boolean {
-  return review.state === "CHANGES_REQUESTED";
+function same(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }
 
-// The requests for changes standing on `head` of PR `pr`, and the blocking
-// threads they opened. A listing that can't be read whole throws.
+// Whether `review` may direct Fix: the landing account's, which is
+// Verify's, or a person's who is an active member of the buddy's
+// organization now.
+function directs(cfg: Config, review: StandingReview): boolean {
+  if (same(review.author.login, cfg.landingAccount)) {
+    return true;
+  }
+  const organization = cfg.buddyAuthorization?.organization;
+  if (organization === undefined) {
+    return false;
+  }
+  const qualified = qualifyActor(cfg, organization, {
+    ...review.author,
+    viaApp: false,
+  });
+  return qualified.status === "qualified";
+}
+
+// The requests for changes standing on `head` of PR `pr` that may direct
+// Fix, and the blocking threads they opened. A listing that can't be read
+// whole throws.
 function requestsOn(cfg: Config, pr: number, head: string): Requests {
   const reviews = whole(listReviews(cfg, pr), `PR #${pr}'s reviews`);
   const comments = whole(
     listReviewComments(cfg, pr),
     `PR #${pr}'s review comments`,
   );
-  const standing = standingOn(reviews, head).filter(isRequest);
+  const standing = standingOn(reviews, head).filter(
+    (review) => review.state === "CHANGES_REQUESTED" && directs(cfg, review),
+  );
   const ids = new Set(standing.map((review) => review.id));
-  const landing = cfg.landingAccount.toLowerCase();
   return {
     requests: standing.map((review) => ({
       id: review.id,
       author: review.author.login,
-      landing: review.author.login.toLowerCase() === landing,
+      landing: same(review.author.login, cfg.landingAccount),
       body: review.body,
     })),
     threads: comments
@@ -95,15 +120,21 @@ function replyMark(run: string): string {
   return `<!-- issue-pipeline:fix-reply run=${run} -->`;
 }
 
-// Whether run `run` already replied in `thread`.
+// Whether run `run` already replied in `thread`: a reply of the development
+// account's that carries the run's mark.
 function answeredBy(
+  cfg: Config,
   requests: Requests,
   thread: BlockingThread,
   run: string,
 ): boolean {
   const mark = replyMark(run);
   return requests.comments.some(
-    (comment) => comment.inReplyTo === thread.id && comment.body.includes(mark),
+    (comment) =>
+      comment.inReplyTo === thread.id &&
+      comment.author !== null &&
+      same(comment.author.login, cfg.devAccount) &&
+      comment.body.includes(mark),
   );
 }
 

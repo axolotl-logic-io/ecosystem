@@ -6,15 +6,15 @@ Land delivers an approved PR head onto the configured base. It merges the item's
 
 ## Land prerequisites
 
-Land binds the item PR's current head as its revision, together with the trusted inputs, the policy and the observed base. It may act only when all five of these hold for that head:
+Land binds the item PR's current head as its revision, together with the trusted inputs, the policy and the observed base. It needs a passed Verify of that head whoever approves it, because Verify runs the Security review, and [security-before-merge](../decisions/delivery.md#security-before-merge) still holds. It may then act only when all five of these hold for that head:
 
-1. An approving review from the landing account, which is a passed Verify, or from a qualified person.
+1. An approving review from the landing account, which is that passed Verify, or from a qualified person.
 2. No request-changes review from either that still stands on the head.
 3. A head that contains the base branch, so GitHub reports the PR as mergeable.
 4. Green required CI on exactly that head.
 5. The trusted repository's explicit `permissions.land` grant.
 
-A qualified person is an active member of the configured organization, as the [signals reference](signals.md#who-may-apply-a-control-label) defines it. A review stands on a head only when it was submitted against that head's commit. A review of an earlier head never counts.
+A qualified person is an active member of the configured organization, as the [signals reference](signals.md#who-may-apply-a-control-label) defines it. A review stands on a head only when it was submitted against that head's commit. A review of an earlier head never counts. A person's approval of a head that Verify hasn't passed yet waits, and Verify's pass then wakes Land.
 
 A pass is evidence, not permission. The Gatekeeper buddy must also have the right scope, responsibility, account and lander profile. Ownership, the action's cause, stop evidence and write fences are checked again at the merge itself. Absent, pending, failed or unreadable required CI can't authorize Land.
 
@@ -56,12 +56,12 @@ A conflict doesn't spend Verify's loop limit. Fix rounds that Land caused don't 
 
 ## Uncertain effects
 
-Read-only recovery, the `land-reconcile` operation, settles the original attempt, with its original identity and binding. It reads the PR's merged state and the issue's state. It never merges or closes twice.
+Recovery, the `land-reconcile` operation, settles the original attempt, with its original identity and binding. It reads the PR's merged state and the issue's state. It never merges or marks a draft. When the PR merged at the checked head but the issue still reads open, for example because the original close failed, it closes the issue itself, once. Nothing is ever merged or closed twice.
 
 | PR | Issue | Settlement |
 |---|---|---|
 | Merged at the checked head | Closed | Passed |
-| Merged at the checked head | Open | Unknown; hold until a person closes the issue, because recovery never closes it itself |
+| Merged at the checked head | Open | Recovery closes the issue, then passed; unknown if it still can't read the issue closed |
 | An open draft at the checked head | Any state | Refused, with conflict evidence for Fix |
 | Open and not a draft, closed without a merge, merged at another head, or no PR | Any state | Failed; this run merged nothing |
 | Unreadable | Any state | Unknown; retain the turn |

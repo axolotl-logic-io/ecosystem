@@ -678,6 +678,9 @@ function threadReply(
   if (answered === undefined || body === undefined) {
     return fail("gh: Not Found (HTTP 404)");
   }
+  if (world.refuseRepliesBy === login) {
+    return fail("gh: Validation Failed (HTTP 422)");
+  }
   found.reviewComments ??= [];
   found.reviewComments.push({
     ...answered,

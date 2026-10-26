@@ -514,6 +514,26 @@ function post(
   }
 }
 
+// Fails `gh issue close` with a 502 before it applies while the world has
+// closes left to fail, spending one.
+function failIssueClose(
+  world: World,
+  args: readonly string[],
+  commit: (world: World) => void,
+): void {
+  const failing = world.failIssueCloses;
+  if (args[0] !== "issue" || args[1] !== "close" || failing === undefined) {
+    return;
+  }
+  if (failing > 1) {
+    world.failIssueCloses = failing - 1;
+  } else {
+    Reflect.deleteProperty(world, "failIssueCloses");
+  }
+  commit(world);
+  fail("gh: HTTP 502: Bad Gateway");
+}
+
 function call(
   world: World,
   args: readonly string[],
@@ -525,6 +545,7 @@ function call(
     log,
     `${JSON.stringify({ login: login(world), args: shown })}\n`,
   );
+  failIssueClose(world, args, commit);
   const flow = flowCall(world, args, login(world));
   if (flow.handled) {
     if (flow.changed) {

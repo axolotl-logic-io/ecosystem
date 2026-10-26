@@ -52,11 +52,11 @@ Before removing an owned checkout, preserve staged and working changes as indepe
 
 ## Land through the PR
 
-Land merges the item's PR with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both. It needs an approval standing on the current head, from Verify or a qualified person, and no standing request for changes. The head must contain the base, required CI must be green on it, and the trusted repository must grant `permissions.land`.
+Land merges the item's PR with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both. It needs a passed Verify of the current head, so the Security review always runs first, an approval standing on that head, from Verify or a qualified person, and no standing request for changes. The head must contain the base, required CI must be green on it, and the trusted repository must grant `permissions.land`.
 
 The landing account merges with `gh pr merge PR --merge --match-head-commit HEAD`, so GitHub refuses the merge if the head moved. There is no squash, rebase, direct base push or admin bypass. A conflicting PR isn't merged: Land marks it a draft and records why, and Fix becomes ready. To stop the base moving between Land's checks and its merge, require branches to be up to date before merging on the base.
 
-Before the merge, the authenticated attempt records Land's intent. A lost acknowledgement doesn't permit another merge. Read-only reconciliation reads the PR's merged state and the issue's state, and never merges or closes twice. No suite, code repair or second Land runs after Land. See [Land](../../docs/reference/merge.md).
+Before the merge, the authenticated attempt records Land's intent. A lost acknowledgement doesn't permit another merge. Reconciliation reads the PR's merged state and the issue's state. It closes an issue that a merged PR left open, and never merges or closes twice. No suite, code repair or second Land runs after Land. See [Land](../../docs/reference/merge.md).
 
 External actors can still change PRs, inputs, permissions and refs. These guards are not an atomic transaction over GitHub and Git, an operating-system sandbox or permission to deploy a repository whose source base is named `main`.
 

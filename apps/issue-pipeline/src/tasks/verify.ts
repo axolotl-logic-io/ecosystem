@@ -6,7 +6,8 @@
 // finding always blocks. It binds a revision: the item PR's head. It becomes
 // ready for a head with no Verify result, once the Implement or Fix result
 // that produced that head wakes it, or for a `start:verify` naming exactly
-// that head. Its result mirrors its review (domain.ts VERIFY_EVIDENCE):
+// that head, which also retries a run of that head that failed to judge
+// it. Its result mirrors its review (domain.ts VERIFY_EVIDENCE):
 // passed for an approval, refused for a request for changes, failed when it
 // could not judge. It never writes code.
 //
@@ -27,11 +28,13 @@ import type {
   RevisionBinding,
   TaskView,
 } from "../domain.ts";
-import { isRevisionBinding } from "../domain.ts";
+import { isRevisionBinding, sameBinding } from "../domain.ts";
 import { gitIn } from "../git-state.ts";
 import { ciUnsettled } from "../ops/verify-ci.ts";
 import {
   currentBinding,
+  held,
+  latestRun,
   runReadiness,
   unsettledRun,
   waiting,
@@ -39,6 +42,7 @@ import {
 import { effectEnd, recoverEnd } from "./effect.ts";
 import type { TaskModule } from "./module.ts";
 import { notCurrent } from "./module.ts";
+import { TASK_ATTEMPTS } from "./records.ts";
 import { sensed } from "./sensing.ts";
 import { sessionTask } from "./session-task.ts";
 import type { TaskEvidence } from "./view.ts";
@@ -90,6 +94,34 @@ function producedHead(
   );
 }
 
+// The readiness a person's `start:verify` gives `binding`: a new attempt
+// after a run that failed to judge the head, within the binding's attempt
+// budget, since the person asked for that head again; otherwise the
+// binding's own readiness. A start never repeats a review: a passed or
+// refused run stands.
+function startReadiness(
+  signal: QualifiedSignal,
+  view: TaskView,
+  binding: RevisionBinding,
+): Readiness {
+  const latest = latestRun(view, binding);
+  if (latest?.verdict !== "failed" || latest.cause.signal === signal.id) {
+    return runReadiness(view, binding, true);
+  }
+  const runs = new Set(
+    view.results
+      .filter((result) => result.binding.task === "verify")
+      .filter((result) => sameBinding(result.binding, binding))
+      .map((result) => result.run.id),
+  );
+  if (runs.size >= TASK_ATTEMPTS) {
+    return held(
+      `Verify ran ${binding.revision.code} ${String(runs.size)} times, its binding's ${String(TASK_ATTEMPTS)} attempts`,
+    );
+  }
+  return { state: "ready", binding };
+}
+
 function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   const shared = sensed(signal, view, signal.kind);
   if (shared !== undefined) {
@@ -109,7 +141,7 @@ function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
         `start ${signal.id} names head ${signal.head}, which is no longer the PR's head; a new start is needed`,
       );
     }
-    return runReadiness(view, binding, true);
+    return startReadiness(signal, view, binding);
   }
   if (binding === null || !producedHead(signal, view, binding)) {
     return null;

@@ -17,7 +17,7 @@
 //   review it already submitted, and never submits a second one.
 // - A person's push gets no Verify from Implement's result, which names the
 //   older head; a person's start:verify reviews the head it was accepted
-//   for.
+//   for, and retries a Verify that failed to judge that head.
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";
@@ -653,6 +653,57 @@ test("a person's start:verify reviews the head they pushed, which Implement's re
     assert.match(verify.cause.signal, START_SIGNAL);
     assert.ok("revision" in verify.binding);
     assert.equal(verify.binding.revision.code, head);
+    const [review, ...others] = pullOf(box.world()).reviews ?? [];
+    assert.deepEqual(others, []);
+    assert.deepEqual(
+      [review?.author, review?.state, review?.commitId],
+      [LANDING, "APPROVED", head],
+    );
+    passed = true;
+  } finally {
+    finish(box, passed);
+  }
+});
+
+test("a person's start:verify retries a Verify that failed to judge the head", async ({
+  signal,
+}) => {
+  const { box, head } = await implemented("pass", signal);
+  let passed = false;
+  try {
+    const strays: PlannedSession = {
+      ...reviewOf([]),
+      strayWrite: { file: "counter.txt", content: "0 widgets\n" },
+    };
+    const failing = await box.runBuddy(
+      [strays],
+      GATEKEEPER_POLLS,
+      { role: "gatekeeper", tasks: ["verify"] },
+      signal,
+    );
+    signal.throwIfAborted();
+    assert.equal(failing.status, 0, failing.stderr);
+    const failed = onlyVerify(failing);
+    assert.equal(failed.verdict, "failed");
+
+    applyLabel(box, "start:verify");
+    const gatekeeper = await box.runBuddy(
+      [reviewOf([])],
+      START_POLLS,
+      { role: "gatekeeper", tasks: ["verify"] },
+      signal,
+    );
+    signal.throwIfAborted();
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const verify = onlyVerify(gatekeeper);
+    // A second attempt of the same binding, following the failed one.
+    assert.deepEqual(
+      [verify.mode, verify.verdict, verify.previous],
+      ["act", "passed", failed.id],
+      verify.reason ?? "",
+    );
+    assert.match(verify.cause.signal, START_SIGNAL);
+    assert.deepEqual(verify.binding, failed.binding);
     const [review, ...others] = pullOf(box.world()).reviews ?? [];
     assert.deepEqual(others, []);
     assert.deepEqual(

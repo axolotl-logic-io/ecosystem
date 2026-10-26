@@ -64,7 +64,7 @@ A Security finding always blocks, as [security-before-merge](../decisions/delive
 
 The result's evidence records the submitted review, the counts of blocking findings and nits, and whether a Security finding was among them. See [Verify and Land evidence](task-results.md#verify-and-land-evidence).
 
-A Verify result binds one head. A new head, from Fix or from a person's push, has no Verify result, so Verify becomes ready again. A passed Verify doesn't rerun for the same head.
+A Verify result binds one head. A new head, from Fix or from a person's push, has no Verify result, so Verify becomes ready again. A passed or refused Verify doesn't rerun for the same head. A Verify that failed to judge the head, for example because CI turned pending, isn't retried automatically. A new `start:verify` for that head retries it, up to the binding's three attempts.
 
 ## Fix
 
@@ -85,7 +85,7 @@ Fix's session is an `issue-pipeline-developer` session in phase `fix`, using the
 
 The session stages its resolution and concludes the merge with one [pipeline_commit](sessions.md#pipeline_commit). Fix's finish step then checks the checkout is clean, has no conflict markers and contains both the old head and the base. It pushes through the development account and replies on each blocking thread through the same account. If Land had marked the PR as a draft, Fix marks it ready for review after its push.
 
-A blocking thread is the first comment of a request-changes review that still stands on the head. Fix also gives the session each such review's body, but GitHub has no thread to reply to there, so a finding in the body gets a code change and no reply.
+A blocking thread is the first comment of a request-changes review that still stands on the head. Fix also gives the session each such review's body, but GitHub has no thread to reply to there, so a finding in the body gets a code change and no reply. Only the landing account's reviews, which are Verify's, and a qualified person's direct Fix. Fix checks the reviewer's membership again when it reads the reviews. A request from anyone else, or from someone whose membership can't be read, is neither given to the session nor answered.
 
 Fix's passed result names the new head as the code it produced. Every earlier review and result was for the old head, so Verify becomes ready for the new one.
 
@@ -104,10 +104,10 @@ Read-only reconciliation settles an interrupted Fix from the remote branch, the 
 | What it reads | Verdict |
 |---|---|
 | The branch is still at the bound head | `failed` |
-| A new head that descends from the bound head and contains the base, a reply from this run on every blocking thread, and a PR that isn't a draft | `passed` |
+| A new head that descends from the bound head and contains the base, shown pushed by this run, a reply from this run on every blocking thread, and a PR that isn't a draft | `passed` |
 | Anything else | `unknown`, held for a person |
 
-The thread replies are the only read-only proof that the finish step completed. A Fix with no blocking threads therefore always holds for a person in recovery. Unpublished merged work stays held for explicit recovery rather than reset to the remote branch.
+Two things show that this run pushed the head. The finish step records the head it pushes, and the run, in the issue's run folder before it pushes, so a matching record on this machine shows it. A reply from this run on a blocking thread shows it too. Only the development account's replies count, because anyone who can comment could copy a run's hidden mark. A Fix with no blocking threads therefore recovers from its push record, and holds for a person when that record is missing. Unpublished merged work stays held for explicit recovery rather than reset to the remote branch.
 
 ## Loop limit
 

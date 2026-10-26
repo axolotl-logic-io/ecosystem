@@ -205,6 +205,11 @@ const WORLD = z.strictObject({
   // Whether the base branch requires a PR's head to contain it before a
   // merge, as GitHub's "require branches to be up to date" protection does.
   requireUpToDate: z.boolean().optional(),
+  // How many of the next `gh issue close` calls fail with a 502 before they
+  // apply, as a transient GitHub outage would.
+  failIssueCloses: z.number().int().positive().optional(),
+  // The login whose PR thread replies GitHub refuses (HTTP 422).
+  refuseRepliesBy: z.string().optional(),
   // The required checks GitHub reports on each head commit, as GitHub
   // Actions or another CI posts them (`gh pr checks --required`).
   checks: z

@@ -16,13 +16,14 @@
 //                  evidence and pushes nothing.
 //   fix-reconcile  settles an unsettled Fix as its original run from reads
 //                  alone; never merges, pushes, replies or marks ready:
-//       the branch at a new head from R containing T, pushed by fix-finish,
+//       the branch at a new head from R containing T, shown pushed by this
+//       run (its own push record on this machine, or its thread replies),
 //       every blocking thread answered by the run and the PR ready → passed
 //       the branch still at R → failed
 //       anything else → held (unknown)
 
 import { z } from "zod";
-import { pushHead } from "../checkouts.ts";
+import { lastPush, pushHead } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { isRevisionBinding } from "../domain.ts";
@@ -330,7 +331,7 @@ function delivered(
 ): string | EffectOutcome {
   const { cfg, number, attempt } = fix.open;
   const local = head(fix.wt);
-  pushHead(cfg, number, FINISH_OP);
+  pushHead(cfg, number, FINISH_OP, attempt.run.id);
   const remote = remoteHead(cfg, number);
   if (remote !== local) {
     return {
@@ -341,7 +342,10 @@ function delivered(
   const requests = requestsOn(cfg, pr, fix.from);
   for (const thread of requests.threads) {
     const text = answers.get(thread.id);
-    if (text !== undefined && !answeredBy(requests, thread, attempt.run.id)) {
+    if (
+      text !== undefined &&
+      !answeredBy(cfg, requests, thread, attempt.run.id)
+    ) {
       replyIn(cfg, pr, thread, { run: attempt.run.id, head: local, text });
     }
   }
@@ -398,8 +402,21 @@ function held(reason: string): EffectOutcome {
   return { verdict: "unknown", reason: `${reason}; a person reconciles it` };
 }
 
-// A run's replies are the read-only proof that fix-finish got past its
-// push: without a blocking thread to show them, a moved branch holds.
+// Whether the run's own push left the branch at `remote`: fix-finish
+// records the head it pushes, and its run, before it pushes.
+function pushedByRun(fix: FixRun, remote: string): boolean {
+  const { cfg, number, attempt } = fix.open;
+  const pushed = lastPush(cfg, number);
+  return (
+    pushed !== null &&
+    pushed.op === FINISH_OP &&
+    pushed.run === attempt.run.id &&
+    pushed.sha === remote
+  );
+}
+
+// The run's push record, or else its replies, are the read-only proof that
+// fix-finish got past its push; with neither, a moved branch holds.
 function reconciled(fix: FixRun): EffectOutcome {
   const { cfg, number, evidence, attempt } = fix.open;
   const remote = evidence.view.revision?.code ?? null;
@@ -421,15 +438,15 @@ function reconciled(fix: FixRun): EffectOutcome {
   }
   const requests = requestsOn(cfg, pr, fix.from);
   const answered = requests.threads.filter((thread) =>
-    answeredBy(requests, thread, attempt.run.id),
+    answeredBy(cfg, requests, thread, attempt.run.id),
   );
   if (
-    answered.length === 0 ||
+    !(answered.length > 0 || pushedByRun(fix, remote)) ||
     answered.length !== requests.threads.length ||
     pullRequest(cfg, number, pr).draft
   ) {
     return held(
-      `the branch moved to ${remote}, but this run's thread replies or the PR's ready state don't show fix-finish completed`,
+      `the branch moved to ${remote}, but this run's push record, thread replies or the PR's ready state don't show fix-finish completed`,
     );
   }
   return {

@@ -10,8 +10,11 @@
 //                   refusing the merge because the base moved goes to Fix
 //                   the same way.
 //   land-reconcile  settles an unsettled Land as its original run from
-//                   reads of the PR and the issue alone. It never merges,
-//                   marks a draft or closes.
+//                   reads of the PR and the issue. It never merges or marks
+//                   a draft. When the PR merged at the checked head but the
+//                   issue still reads open, as when the original close
+//                   failed, it closes the issue, once: nothing is ever
+//                   merged or closed twice.
 //
 // One result covers the merge and the close: passed only once GitHub reads
 // the PR merged at exactly the checked head and the issue closed, with the
@@ -177,8 +180,8 @@ function refusedMerge(run: OpenRun, pr: number, stderr: string): Settlement {
   return failed(`nothing merged: GitHub refused to merge PR #${pr}: ${why}`);
 }
 
-// Closes the issue of a merged PR, unless GitHub already closed it for the
-// PR's closing reference.
+// Closes the issue of a merged PR, unless it no longer reads open: GitHub
+// closed it for the PR's closing reference, or an earlier close landed.
 function closeIssue(run: OpenRun, pr: PullRequest): void {
   const { cfg, number } = run;
   if (issueState(cfg, number) !== "open") {
@@ -253,9 +256,10 @@ function landTask(cfg: Config, request: unknown): EffectOutcome {
   return settlement.outcome;
 }
 
-// The original run's outcome from reads alone: a PR merged at its head with
-// the issue closed passed; a draft at its head was its conflict; an open PR
-// otherwise, or a closed one, merged nothing.
+// The original run's outcome from reads: a PR merged at its head passed
+// once the issue reads closed, closing it first if it still reads open; a
+// draft at its head was its conflict; an open PR otherwise, or a closed
+// one, merged nothing.
 function reconciled(run: OpenRun): Settlement {
   const head = headOf(run);
   const pr = historicalPrFor(run.cfg, run.number);
@@ -264,6 +268,9 @@ function reconciled(run: OpenRun): Settlement {
   }
   const now = pullRequest(run.cfg, run.number, pr);
   if (now.state === "MERGED") {
+    if (now.headSha === head && now.mergeCommit !== null) {
+      closeIssue(run, now);
+    }
     return mergedSettlement(run, now, head);
   }
   const drafted = draftSettlement(now, head, {

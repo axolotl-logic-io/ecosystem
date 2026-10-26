@@ -71,8 +71,7 @@
         "src/runtime/action.ts",
         "src/runtime/buddy-config.ts",
         "src/runtime/observations.ts",
-        "src/runtime/stop.ts",
-        "src/report.ts"
+        "src/runtime/stop.ts"
       ],
       "linter": {
         "rules": {

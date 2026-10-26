@@ -1,7 +1,8 @@
 // Land: the Gatekeeper's merge of the item's PR at the exact head it
 // checked (docs/decisions/pr-review.md `land-merges-the-pr`). It binds the
 // current revision R, the PR's head, on target T, and needs all of these on
-// R: an approval from the landing account (a passed Verify of R) or from a
+// R: a passed Verify of R, whose Security review must pass before any
+// merge, an approval from the landing account (that Verify) or from a
 // qualified person, no request for changes from either, a PR GitHub reports
 // mergeable whose head contains T, green required CI, and the trusted
 // repository grant (`permissions.land`). An approved PR that conflicts with
@@ -9,8 +10,8 @@
 // records why. It takes the target's integration turn before its attempt
 // is recorded and keeps it while the run is unsettled. A pass is never
 // permission: every check is made again in the ops child
-// (ops/land-task.ts). An unsettled run is reconciled read-only, and never
-// merged or closed again.
+// (ops/land-task.ts). An unsettled run is reconciled from reads, never
+// merged again, and its issue closed only if a merged PR left it open.
 
 import type { Config } from "../config.ts";
 import type {
@@ -70,8 +71,9 @@ function verifyOn(view: TaskView, revision: Revision): TaskResult | undefined {
 }
 
 // Land wakes on the approval itself: a passed Verify's result of R, or a
-// person's approving review of R. Any signal of the item lets its own
-// unsettled run recover.
+// person's approving review of R once Verify passed R. A person's approval
+// before Verify passed waits for Verify's result. Any signal of the item
+// lets its own unsettled run recover.
 function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   const shared = sensed(signal, view, signal.kind);
   if (shared !== undefined) {
@@ -90,7 +92,12 @@ function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   }
   const { code } = binding.revision;
   const verify = verifyOn(view, binding.revision);
-  if (verify?.verdict === "refused") {
+  if (verify === undefined) {
+    return waiting(
+      `Verify, and so its Security review, has not passed ${code}`,
+    );
+  }
+  if (verify.verdict === "refused") {
     return waiting(`Verify requested changes on ${code}`);
   }
   if (signal.kind === "review") {
@@ -103,9 +110,6 @@ function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
       );
     }
     return runReadiness(view, binding, true);
-  }
-  if (verify === undefined) {
-    return waiting(`no approval stands on ${code}`);
   }
   if (signal.kind !== "result" || signal.recordId !== verify.recordId) {
     return null;

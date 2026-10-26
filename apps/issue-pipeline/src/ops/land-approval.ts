@@ -1,8 +1,10 @@
 // Whether a PR head is approved for Land, read fresh from GitHub
-// (docs/decisions/pr-review.md `land-merges-the-pr`). The head needs an
-// approval that still stands on it, from the landing account through a
-// passed Verify of the revision or from a qualified person, and no request
-// for changes from either. The landing account's approval counts only as
+// (docs/decisions/pr-review.md `land-merges-the-pr`). The head needs a
+// passed Verify of the revision, whatever approves it, since its Security
+// review must pass before the merge (`verify-reviews-the-pr`,
+// security-before-merge). It then needs an approval that still stands on
+// it, from the landing account through that Verify or from a qualified
+// person, and no request for changes from either. The landing account's approval counts only as
 // the very review its passed Verify result submitted. A person's review
 // counts only while they are a person and an active member of the buddy's
 // organization, qualified now; one whose request for changes can't be
@@ -26,7 +28,13 @@ function landingVerdict(
   verify: TaskResult | undefined,
   landing: StandingReview | undefined,
 ): { blocked: string | null; approves: boolean } {
-  if (verify?.verdict === "refused") {
+  if (verify === undefined) {
+    return {
+      blocked: `Verify, and so its Security review, has not passed ${head}`,
+      approves: false,
+    };
+  }
+  if (verify.verdict === "refused") {
     return { blocked: `Verify requested changes on ${head}`, approves: false };
   }
   if (landing?.state === "CHANGES_REQUESTED") {
@@ -35,7 +43,7 @@ function landingVerdict(
       approves: false,
     };
   }
-  if (verify?.verdict !== "passed" || landing === undefined) {
+  if (verify.verdict !== "passed" || landing === undefined) {
     return { blocked: null, approves: false };
   }
   const evidence = VERIFY_EVIDENCE.safeParse(verify.receipt.evidence);
