@@ -1,81 +1,132 @@
 # Checkouts
 
-This page describes where the pipeline keeps clones, job checkouts and run files, what a job saves when it ends, and how commands are cleaned up. The rules are in [operations decisions](../decisions/operations.md#worktrees-and-branches).
+This page describes where the pipeline keeps clones, action checkouts and run files, what an action preserves when it ends, and how test environments and commands are cleaned up. The rules are in [operations decisions](../decisions/operations.md#worktrees-and-branches).
 
 ## Layout
 
-Everything lives under `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`). `SLUG` is the repository's config slug and `N` the issue number.
+Everything lives under `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`). In the paths below:
+
+- `SLUG` is the configured `repo` with `/` replaced by `__`.
+- `N` is the issue number.
+- `ACTION_ID` is the action run's UUID.
+- `KEY` is a session's launch key, such as `developer-1`.
 
 | Path | Holds |
 |---|---|
-| `clones/SLUG` | The repository's metadata clone |
-| `work/SLUG/mirror.git` | A bare mirror that job checkouts clone from |
-| `work/SLUG/jobs/issue-N-STAGE/` | One job's folder; every session runs here, and the code checkout is `repo/` |
-| `runs/SLUG/issue-N/job.log` | The issue's job log |
-| `runs/SLUG/issue-N/job.json` | The current job's status, launches, prompt provenance and runtime policy |
-| `runs/SLUG/issue-N/sessions/KEY.jsonl` | Each session's transcript |
-| `runs/SLUG/issue-N/context.jsonl`, `jobs.jsonl`, `pushes.jsonl` | Session context records, job records and the pipeline's own pushes |
-| `runs/SLUG/issue-N/dropped/` | Recovery patches, manifests and bundles |
+| `clones/SLUG` | The metadata clone, detached at the base branch |
+| `work/SLUG/mirror.git` | The bare mirror that action checkouts clone from |
+| `work/SLUG/jobs/issue-N-action-ACTION_ID/` | One action's folder; its model sessions run here, and its code checkout is `repo/` |
+| `runs/SLUG/lane-slots.json` | Local lane-slot ownership and setup barriers |
+| `runs/SLUG/issue-N/actions/ACTION_ID/run.json` | The [action run observation](runtime-runs.md#action-run) |
+| `runs/SLUG/issue-N/actions/ACTION_ID/sessions/KEY.jsonl` | Each model session's transcript |
+| `runs/SLUG/issue-N/actions/ACTION_ID/context.jsonl` | Bounded measures of each ended session |
+| `runs/SLUG/issue-N/dropped/` | Uncommitted-change patches and their manifests |
+| `runs/SLUG/issue-N/recovery/` | Verified code bundles and Sync recovery folders |
+| `runs/SLUG/issue-N/setup-ACTION_ID.started`, `setup-ACTION_ID.log` | An action's setup start marker and setup log |
+| `runs/SLUG/issue-N/integrate-*/` | Integrate's detached check checkout, kept only when it must be retained |
+| `runs/SLUG/issue-N/verify-*/` | Check command logs, one folder per checked commit |
+| `runs/SLUG/issue-N/pushes.jsonl`, `pushed.json` | The pipeline's own pushes |
+| `runs/SLUG/issue-N/coordination-uncertain.json` | The journal of an uncertain coordination write |
 | `runs/SLUG/issue-N/stop-recovery/` | Stop reconciliation evidence (see [stops and labels](stops-and-labels.md)) |
 
-`clones/`, `work/` and `runs/` are local caches and recovery evidence, not authority. Keep them, and any saved patches, through upgrades until preserved work is confirmed safe.
+The `jobs` folder and the `issue-N-` prefix are installed technical names. Each folder belongs to exactly one action run, so a later action never reuses a retained folder. The action runtime writes no `job.json` or `job.log`; any such file is historical evidence.
 
-## What a job saves when it ends
+`clones/`, `work/` and `runs/` are local caches and recovery evidence, not authority. Keep them through upgrades until preserved work is confirmed safe.
 
-On every exit, a job closes its checkout before removing it:
+## Preservation when an action ends
 
-- Uncommitted changes are saved as binary-safe patches of the index and the working tree, `dropped/KEY-repo.patch`. Each applies on its recorded base. A separate index is used, so a failed save leaves files, staging and HEAD as they were.
-- Local commits the remote lacks are saved in a verified, self-contained Git bundle.
-- A job-keyed manifest records the branch, the stage's outcome and reason, the checkouts, the snapshot kinds and their bases.
-- `job.json` records the dropped paths and the patches, and `job.log` names them.
-- A stopped run posts one keyed comment on the issue saying patches were saved, naming the job key but never a local path.
+After it records the task's end, the runtime closes the action's checkout. It keeps the whole checkout, unchanged, when any of these holds:
 
-If any of that can't be saved, the checkout is kept instead of removed, and a restart refuses to overwrite it. Existing evidence is never overwritten.
+- A checkpoint is uncertain.
+- A rebase is in progress.
+- Checkout preparation started and did not complete.
 
-Nothing applies saved evidence automatically. A later hardening session on the same issue and branch is told where matching Review recovery evidence is, and incorporates useful edits within its current scope. A bundle left after a successful push is inert.
+Otherwise it saves the checkout's work before removing it:
+
+- Staged changes go to `dropped/ACTION_ID-repo.patch.index.patch`. The whole working tree, including untracked files that Git doesn't ignore, goes to `dropped/ACTION_ID-repo.patch`. Each patch is binary-safe, names its base commit and applies with `git apply --index` on that base. The pipeline prepares both from a copy of the index, so saving changes nothing in the checkout.
+- A manifest, `dropped/ACTION_ID.json`, records the repository, issue, branch, action, task, outcome, reason, and each snapshot's kind and base. It is written only when there is a patch.
+- Commits that no remote branch holds go to a verified, self-contained bundle, `recovery/ACTION_ID-code.bundle`. If the remote can't be read, the pipeline bundles the commits anyway.
+
+Only then does it reset and remove the checkout and release its lane slot. Closing a checkout pushes nothing. Each artifact is created exclusively, so existing evidence is never overwritten. An unmerged index, a failed save or a failed removal guard keeps the checkout; any patches already saved stay as well.
+
+The action run observation records a kept checkout in `preserved.checkout` and the saved patches in `preserved.patches`. Nothing applies, replays or pushes saved evidence, and no later session is told about it.
+
+The runtime releases the issue's execution only when nothing holds it. Each of these keeps the issue held:
+
+- A result record that may not have been written.
+- A kept checkout.
+- A held model-session reservation.
+- An uncertain checkpoint.
+- Unresolved stop recovery or an unreconciled coordination journal.
+- A remaining lane-slot consumer.
 
 ## Lane test environments
 
-Optional repository config `laneSlots` enables a fixed, warm pool of test environments. It must be an integer from 1 through 399. Omit it to keep the existing per-issue behavior. The upper bound keeps project-buddy's app port blocks below its proxy ports; it is an interface limit, not an operator-selected concurrency value.
+A lane slot is one reusable test environment from a fixed local pool. The optional operator config `laneSlots`, an integer from 1 through 399, sets the pool size. Without `laneSlots` there is no pool, no slot variable and no setup barrier.
 
-A claim reserves the lowest free slot under the metadata clone's lock, before posting its claim or running setup. Ownership is local to this pipeline root and repository. Concurrent claim processes cannot assign one slot to different issues. An exhausted pool refuses with a retry message and makes no claim mutation, setup call or prune attempt. The caller must not dispatch concurrent jobs for the same issue, even with the same lane name.
+Implement, Harden, Sync, Integrate and Review Security declare the `test-slot` resource. Land and Complete don't. See [reservations](reservations.md) for the other resources.
 
-An issue keeps its slot while any recorded checkout directory survives. Reclaims reuse that slot regardless of job or GitHub lease expiry. Persistent worktrees therefore keep their slot across stages. Caller jobs use disposable stage clones: once the last actual checkout is removed, a later stage may receive another slot. Recovery failures retain the original checkout and its slot. Successfully saved patches and bundles alone do not reserve a slot. A crash before checkout creation leaves a reservation that the next claim can reclaim; a crash after creation keeps ownership until removal. Retain the local ownership record with the checkouts through upgrades and recovery.
+### Slot allocation
 
-With a pool enabled, every successful, non-done claim runs `commands.setup`, including claims using a pre-created caller clone. Setup and deterministic check commands receive `ISSUE_PIPELINE_LANE_SLOT=K`, where `K` is the leased slot. Existing issue checkout and run-directory identity remains unchanged. Setup readiness is recorded before the command starts. A failed or interrupted lane setup refuses model startup and keeps the original checkout and slot before any reset or recovery cleanup. Fix setup, explicitly retry the claim against the retained checkout, then reconcile/remove that checkout before restarting a disposable stage; the launcher will not overwrite it. A successful retry clears pending readiness. Legacy setup failures remain logged/nonfatal. A config without `commands.setup` needs no setup-readiness record.
+When an acting `test-slot` action opens its checkout, the pipeline takes the metadata clone's lock. It registers the checkout's path as a consumer of the issue's lease before it creates the checkout. An issue that already holds a slot keeps it; otherwise it gets the lowest free slot. One issue holds at most one slot.
 
-Deterministic primary and detached landed verification run synchronously for the issue and reuse its slot. Detached verification registers its checkout under that issue's lease before setup or tests. A failed lane setup stops verification before tests or a check-fix model session; ordinary failed checks after successful setup retain their existing repair flow. A retained linked checkout also prevents reset or removal of the primary clone that holds its Git metadata. Independent stage clones remain independently removable. The fails-before-fix runner is retired; there is no additional test copy to schedule. The caller serializes each issue's writer and verification turns, and command supervision ends managed test children before a command returns and checkout removal proceeds. Do not run manual tests against an assigned slot or remove its checkout while a test consumer remains.
+The pipeline refuses the checkout, creating nothing, when:
 
-Optional `commands.prune` runs from the metadata clone's base checkout with `ISSUE_PIPELINE_LANE_SLOTS=N`. It requires `laneSlots`. Its attempts are checkpointed under the clone lock and run at most once per hour across claim processes, including after failure or restart. Maintenance holds that lock with a five-minute command limit; a failure is logged and does not fail the claim. Per-issue `commands.teardown` still works and can be omitted for a warm pool.
+- No slot is free. The refusal asks for a retry after an issue checkout is removed.
+- The issue holds a slot above the current `laneSlots`.
 
-When reducing the pool, a surviving out-of-range owner is refused rather than moved or evicted. Prune is suppressed while any such checkout survives. Drain the affected jobs **and all test consumers** before removing their checkouts or reducing the pool. This local lease guard cannot identify legacy or manual test users. Before enabling prune for the first time, stop dispatch and drain/release **all** old-style jobs, retained issue environments, manual/session test environments and their test subprocesses. No running pipeline job is not sufficient evidence that legacy environments are unused.
+A lease lasts while any registered checkout still exists or any setup barrier is pending. Removing the last checkout releases the slot, under the same lock. Saved patches and bundles hold no slot. A lease whose checkouts were never created and that has no pending setup is dropped at the next read.
 
-### Rollout prerequisites
+### Slot environment
 
-Land project-buddy's scripts on its configured base branch before switching setup. Sync the metadata clone's base checkout and any older issue branches so they contain those scripts. With no jobs or test consumers running, the operator can install the accepted ecosystem release and change these project-buddy config fields together:
+With `laneSlots` set, a `test-slot` action's model sessions receive `ISSUE_PIPELINE_LANE_SLOT=K`, where `K` is the issue's leased slot. The pipeline removes any inherited value first, and other tasks' sessions receive none. Setup and check commands read `K` from the lane store. A check for an issue with no usable lease refuses rather than fall back to a default environment.
 
-- Add `laneSlots` with Autumn's selected pool size, at most 399.
-- Set `commands.setup` to `bash apps/web/scripts/test-env/setup.sh`.
-- Add `commands.prune` as `bash apps/web/scripts/test-env/prune.sh`.
-- Remove the old per-issue `commands.teardown` for the warm-pool configuration.
-- Keep the existing `commands.test`.
+### Task-owned setup
 
-Do not switch setup without `laneSlots`: the repo script intentionally uses the human/default environment when no slot is present. Do not enable legacy prune until every old environment consumer has drained. Landing source does not install or change operator config; no cleanup is part of this source change.
+Each task prepares its own test environment. Implement, Harden, Sync and Review Security call the action's `prepare` step before their first model session. With `laneSlots` or `commands.setup` configured, a `test-slot` task's sessions are refused until its checkout is prepared.
 
-Project-buddy reserves the app port block `20000+10K` through `+9` and proxy port `24000+K`; there is no storage-down server at `+1`. Its prune script also matches legacy and out-of-range scratch databases. Connected databases/environments are retained without treating that retention as a command failure; actual removal errors are nonzero and logged by the pipeline. Ownership and active-connection checks belong to the repo script, not resource-name guesses in the pipeline. In-range scratch databases can remain after interrupted tests until a later test reuses them or a drained pool reduction makes them eligible for prune.
+The `prepare-checkout` op runs the configured setup. It refuses unless all of these hold:
+
+- It runs in the action's own checkout.
+- The action is the original, unsettled attempt of a `test-slot` task.
+- The action still owns the issue's execution.
+
+The op creates `setup-ACTION_ID.started` exclusively before it runs setup, so a started setup is never replayed. The marker only refuses replays; it grants no readiness. With `laneSlots`, the pipeline also records the checkout as a pending-setup barrier before the command starts, and clears it only when setup exits 0. With `laneSlots` and no `commands.setup`, preparation only checks that no barrier is pending.
+
+A setup that fails, times out or loses its reply ends the action. The pipeline keeps the checkout, the issue's execution and, with `laneSlots`, the slot and the barrier. No session starts and nothing retries the setup. No pipeline command clears a pending barrier or replays a started setup; reconcile it explicitly.
+
+Integrate runs setup and the configured checks in a detached checkout under `integrate-*/`, a worktree of the metadata clone. A failed or unfinished setup keeps that folder and, with `laneSlots`, its barrier, and the action holds the issue. Checks that change tracked files keep the folder with a `tracked.patch` and fail the run.
+
+A pending barrier keeps its lease even after the registered checkout is gone.
+
+### Teardown and prune
+
+The action runtime runs no configured teardown. While `commands.teardown` is set, every acting `test-slot` action refuses before it creates a checkout or environment, and `prepare-checkout` checks again. Read-only recovery and tasks without a test slot are unaffected. To run `test-slot` tasks, omit `commands.teardown`.
+
+`ops.mjs` still accepts the standalone `verify` and `cleanup` requests, which can run `commands.teardown`. No buddy task sends either request.
+
+`commands.prune` is accepted and reserved for lane-resource maintenance. Nothing in the pipeline runs it at this source revision.
+
+### Pool changes
+
+Changing `laneSlots`, `commands.setup` or `commands.teardown` is an operator configuration change; landing source changes none of them. Before reducing the pool, drain every action and test consumer and remove their checkouts. An issue that still holds an out-of-range slot refuses new checkouts. The lane store can't see manual or legacy test users, so drain those separately.
 
 ## Process cleanup
 
-Configured commands run in process groups the job owns, through `shell-supervisor.mjs`. Ending a command sends `SIGTERM` to its whole group, waits, then sends `SIGKILL` to what's left. A group that is already gone counts as ended. Cleanup stops only the job's own groups.
+Configured commands run through `shell-supervisor.mjs` in process groups that the pipeline owns. Ending a command sends `SIGTERM` to its whole group, waits, then sends `SIGKILL` to what's left. A group that is already gone counts as ended. Cleanup stops only the pipeline's own groups.
 
-## Cleanup op
+## Legacy issue worktrees
 
-The `cleanup` op frees the worktree, local branches and leftover resources of each closed issue whose work is all on GitHub. Anything in doubt is kept, with the reason.
+The older runtime kept per-issue worktrees at `work/SLUG/issue-N`. The action runtime creates none. The standalone `cleanup` request inspects them. For each closed issue whose work is all on GitHub and that nothing still holds, it runs `commands.teardown`, then removes the worktree and its local branch. It keeps anything in doubt, with the reason.
 
-## Recover a kept checkout
+## Recover a retained checkout
 
-1. Stop dispatching the issue.
-2. Read `job.log` and `job.json` to find the saved patches, bundle, manifest or kept checkout.
-3. Copy the evidence somewhere outside `$ISSUE_PIPELINE_ROOT` before changing anything.
-4. Recover or relocate the kept checkout explicitly; a restart refuses to overwrite it.
-5. Restart the issue on its saved stage, branch and lane. The next writer decides what saved work to use. Patches without a manifest need explicit reconciliation, since their branch can't be inferred.
+1. Stop new work for the issue, for example with `agents:stop`.
+2. Read the action's `run.json` for its reason, ownership, `preserved.checkout` and `preserved.patches`.
+3. Copy the retained checkout and the issue's `dropped/`, `recovery/` and `integrate-*/` evidence outside `$ISSUE_PIPELINE_ROOT`.
+4. Decide explicitly which saved work to keep. Patches without a manifest need manual reconciliation, since their branch can't be inferred.
+5. Remove the retained checkout only after no consumer still uses it.
+
+Land, Complete and Sync have read-only recovery. When one of their attempts is unsettled, a new action run in `recover` mode settles that original attempt from reads alone. It records no new attempt, takes no lane slot and runs no setup. An unsettled attempt of any other task stays held for explicit reconciliation.
+
+There is no restart-at-stage command. See [recover after a source defect](operations.md#recover-after-a-source-defect) and [recovery boundaries](stops-and-labels.md#recovery-boundaries).
