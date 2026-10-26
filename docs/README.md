@@ -32,6 +32,8 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Buddies and tasks](decisions/buddies-and-tasks.md): the buddies and their roles, access per task, bindings and ready tasks, runs and retries, capacity, observation and standing permission.
 
+[PR review](decisions/pr-review.md): the five delivery tasks, start labels, the Verify and Fix review loop and Land through the PR.
+
 ## Reference
 
 [Authority](reference/authority.md): the two accounts, authority records, saved state, write authority and trusted input.

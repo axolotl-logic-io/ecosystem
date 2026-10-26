@@ -10,6 +10,8 @@ Run security review before the Land; security rejection must prevent landing.
 
 Before landing, a Reviewer with write access tries to break the change and fixes what it finds. It must not weaken tests, checks, lint or types to get a pass. Fixes for failing checks, lint and types must improve the design and code, not dodge the rule.
 
+Superseded on 2026-10-26 by [implement-hardens](pr-review.md#implement-hardens).
+
 On 2026-10-22 Hardening moved to the Developer, Hippy, in a fresh session; see [hardening-stays-independent](buddies-and-tasks.md#hardening-stays-independent). The installed `review` stage still runs under the Lawd account until that change is installed.
 
 The source can run Hippy's Hardening since #179, but only in a review job started with `--hardening-buddy hippy`. The installed caller never passes that flag, so installed jobs still harden as the Reviewer. #186 switches the caller over.

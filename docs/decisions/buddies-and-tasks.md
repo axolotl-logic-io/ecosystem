@@ -46,6 +46,8 @@ The concrete cancellation mechanism, safe boundaries for each operation and life
 
 Autumn named Sync as a task. Its contract is delegated.
 
+Superseded on 2026-10-26 by [no-separate-duties](pr-review.md#no-separate-duties).
+
 Sync moves out of Integration and becomes its own task:
 
 - **Prerequisites:** a revision R and a target state T that R doesn't yet contain.
@@ -59,6 +61,8 @@ This separates the task that writes from the task that checks, so each run holds
 
 Delegated. Autumn decided that Lawd owns Security and Land. She leaned toward giving Hardening to Hippy, and this decision adopts that.
 
+Superseded on 2026-10-26 by [no-separate-duties](pr-review.md#no-separate-duties).
+
 | Buddy | Role | Tasks | GitHub account |
 | --- | --- | --- | --- |
 | Hippy | Developer | Author, Implementation, Hardening, Sync | `axolotl-logic-hippy` |
@@ -71,6 +75,8 @@ The roles stay separate from the buddies. Moving a task to another buddy changes
 ## hardening-stays-independent
 
 Delegated.
+
+Superseded on 2026-10-26 by [implement-hardens](pr-review.md#implement-hardens).
 
 The Developer both implements and hardens, so Hardening's independence comes from how its run is scoped:
 
@@ -87,6 +93,8 @@ This replaces the Reviewer buddy of `reviewer-hardens-before-merge` in [delivery
 ## least-privilege-per-task
 
 Delegated.
+
+Superseded on 2026-10-26 by [no-separate-duties](pr-review.md#no-separate-duties).
 
 An access profile is part of an identity. Each task names the access profile it needs, and its run gets only that profile, even when its buddy's identity holds more.
 
@@ -175,6 +183,8 @@ A passed result never reruns for the same binding. Any change to the binding cre
 ## sequential-tasks
 
 Autumn approved on 2026-10-24.
+
+Superseded on 2026-10-26 by [delivery-tasks](pr-review.md#delivery-tasks).
 
 A task is ready only when all its prerequisites are current. Tasks run in one chain, with no parallel branches for now:
 
