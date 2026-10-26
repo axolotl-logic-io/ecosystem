@@ -19,8 +19,8 @@ import { redactAddresses } from "./redact-addresses.ts";
 import type { WriteIntent } from "./write-refusal.ts";
 
 // `reconciles`: the write's own operation reconciles an uncertain result by
-// reading, from a record it kept before the write (a push record, a Land or
-// Sync attempt, a task record) or the PR its branch names. Its ownership is
+// reading, from a record it kept before the write (a push record, a Land
+// attempt, a task record) or the PR its branch names. Its ownership is
 // still read fresh, but it isn't journaled a second time (#169).
 type GhOptions = Omit<RunOptions, "env"> & { reconciles?: boolean };
 

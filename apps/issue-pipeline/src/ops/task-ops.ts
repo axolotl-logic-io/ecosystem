@@ -1,6 +1,6 @@
-// The canonical task ops a buddy action's ops child serves, and the
-// authority each composes before it runs and again at each controlled
-// mutation (task-guard.ts). Every one needs the action's execution binding
+// The canonical task ops a buddy action's ops child serves, each task's
+// from its own list, and the authority each composes before it runs and
+// again at each controlled mutation (task-guard.ts). Every one needs the action's execution binding
 // and its buddy envelope, which `bindBuddyAuthorization` checks against the
 // trusted buddy and repository files reread here, never the payload.
 
@@ -14,58 +14,52 @@ import {
   loadBuddy,
 } from "../runtime/buddy-config.ts";
 import { checkpointAction } from "./checkpoint-action.ts";
-import { completeReconcile, completeTask } from "./complete-task.ts";
-import { integrateTask } from "./integration-task.ts";
-import { landReconcile, landTask } from "./land-task.ts";
+import { LAND_OPS } from "./land-task.ts";
 import { pushOp } from "./push.ts";
-import { syncReconcile, syncTask, syncTaskFinish } from "./sync-task.ts";
 import { taskAttempt, taskResult } from "./task-actions.ts";
-import type { ActionSource, OpClass } from "./task-guard.ts";
-import { TASK_OP_CLASSES, withTaskGuard } from "./task-guard.ts";
+import type { ActionSource, OpClass, TaskOpSpec } from "./task-guard.ts";
+import { withTaskGuard } from "./task-guard.ts";
 import { openTaskPr } from "./task-pr.ts";
 import { prepareCheckout } from "./task-prepare.ts";
+import { VERIFY_OPS } from "./verify-task.ts";
+import { WRITER_OPS } from "./writer-ops.ts";
 
-type Op = (cfg: Config, request: unknown) => object;
+type Op = TaskOpSpec["op"];
 
-const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
-  ["task-attempt", taskAttempt],
-  ["task-result", taskResult],
-  ["checkpoint-action", checkpointAction],
-  ["prepare-checkout", prepareCheckout],
-  ["push", pushOp],
-  ["open-task-pr", openTaskPr],
-  ["integrate-task", integrateTask],
-  ["sync-task", syncTask],
-  ["sync-task-finish", syncTaskFinish],
-  ["sync-reconcile", syncReconcile],
-  ["land-task", landTask],
-  ["land-reconcile", landReconcile],
-  ["complete-task", completeTask],
-  ["complete-reconcile", completeReconcile],
-]);
+// The ops every task action shares: its attempt and result records, its
+// checkpoints, its checkout's setup, and a writer's push and PR.
+const SHARED_OPS: readonly TaskOpSpec[] = [
+  { name: "task-attempt", kind: "substantive", op: taskAttempt },
+  { name: "task-result", kind: "finalization", op: taskResult },
+  { name: "checkpoint-action", kind: "finalization", op: checkpointAction },
+  { name: "prepare-checkout", kind: "substantive", op: prepareCheckout },
+  { name: "push", kind: "substantive", op: pushOp },
+  { name: "open-task-pr", kind: "substantive", op: openTaskPr },
+];
 
-// Each task op with its class from TASK_OP_CLASSES. The two maps must name
-// the same ops: an op with no class, or a class with no op, fails the ops
-// program as it loads rather than guarding some op by a guessed class.
-function classifiedOps(): ReadonlyMap<string, { kind: OpClass; op: Op }> {
-  const unclassified = [...OPS.keys()].filter(
-    (name) => !TASK_OP_CLASSES.has(name),
-  );
-  const missing = [...TASK_OP_CLASSES.keys()].filter((name) => !OPS.has(name));
-  if (unclassified.length > 0 || missing.length > 0) {
+// Every canonical task op by name. A name listed twice fails the ops
+// program and the buddy as they load, rather than serving one of them.
+function taskOps(): ReadonlyMap<string, TaskOpSpec> {
+  const specs = [...SHARED_OPS, ...WRITER_OPS, ...VERIFY_OPS, ...LAND_OPS];
+  const ops = new Map(specs.map((spec) => [spec.name, spec]));
+  if (ops.size !== specs.length) {
+    const repeated = specs.filter(
+      (spec, at) => specs.findIndex((item) => item.name === spec.name) !== at,
+    );
     throw new OpsError(
-      `task op classes disagree: unclassified [${unclassified.join(", ")}], no op for [${missing.join(", ")}]`,
+      `task ops are listed twice: ${repeated.map((spec) => spec.name).join(", ")}`,
     );
   }
-  return new Map(
-    [...OPS].map(([name, op]): [string, { kind: OpClass; op: Op }] => [
-      name,
-      { kind: TASK_OP_CLASSES.get(name) ?? "substantive", op },
-    ]),
-  );
+  return ops;
 }
 
-const TASK_OPS = classifiedOps();
+const TASK_OPS = taskOps();
+
+// The class of each canonical task op, which the ops child guards it by and
+// the runtime checks before it spawns one.
+const TASK_OP_CLASSES: ReadonlyMap<string, OpClass> = new Map(
+  [...TASK_OPS].map(([name, spec]): [string, OpClass] => [name, spec.kind]),
+);
 
 const FRAME = z.looseObject({
   number: z.number().int().positive(),
@@ -112,4 +106,4 @@ function taskOp(name: string): Op | undefined {
   return TASK_OPS.get(name)?.op;
 }
 
-export { guardedTaskConfig, TASK_OPS, taskOp };
+export { guardedTaskConfig, TASK_OP_CLASSES, taskOp };

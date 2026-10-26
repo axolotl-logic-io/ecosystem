@@ -1,4 +1,4 @@
-// Implement: the only task a human start requests. It binds the work item's
+// Implement: requested by `start:implement`. It binds the work item's
 // current trusted requirements and target, and any Implement attempt of the
 // same requirements prevents another, whatever the target or a new start.
 // Its action is one Developer session, then the branch push and the PR.
@@ -54,7 +54,7 @@ function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   if (shared !== undefined) {
     return shared;
   }
-  if (signal.kind !== "start") {
+  if (signal.kind !== "start" || signal.task !== "implement") {
     return null;
   }
   if (signal.requirements !== view.requirements) {

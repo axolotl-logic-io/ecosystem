@@ -46,7 +46,7 @@ const FULL_SHA = /^[0-9a-f]{40}$/u;
 const EVENTS = /events/u;
 const EXECUTION_HOLD = /issue execution/u;
 const START_REVOKED_PUSH =
-  /^start github-label:acme\/widgets#7:300 is revoked: @autumn is not a member of acme/u;
+  /^signal github-label:acme\/widgets#7:300 is revoked: @autumn is not a member of acme/u;
 const PUSH_BOUNDARY_REVOKED = /^push: signal .* revoked: /u;
 
 function planned(change: Partial<PlannedSession>): PlannedSession {

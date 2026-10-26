@@ -13,7 +13,6 @@ import type { Binding, TaskId, TaskResult } from "../domain.ts";
 import {
   ACTION_CAUSE,
   BINDING,
-  isRevisionBinding,
   RECEIPT,
   RUN_REF,
   sameBinding,
@@ -263,25 +262,6 @@ function attemptsOf(rows: readonly Row[], binding: Binding): Row<Attempt>[] {
     .filter((row) => sameBinding(row.binding, binding));
 }
 
-// A refused Review Security subject stays refused under any target or
-// policy: the same code and trusted inputs.
-function subjectRefused(
-  records: Records,
-  code: string,
-  inputs: string,
-): boolean {
-  return records.rows
-    .filter(isResult)
-    .some(
-      (row) =>
-        row.verdict === "refused" &&
-        row.binding.task === "review-security" &&
-        isRevisionBinding(row.binding) &&
-        row.binding.revision.code === code &&
-        row.binding.revision.inputs === inputs,
-    );
-}
-
 // One binding's status: its final pass or refusal, its latest failure, its
 // unsettled run, or missing.
 function statusOf(rows: readonly Row[], binding: Binding): BindingStatus {
@@ -327,6 +307,7 @@ function taskResults(rows: readonly Row[]): TaskResult[] {
           binding: attempt.binding,
           run: attempt.run,
           buddyRun: attempt.buddyRun,
+          cause: attempt.cause,
           verdict: "unknown",
           receipt: { summary: "the run has no settled verdict" },
           recordId: attempt.id,
@@ -336,6 +317,7 @@ function taskResults(rows: readonly Row[]): TaskResult[] {
         binding: settled.binding,
         run: settled.run,
         buddyRun: settled.buddyRun,
+        cause: settled.cause,
         verdict: settled.verdict,
         receipt: settled.receipt,
         recordId: settled.id,
@@ -355,7 +337,6 @@ export {
   readRecords,
   recordBody,
   statusOf,
-  subjectRefused,
   TASK_ATTEMPTS,
   taskResults,
   unsettled,

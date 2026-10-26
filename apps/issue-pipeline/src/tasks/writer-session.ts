@@ -1,6 +1,6 @@
-// The writer tasks' shared action, Implement's and Harden's: one Developer
-// session that commits in the action's checkout, then the push of the
-// item's branch and its PR through the ops child. The session's reply
+// The writer tasks' shared action, Implement's and its hardening's: one
+// Developer session that commits in the action's checkout, then the push of
+// the item's branch and its PR through the ops child. The session's reply
 // grants nothing: the result op checks the produced head against the
 // branch again before it records a pass.
 

@@ -4,8 +4,10 @@
 //   substantive    the buddy's trusted authorization reread
 //                  (runtime/buddy-config.ts), no accepted or unknown stop
 //                  (signals/inbox.ts), and the action's cause still
-//                  authoritative: for Implement its human start requalified
-//                  now, else a determined v2 result still in the records;
+//                  authoritative: a determined v2 result still in the
+//                  records, or else an accepted human signal (a start or a
+//                  review) requalified now. Author and Implement have only
+//                  human causes;
 //   finalization   the buddy's authorization only, for evidence-only
 //                  checkpoints, results and read-only reconciliation, which
 //                  a stop or a revoked source must still let settle.
@@ -26,24 +28,21 @@ import type { WriteIntent } from "../write-refusal.ts";
 
 type OpClass = "substantive" | "finalization";
 
-// The class of each canonical task op, which the ops child guards it by and
-// the runtime checks before it spawns one.
-const TASK_OP_CLASSES: ReadonlyMap<string, OpClass> = new Map([
-  ["task-attempt", "substantive"],
-  ["task-result", "finalization"],
-  ["checkpoint-action", "finalization"],
-  ["prepare-checkout", "substantive"],
-  ["push", "substantive"],
-  ["open-task-pr", "substantive"],
-  ["integrate-task", "substantive"],
-  ["sync-task", "substantive"],
-  ["sync-task-finish", "substantive"],
-  ["sync-reconcile", "finalization"],
-  ["land-task", "substantive"],
-  ["land-reconcile", "finalization"],
-  ["complete-task", "substantive"],
-  ["complete-reconcile", "finalization"],
+// One canonical task op: its name, the class the ops child guards it by and
+// the runtime checks before it spawns one, and its handler. Each task
+// module's ops export their own list, which ops/task-ops.ts serves.
+interface TaskOpSpec {
+  name: string;
+  kind: OpClass;
+  op: (cfg: Config, request: unknown) => object;
+}
+
+// The tasks whose every action a person's accepted signal causes.
+const HUMAN_CAUSED: ReadonlySet<Binding["task"]> = new Set([
+  "author",
+  "implement",
 ]);
+const RESULT_SIGNAL = /^result:\d+$/u;
 
 // What the action acts for: its binding and cause, from the attempt it is
 // about to record (task-attempt) or else its run's recorded attempt.
@@ -91,7 +90,7 @@ function assertResultCause(
 function assertCause(cfg: Config, guard: TaskGuard): void {
   const { binding, cause } =
     guard.proposed ?? recordedSource(cfg, guard.number);
-  if (binding.task !== "implement") {
+  if (!HUMAN_CAUSED.has(binding.task) && RESULT_SIGNAL.test(cause.signal)) {
     assertResultCause(cfg, guard.number, cause);
     return;
   }
@@ -102,7 +101,7 @@ function assertCause(cfg: Config, guard: TaskGuard): void {
   });
   if (human.status !== "qualified") {
     throw new OpsError(
-      `start ${cause.signal} is ${human.status}: ${human.reason}`,
+      `signal ${cause.signal} is ${human.status}: ${human.reason}`,
     );
   }
 }
@@ -150,5 +149,5 @@ function withTaskGuard(cfg: Config, guard: TaskGuard): Config {
   return guarded;
 }
 
-export type { ActionSource, OpClass, TaskGuard };
-export { checkGuard, guardedMutations, TASK_OP_CLASSES, withTaskGuard };
+export type { ActionSource, OpClass, TaskGuard, TaskOpSpec };
+export { checkGuard, guardedMutations, withTaskGuard };

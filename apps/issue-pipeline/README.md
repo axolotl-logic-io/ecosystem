@@ -200,7 +200,7 @@ npm run check:full   # pipeline fast gate and Node tests, then dashboard gate
 
 From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` with file concurrency 2 and per-test timeout 180000 ms. The historical unit suite was removed; the directory now contains new public-entrypoint tests and is not empty.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` with file concurrency 8 and per-test timeout 180000 ms. The historical unit suite was removed; the directory now contains new public-entrypoint tests and is not empty.
 
 Tests use temporary HOME/pipeline roots, local Git origins and fake GitHub/model processes, never real credentials, models or production data. Set disposable roots before dynamic imports. Test real files, subprocesses, Git and public operations; do not replace task behavior with success stand-ins and call it integrated acceptance. A failure or flake blocks acceptance; fix the cause instead of repeating the same test for a pass.
 

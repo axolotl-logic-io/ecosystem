@@ -13,9 +13,9 @@ run = "npm run check"
 description = "Expensive opt-in full gate: fast gate plus every Node integration/flow test"
 # package.json's check:full script runs the fast gate, then every Node test
 # with the flags below:
-#   node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'
+#   node --test --test-concurrency=8 --test-timeout=180000 'test/**/*.test.ts'
 # The glob includes the current integration and public-entrypoint flow tests.
-# Keep file concurrency at 2: flow tests also spawn buddy, ops, fake transports
+# Cap file concurrency at 8: flow tests also spawn buddy, ops, fake transports
 # and Git processes. Fix or remove a test that exceeds 180000 ms; do not raise
 # its deadline or move substantive work into hooks to conceal its cost.
 # Native timeout alone does not settle callbacks or reap their child processes;

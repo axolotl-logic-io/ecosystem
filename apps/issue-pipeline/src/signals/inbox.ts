@@ -80,7 +80,10 @@ interface Latch {
 
 type AttemptCause = Awaited<ReturnType<typeof actionCauses>>[number];
 type StartRequest = Extract<AcceptedRecord["request"], { kind: "start" }>;
-type StartSignal = Extract<QualifiedSignal, { kind: "start" }>;
+type StartSignal = Extract<
+  QualifiedSignal,
+  { kind: "start"; task: "author" | "implement" }
+>;
 
 // A value, or why it isn't available: `unreadable` when evidence couldn't be
 // read, rather than read and found wanting.
@@ -483,6 +486,7 @@ async function deliverStarts(
   const pending = starts.filter(
     (signal): signal is StartSignal =>
       signal.kind === "start" &&
+      signal.task !== "verify" &&
       !spends(attempts.value, signal.id) &&
       attemptedRequirements(attempts.value, signal.requirements) === undefined,
   );

@@ -1,8 +1,9 @@
 // Credentialed code writes and writer sessions share one fresh fence. Code
-// of a work item stays writable only while nothing irreversible or refused
-// binds it: any Land attempt closes it for good, since a Land's outcome may
-// already be on the target; and a refused Review Security subject closes
-// it, so writers can't reroll a refusal. Records or saved state that hold
+// of a work item stays writable only while no Land may already have
+// delivered it: a Land run that is unsettled or passed closes it, since its
+// outcome may be on the target. A Land that settled without merging, such
+// as one that found the PR conflicting and marked it a draft, leaves it
+// open for Fix (`fix-answers-reviews`). Records or saved state that hold
 // throw. Otherwise the item's PR, if it has one, must be open.
 
 import { listComments } from "./comments.ts";
@@ -13,7 +14,7 @@ import { pullRequest } from "./revision.ts";
 import type { StoredWork } from "./saved-state-work.ts";
 import { storedWork } from "./saved-state-work.ts";
 import type { Records } from "./tasks/records.ts";
-import { isAttempt, isResult, readRecords } from "./tasks/records.ts";
+import { determined, isAttempt, readRecords } from "./tasks/records.ts";
 
 interface WriteAuthority {
   work: StoredWork;
@@ -27,20 +28,15 @@ interface WriteAuthority {
 // Why the records fence code writes, or null.
 function recordFence(records: Records): string | null {
   const { rows } = records;
-  const land = rows.find(
-    (row) => isAttempt(row) && row.binding.task === "land",
-  );
+  const land = rows.filter(isAttempt).find((row) => {
+    if (row.binding.task !== "land") {
+      return false;
+    }
+    const settled = determined(rows, row.run.id);
+    return settled === undefined || settled.verdict === "passed";
+  });
   if (land !== undefined) {
-    return `Land record ${String(land.id)} was attempted for this work item`;
-  }
-  const refusal = rows.find(
-    (row) =>
-      isResult(row) &&
-      row.binding.task === "review-security" &&
-      row.verdict === "refused",
-  );
-  if (refusal !== undefined) {
-    return `Review Security refused this work item's code (${String(refusal.id)})`;
+    return `Land record ${String(land.id)} may have delivered this work item`;
   }
   return null;
 }

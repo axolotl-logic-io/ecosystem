@@ -47,7 +47,33 @@ const COMMENT = z.strictObject({
   editor: z.string().nullable(),
   createdAt: z.string(),
 });
-// A pull request, as the buddy flow tests' fake gh keeps it.
+// A submitted review of a pull request, by an account's login, against the
+// head commit `commitId`.
+const REVIEW = z.strictObject({
+  id: z.number().int().positive(),
+  author: z.string(),
+  state: z.enum(["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"]),
+  commitId: z.string(),
+  body: z.string(),
+  submittedAt: z.string(),
+});
+// A comment on a pull request's lines: a thread's first comment names its
+// review; a reply names the comment it answers.
+const REVIEW_COMMENT = z.strictObject({
+  id: z.number().int().positive(),
+  review: z.number().int().positive().nullable(),
+  inReplyTo: z.number().int().positive().nullable(),
+  author: z.string(),
+  path: z.string(),
+  line: z.number().int().positive().nullable(),
+  commitId: z.string(),
+  body: z.string(),
+  createdAt: z.string(),
+});
+// A pull request, as the buddy flow tests' fake gh keeps it. Its head
+// commit is always its head branch's tip in the origin. `mergeCommit` is the
+// merge commit `gh pr merge --merge` made; `mergeable` overrides what the
+// origin's own merge of head into base says.
 const PULL = z.strictObject({
   number: z.number().int().positive(),
   head: z.string(),
@@ -57,6 +83,10 @@ const PULL = z.strictObject({
   author: z.string(),
   state: z.enum(["OPEN", "CLOSED", "MERGED"]),
   isDraft: z.boolean(),
+  reviews: z.array(REVIEW).optional(),
+  reviewComments: z.array(REVIEW_COMMENT).optional(),
+  mergeCommit: z.string().optional(),
+  mergeable: z.enum(["MERGEABLE", "CONFLICTING", "UNKNOWN"]).optional(),
 });
 const ISSUE = z.strictObject({
   number: z.number().int().positive(),
@@ -159,6 +189,9 @@ const WORLD = z.strictObject({
     })
     .optional(),
   pulls: z.array(PULL).optional(),
+  // Whether the base branch requires a PR's head to contain it before a
+  // merge, as GitHub's "require branches to be up to date" protection does.
+  requireUpToDate: z.boolean().optional(),
   // The required checks GitHub reports on each head commit, as GitHub
   // Actions or another CI posts them (`gh pr checks --required`).
   checks: z
@@ -191,6 +224,8 @@ type World = z.infer<typeof WORLD>;
 type FakeIssue = z.infer<typeof ISSUE>;
 type FakeEvent = z.infer<typeof EVENT>;
 type FakeComment = z.infer<typeof COMMENT>;
+type FakeReview = z.infer<typeof REVIEW>;
+type FakeReviewComment = z.infer<typeof REVIEW_COMMENT>;
 type TaskAnswers = z.infer<typeof TASK_ANSWERS>;
 
 function readWorld(file: string): World {
@@ -201,5 +236,13 @@ function writeWorld(file: string, world: World): void {
   fs.writeFileSync(file, `${JSON.stringify(WORLD.parse(world), null, 2)}\n`);
 }
 
-export type { FakeComment, FakeEvent, FakeIssue, TaskAnswers, World };
+export type {
+  FakeComment,
+  FakeEvent,
+  FakeIssue,
+  FakeReview,
+  FakeReviewComment,
+  TaskAnswers,
+  World,
+};
 export { readWorld, writeWorld };

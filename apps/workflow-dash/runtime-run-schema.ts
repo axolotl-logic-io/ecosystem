@@ -10,24 +10,13 @@ import { z } from "zod";
 const taskIds = [
   "author",
   "implement",
-  "harden",
-  "sync",
-  "integrate",
-  "review-security",
+  "verify",
+  "fix",
   "land",
-  "complete",
   "refactor-safely",
 ] as const;
 const requirementsTasks = ["author", "implement"] as const;
-const revisionTasks = [
-  "harden",
-  "sync",
-  "integrate",
-  "review-security",
-  "land",
-  "complete",
-  "refactor-safely",
-] as const;
+const revisionTasks = ["verify", "fix", "land", "refactor-safely"] as const;
 const commitPattern = /^[0-9a-f]{40}$/u;
 const digestPattern = /^[0-9a-f]{64}$/u;
 const requirementsPattern = /^sha256:[0-9a-f]{64}$/u;

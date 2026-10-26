@@ -2,9 +2,9 @@
 //
 //   land-task       for this action's own recorded Land attempt, under the
 //                   integration turn it took first: every prerequisite again
-//                   (the repository's Land grant, Harden, Integrate and
-//                   Review Security attesting exactly R on T, R a strict
-//                   descendant of T, required CI clearing R), then one
+//                   (the repository's Land grant, Verify passing exactly R
+//                   on T, R a strict descendant of T, required CI clearing
+//                   R), then one
 //                   guarded fast-forward of T to R (land-branch.ts). Only the target read at exactly R
 //                   passes; the target unchanged after a refused push fails;
 //                   anything else stays unknown, keeping the turn.
@@ -13,7 +13,7 @@
 //                   anything else held. It never pushes.
 //
 // A passed Land's receipt keeps the pre-Land target, the revision's policy
-// and the action's authorization digest as its provenance (Complete).
+// and the action's authorization digest as its provenance.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -24,6 +24,7 @@ import { MODULES } from "../tasks/modules.ts";
 import { assertLandTurn, releaseSettledTurn } from "../tasks/turn.ts";
 import { exactRemote } from "../tasks/view.ts";
 import { landBranch } from "./land-branch.ts";
+import type { TaskOpSpec } from "./task-guard.ts";
 import type { EffectOutcome, OpenRun } from "./task-run.ts";
 import { openReconciliation, openRun, settled } from "./task-run.ts";
 
@@ -110,4 +111,10 @@ function landReconcile(cfg: Config, request: unknown): EffectOutcome {
   return outcome;
 }
 
-export { landReconcile, landTask };
+// Land's ops, which ops/task-ops.ts serves.
+const LAND_OPS: readonly TaskOpSpec[] = [
+  { name: "land-task", kind: "substantive", op: landTask },
+  { name: "land-reconcile", kind: "finalization", op: landReconcile },
+];
+
+export { LAND_OPS };

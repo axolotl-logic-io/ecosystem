@@ -6,7 +6,7 @@ type SessionPhase = NonNullable<SessionSpec["phase"]>;
 const SESSION_PHASES: readonly SessionPhase[] = [
   "hardening",
   "security-review",
-  "sync",
+  "fix",
 ];
 
 export type { SessionPhase };

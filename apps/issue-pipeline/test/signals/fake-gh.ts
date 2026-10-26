@@ -26,6 +26,8 @@ const UPPER = /[A-Z]/gu;
 const ISSUE_PATH = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)$/u;
 const ISSUE_PART =
   /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/(?<part>events|comments)$/u;
+const PULL_PART =
+  /^repos\/[^/]+\/[^/]+\/pulls\/(?<number>\d+)\/(?<part>reviews|comments)$/u;
 const ORG_MEMBERSHIP = /^orgs\/(?<org>[^/]+)\/memberships\/(?<login>[^/]+)$/u;
 const OWN_MEMBERSHIP = /^user\/memberships\/orgs\/(?<org>[^/]+)$/u;
 const USER_BY_ID = /^user\/(?<id>\d+)$/u;
@@ -193,11 +195,63 @@ function membership(world: World, name: string): Answer {
   return { status: HTTP_OK, body, link: null };
 }
 
+// The REST user GitHub shows for an account's login.
+function restUser(world: World, name: string): unknown {
+  const { login: user, id, type } = account(world, name);
+  return { login: user, id, type };
+}
+
+// A PR's reviews or line comments, as the REST API lists them.
+function pullListing(
+  world: World,
+  number: string | undefined,
+  part: string,
+): unknown[] | null {
+  const pull = (world.pulls ?? []).find(
+    (item) => String(item.number) === number,
+  );
+  if (pull === undefined) {
+    return null;
+  }
+  if (part === "reviews") {
+    return (pull.reviews ?? []).map((review) => ({
+      id: review.id,
+      nodeId: `PRR_${review.id}`,
+      user: restUser(world, review.author),
+      body: review.body,
+      state: review.state,
+      commitId: review.commitId,
+      submittedAt: review.submittedAt,
+    }));
+  }
+  return (pull.reviewComments ?? []).map((comment) => {
+    const row = {
+      id: comment.id,
+      nodeId: `PRRC_${comment.id}`,
+      pullRequestReviewId: comment.review,
+      user: restUser(world, comment.author),
+      path: comment.path,
+      line: comment.line,
+      commitId: comment.commitId,
+      body: comment.body,
+      createdAt: comment.createdAt,
+    };
+    if (comment.inReplyTo === null) {
+      return row;
+    }
+    return { ...row, inReplyToId: comment.inReplyTo };
+  });
+}
+
 function listing(
   world: World,
   path: string,
   query: URLSearchParams,
 ): unknown[] | null {
+  const { number: pull, part: pullPart } = PULL_PART.exec(path)?.groups ?? {};
+  if (pullPart !== undefined) {
+    return pullListing(world, pull, pullPart);
+  }
   const { number, part } = ISSUE_PART.exec(path)?.groups ?? {};
   if (part !== undefined) {
     const issue = issueOf(world, number);

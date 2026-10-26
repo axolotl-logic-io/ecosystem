@@ -49,12 +49,9 @@ class ActionNotAdmitted extends OpsError {
 const TASKS: Readonly<Record<TaskId, TaskDefinition>> = {
   author: MODULES.author.definition,
   implement: MODULES.implement.definition,
-  harden: MODULES.harden.definition,
-  sync: MODULES.sync.definition,
-  integrate: MODULES.integrate.definition,
-  "review-security": MODULES["review-security"].definition,
+  verify: MODULES.verify.definition,
+  fix: MODULES.fix.definition,
   land: MODULES.land.definition,
-  complete: MODULES.complete.definition,
   "refactor-safely": MODULES["refactor-safely"].definition,
 };
 

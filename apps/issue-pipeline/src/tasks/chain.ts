@@ -62,7 +62,7 @@ function attestedCode(result: TaskResult): string | null {
 }
 
 // The passed result of `task` attesting exactly revision R on target T. A
-// Harden that produced code attests the code it produced, under the inputs
+// writer that produced code attests the code it produced, under the inputs
 // and policy it was bound to.
 function passedFor(
   view: TaskView,
@@ -136,6 +136,26 @@ function unsettledRun(view: TaskView, task: TaskId): TaskResult | undefined {
   );
 }
 
+// How many of the item's Fix runs Verify's request-changes caused: each Fix
+// attempt, whatever its binding or verdict, whose cause is a refused Verify
+// result of the item. A person's review or Land's conflict causes rounds
+// that don't count (`review-loop-limit`); the domain's VERIFY_FIX_ROUNDS
+// bounds this count.
+function verifyFixRounds(view: TaskView): number {
+  const refusedVerify = new Set(
+    view.results
+      .filter(
+        (result) =>
+          result.binding.task === "verify" && result.verdict === "refused",
+      )
+      .map((result) => `result:${String(result.recordId)}`),
+  );
+  return view.results.filter(
+    (result) =>
+      result.binding.task === "fix" && refusedVerify.has(result.cause.signal),
+  ).length;
+}
+
 function waiting(reason: string): Readiness {
   return { state: "waiting", reason };
 }
@@ -155,5 +175,6 @@ export {
   sameRevision,
   sameTarget,
   unsettledRun,
+  verifyFixRounds,
   waiting,
 };

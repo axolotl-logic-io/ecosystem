@@ -1,11 +1,15 @@
 // Land: the Gatekeeper's guarded, immutable fast-forward of target T to
 // revision R. It needs the trusted repository grant (`permissions.land`),
-// Harden, Integrate and Review Security attesting exactly R on T, required
-// CI clearing exactly R as its PR's head (ops/required-ci.ts), and the
-// target's integration turn, which it takes before its attempt is recorded
-// and keeps while the run is unsettled. A pass is never permission: every
-// check is made again in the ops child (ops/land-task.ts). An unsettled run
-// is reconciled read-only and never pushed again.
+// Verify passing exactly R on T, required CI clearing exactly R as its PR's
+// head (ops/required-ci.ts), and the target's integration turn, which it
+// takes before its attempt is recorded and keeps while the run is
+// unsettled. A pass is never permission: every check is made again in the
+// ops child (ops/land-task.ts). An unsettled run is reconciled read-only
+// and never pushed again.
+//
+// docs/decisions/pr-review.md `land-merges-the-pr` replaces this
+// fast-forward with a merge of the PR at its checked head that also closes
+// the issue.
 
 import type { Config } from "../config.ts";
 import type {
@@ -30,12 +34,11 @@ import { effectEnd, recoverEnd } from "./effect.ts";
 import type { TaskModule } from "./module.ts";
 import { notCurrent } from "./module.ts";
 import { landGranted } from "./permissions.ts";
-import { subjectRefused } from "./records.ts";
 import { sensed } from "./sensing.ts";
 import { acquireLandTurn } from "./turn.ts";
 import type { TaskEvidence } from "./view.ts";
 
-const ATTESTING = ["harden", "integrate", "review-security"] as const;
+const ATTESTING = ["verify"] as const;
 
 // Why R can't land on T from these results, or null.
 function unattested(
@@ -86,12 +89,9 @@ function prerequisite(
   if (stale !== null || !("revision" in binding)) {
     return stale ?? "the binding is not a revision binding";
   }
-  const { view, records } = evidence;
+  const { view } = evidence;
   if (!view.containsTarget || binding.revision.code === view.target.commit) {
     return "the revision is not a strict descendant of the target";
-  }
-  if (subjectRefused(records, binding.revision.code, binding.revision.inputs)) {
-    return "Review Security refused this code and these inputs";
   }
   return (
     unattested(view, binding.revision, binding.target) ??
@@ -104,7 +104,7 @@ const land: TaskModule = {
     id: "land",
     role: "gatekeeper",
     access: "lander",
-    sensors: ["result", "stop"],
+    sensors: ["result", "review", "stop"],
     resources: ["target-write"],
     match,
     act: (ctx: ActionContext): Promise<ActionEnd> =>

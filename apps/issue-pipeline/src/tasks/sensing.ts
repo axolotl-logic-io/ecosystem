@@ -34,4 +34,4 @@ function sensed(
   return undefined;
 }
 
-export { sensed };
+export { sameItem, sensed };

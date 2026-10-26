@@ -202,7 +202,7 @@ function assertCheckoutReadyForRemoval(
 }
 
 // The removal guard for a checkout that never registered as a lane-slot
-// consumer (Land, Complete, a read-only recovery, a task with no test slot).
+// consumer (Land, a read-only recovery, a task with no test slot).
 // With no lane store at all, nothing is registered, so nothing can be
 // pending on it or depend on its metadata; otherwise the full guard holds.
 function assertNonconsumerReadyForRemoval(

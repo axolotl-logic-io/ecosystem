@@ -3,12 +3,14 @@
 // listings (`--paginate --jq '.[] | @json'`), comment edits, plain resource
 // reads (issues, collaborators), the repository's git database, which is
 // the real local bare origin in FAKE_GH_ORIGIN, and `gh pr` for the item's
-// pull request. flowCall answers from the world and says whether the call
-// was one of these.
+// pull request: its view, checks, creation, draft and ready changes, merge
+// commit, submitted reviews and thread replies. flowCall answers from the
+// world and says whether the call was one of these.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import process from "node:process";
 import { z } from "zod";
+import { wire } from "../../src/discovery/wire.ts";
 import type { FakeComment, FakeIssue, World } from "./fake-github-world.ts";
 
 const COMMENTS = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/comments\?/u;
@@ -21,6 +23,35 @@ const GIT_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits\/(?<sha>[0-9a-f]{40})$/u;
 const NEW_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits$/u;
 const NEW_REF = /^repos\/[^/]+\/[^/]+\/git\/refs$/u;
 const BODY = /^body=(?<body>[\s\S]*)$/u;
+const PULL_REVIEWS = /^repos\/[^/]+\/[^/]+\/pulls\/(?<number>\d+)\/reviews$/u;
+const PULL_REPLY =
+  /^repos\/[^/]+\/[^/]+\/pulls\/(?<number>\d+)\/comments\/(?<id>\d+)\/replies$/u;
+const CLOSES =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(?<number>\d+)\b/giu;
+const REVIEW_INPUT = wire(
+  z.object({
+    commitId: z.string(),
+    event: z.enum(["APPROVE", "REQUEST_CHANGES", "COMMENT"]),
+    body: z.string().optional(),
+    comments: z
+      .array(
+        z.object({
+          path: z.string(),
+          line: z.number().int().positive(),
+          body: z.string(),
+        }),
+      )
+      .optional(),
+  }),
+);
+const REVIEW_STATES: ReadonlyMap<
+  z.infer<typeof REVIEW_INPUT>["event"],
+  NonNullable<Pull["reviews"]>[number]["state"]
+> = new Map([
+  ["APPROVE", "APPROVED"],
+  ["REQUEST_CHANGES", "CHANGES_REQUESTED"],
+  ["COMMENT", "COMMENTED"],
+] as const);
 const COMMIT_INPUT = z.object({
   message: z.string(),
   tree: z.string(),
@@ -146,6 +177,7 @@ interface PullRow {
   author: { login: string };
   headRefOid: string;
   mergeCommit: { oid: string } | null;
+  mergeable: NonNullable<Pull["mergeable"]>;
 }
 
 const START_LISTING = `labels=${encodeURIComponent("start:implement")}`;
@@ -301,14 +333,48 @@ function nextPull(world: World): number {
   return Math.max(0, ...numbers) + 1;
 }
 
+// Whether the origin can merge the PR's head into its base: what GitHub
+// reports as its `mergeable`, unless the world overrides it.
+function mergeableOf(pull: Pull, head: string): PullRow["mergeable"] {
+  if (pull.mergeable !== undefined) {
+    return pull.mergeable;
+  }
+  if (head === "") {
+    return "UNKNOWN";
+  }
+  const merged = spawnSync(
+    "git",
+    [
+      "-C",
+      origin(),
+      "merge-tree",
+      "--write-tree",
+      `refs/heads/${pull.base}`,
+      head,
+    ],
+    { encoding: "utf8" },
+  );
+  if (merged.status === 0) {
+    return "MERGEABLE";
+  }
+  if (merged.status === 1) {
+    return "CONFLICTING";
+  }
+  return "UNKNOWN";
+}
+
 // The PR as GitHub shows it from the origin's refs: an open PR whose head
 // commit is on its base branch, as a fast-forward push of the base puts it,
-// reads merged, with that head as its merge commit.
+// reads merged, with that head as its merge commit; a PR `gh pr merge`
+// merged reads merged with its own merge commit.
 function pullRow(pull: Pull): PullRow {
   const head = git(["rev-parse", `refs/heads/${pull.head}`]).out;
   let { state } = pull;
   let mergeCommit: PullRow["mergeCommit"] = null;
-  if (
+  if (pull.mergeCommit !== undefined) {
+    state = "MERGED";
+    mergeCommit = { oid: pull.mergeCommit };
+  } else if (
     state === "OPEN" &&
     head !== "" &&
     git(["merge-base", "--is-ancestor", head, `refs/heads/${pull.base}`]).ok
@@ -327,6 +393,7 @@ function pullRow(pull: Pull): PullRow {
     author: { login: pull.author },
     headRefOid: head,
     mergeCommit,
+    mergeable: mergeableOf(pull, head),
   };
 }
 
@@ -446,6 +513,206 @@ function requiredChecks(world: World, number: string | undefined): boolean {
   return true;
 }
 
+// Closes each open issue the merged PR's body names with a closing keyword,
+// as GitHub does when a PR merges into the default branch.
+function closeLinked(world: World, pull: Pull, login: string): void {
+  for (const match of pull.body.matchAll(CLOSES)) {
+    const { number } = match.groups ?? {};
+    const issue = world.issues.find((item) => String(item.number) === number);
+    if (issue !== undefined && issue.closed === undefined) {
+      issue.closed = { by: login, reason: "completed" };
+      issue.events.push({
+        id: world.nextId,
+        event: "closed",
+        label: null,
+        actor: login,
+        viaApp: false,
+        createdAt: postedAt(world.nextId),
+      });
+      world.nextId += 1;
+    }
+  }
+}
+
+// `gh pr merge N --merge --match-head-commit SHA`: a merge commit of the
+// head into the base, made in the origin, only while the PR is open, not a
+// draft, still at SHA, free of conflicts and, when the world requires it,
+// containing its base.
+function merge(
+  world: World,
+  args: readonly string[],
+  login: string,
+  found: Pull,
+): boolean {
+  const row = pullRow(found);
+  const expected = flagValue(args, "--match-head-commit");
+  if (!args.includes("--merge") || expected === undefined) {
+    return fail("fake gh: a merge must be --merge --match-head-commit");
+  }
+  if (row.state !== "OPEN") {
+    return fail(`GraphQL: Pull request #${found.number} is not open`);
+  }
+  if (row.isDraft) {
+    return fail(`GraphQL: Pull request #${found.number} is still a draft`);
+  }
+  if (row.headRefOid !== expected) {
+    return fail(
+      "GraphQL: Head branch was modified. Review and try the merge again.",
+    );
+  }
+  if (row.mergeable !== "MERGEABLE") {
+    return fail(`GraphQL: Pull request #${found.number} is not mergeable`);
+  }
+  const base = `refs/heads/${found.base}`;
+  if (
+    world.requireUpToDate === true &&
+    !git(["merge-base", "--is-ancestor", base, row.headRefOid]).ok
+  ) {
+    return fail("GraphQL: Head branch is out of date with the base branch");
+  }
+  const before = git(["rev-parse", base]).out;
+  const tree = git(["merge-tree", "--write-tree", base, row.headRefOid]).out;
+  const made = git([
+    "commit-tree",
+    tree,
+    "-p",
+    before,
+    "-p",
+    row.headRefOid,
+    "-m",
+    `Merge pull request #${found.number} from ${found.head}`,
+  ]);
+  if (!(made.ok && git(["update-ref", base, made.out, before]).ok)) {
+    return fail("fake gh: the merge commit could not be made");
+  }
+  found.state = "MERGED";
+  found.mergeCommit = made.out;
+  closeLinked(world, found, login);
+  return true;
+}
+
+// `gh pr ready N` marks the PR ready for review; `--undo` makes it a draft.
+function ready(args: readonly string[], found: Pull): boolean {
+  if (pullRow(found).state !== "OPEN") {
+    return fail(`GraphQL: Pull request #${found.number} is not open`);
+  }
+  found.isDraft = args.includes("--undo");
+  return true;
+}
+
+function pullNamed(world: World, number: string | undefined): Pull {
+  const found = (world.pulls ?? []).find(
+    (pull) => String(pull.number) === number,
+  );
+  if (found === undefined) {
+    return fail("gh: Could not resolve to a PullRequest");
+  }
+  return found;
+}
+
+// A review submitted by `login` through `--input`: its line comments start
+// threads in it. GitHub refuses a PR's author approving or requesting
+// changes on their own PR.
+function submitReview(
+  world: World,
+  login: string,
+  found: Pull,
+  args: readonly string[],
+): boolean {
+  if (!args.includes("--input")) {
+    return fail("fake gh: a review is submitted with --input");
+  }
+  const input = REVIEW_INPUT.parse(JSON.parse(fs.readFileSync(0, "utf8")));
+  const state = REVIEW_STATES.get(input.event) ?? "COMMENTED";
+  if (state !== "COMMENTED" && found.author === login) {
+    return fail(
+      "gh: Unprocessable Entity (HTTP 422): Can not approve or request changes on your own pull request",
+    );
+  }
+  const id = world.nextId;
+  world.nextId += 1;
+  found.reviews ??= [];
+  found.reviews.push({
+    id,
+    author: login,
+    state,
+    commitId: input.commitId,
+    body: input.body ?? "",
+    submittedAt: postedAt(id),
+  });
+  found.reviewComments ??= [];
+  for (const comment of input.comments ?? []) {
+    found.reviewComments.push({
+      id: world.nextId,
+      review: id,
+      inReplyTo: null,
+      author: login,
+      path: comment.path,
+      line: comment.line,
+      commitId: input.commitId,
+      body: comment.body,
+      createdAt: postedAt(world.nextId),
+    });
+    world.nextId += 1;
+  }
+  print(
+    Object.fromEntries([
+      ["id", id],
+      ["state", state],
+      ["commit_id", input.commitId],
+    ]),
+  );
+  return true;
+}
+
+// A reply by `login` in the thread of review comment `id`.
+function threadReply(
+  world: World,
+  login: string,
+  found: Pull,
+  call: { args: readonly string[]; id: string },
+): boolean {
+  const { args, id } = call;
+  const answered = (found.reviewComments ?? []).find(
+    (comment) => String(comment.id) === id,
+  );
+  const field = args.find((arg) => BODY.test(arg)) ?? "";
+  const { body } = BODY.exec(field)?.groups ?? {};
+  if (answered === undefined || body === undefined) {
+    return fail("gh: Not Found (HTTP 404)");
+  }
+  found.reviewComments ??= [];
+  found.reviewComments.push({
+    ...answered,
+    id: world.nextId,
+    review: null,
+    inReplyTo: answered.inReplyTo ?? answered.id,
+    author: login,
+    body,
+    createdAt: postedAt(world.nextId),
+  });
+  world.nextId += 1;
+  return true;
+}
+
+// The PR writes through `gh api`: a submitted review and a thread reply.
+function pullWrite(
+  world: World,
+  args: readonly string[],
+  login: string,
+): boolean {
+  const endpoint = endpointOf(args);
+  const { number: reviewed } = PULL_REVIEWS.exec(endpoint)?.groups ?? {};
+  if (reviewed !== undefined) {
+    return submitReview(world, login, pullNamed(world, reviewed), args);
+  }
+  const { number, id } = PULL_REPLY.exec(endpoint)?.groups ?? {};
+  if (number !== undefined && id !== undefined) {
+    return threadReply(world, login, pullNamed(world, number), { args, id });
+  }
+  return false;
+}
+
 function pr(world: World, args: readonly string[], login: string): boolean {
   if (args[0] !== "pr") {
     return false;
@@ -472,6 +739,12 @@ function pr(world: World, args: readonly string[], login: string): boolean {
   }
   if (args[1] === "checks" && args.includes("--required")) {
     return requiredChecks(world, args[2]);
+  }
+  if (args[1] === "merge") {
+    return merge(world, args, login, pullNamed(world, args[2]));
+  }
+  if (args[1] === "ready") {
+    return ready(args, pullNamed(world, args[2]));
   }
   if (args[1] === "create") {
     world.pulls.push({
@@ -501,7 +774,8 @@ function flowCall(
     return {
       handled: true,
       changed:
-        args[1] === "create" || (world.checksSequence?.length ?? 0) !== queued,
+        ["create", "merge", "ready"].includes(args[1] ?? "") ||
+        (world.checksSequence?.length ?? 0) !== queued,
     };
   }
   if (issueClose(world, args, login)) {
@@ -511,6 +785,9 @@ function flowCall(
     return { handled: false, changed: false };
   }
   if (commentEdit(world, args)) {
+    return { handled: true, changed: true };
+  }
+  if (args.includes("POST") && pullWrite(world, args, login)) {
     return { handled: true, changed: true };
   }
   if (args.includes("POST")) {

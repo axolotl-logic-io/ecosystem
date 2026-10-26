@@ -55,7 +55,7 @@ const OUTCOME = z.strictObject({
 
 const BINDING: object = {
   workItem: { repo: REPO, number: 7 },
-  task: "integrate",
+  task: "verify",
   target: { branch: "main", commit: T },
   revision: { code: R, inputs: DIGEST, policy: DIGEST },
 };

@@ -97,11 +97,8 @@ interface PlannedSession {
 // the landing account, each responsible for `tasks`. Only a Gatekeeper
 // responsible for Land holds the lander profile and `permissions.land`.
 type BuddyChoice =
-  | { role: "developer"; tasks: ("implement" | "harden")[] }
-  | {
-      role: "gatekeeper";
-      tasks: ("integrate" | "review-security" | "land" | "complete")[];
-    };
+  | { role: "developer"; tasks: ("author" | "implement" | "fix")[] }
+  | { role: "gatekeeper"; tasks: ("verify" | "land")[] };
 
 // The machine's trusted repository configuration, fixed before any action:
 // whether it grants Land (`permissions.land`), which the shared checking
@@ -378,12 +375,11 @@ function actionsOf(pipeline: string): ActionRun[] {
 // The access profile each task the flow buddies run needs (its TASKS
 // definition's `access`).
 const ACCESS: Readonly<Record<BuddyChoice["tasks"][number], string>> = {
+  author: "writer",
   implement: "writer",
-  harden: "writer",
-  integrate: "reader",
-  "review-security": "reader",
+  fix: "writer",
+  verify: "reader",
   land: "lander",
-  complete: "lander",
 };
 
 // Writes `file`, the trusted file of `buddy`, scoped to `repositoryConfig`
