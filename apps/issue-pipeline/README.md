@@ -145,11 +145,19 @@ web process. Pipeline build tasks do not load it.
 Every landing-account-authored comment is reread through GraphQL with body,
 author, `lastEditedAt` and `editor` in the same response. Unedited comments
 require null edit time/editor; edited comments require the landing account as
-editor. Missing, unreadable or untrusted provenance (including removed markers)
-stops for reconciliation rather than falling back to an older/empty receipt.
-These semantics still need the operator verification below. This is not a
-same-OS-user sandbox: a child under the operator's user may still read the
-credential file.
+editor. Issue-local reads check every landing-authored comment, including removed
+markers.
+
+Repository-wide coordination reads check provenance only when either
+the listing or the current reread contains the coordination marker. They do not
+consume ordinary discussion or unrelated historical state and task receipts.
+Missing or unreadable provenance still stops the read. Untrusted provenance on
+a selected comment stops for reconciliation rather than falling back to an
+older or empty receipt. These semantics still need the operator verification
+below.
+
+This is not a same-OS-user sandbox: a child under the operator's user may still
+read the credential file.
 
 ## Config and model cutover
 
@@ -179,6 +187,13 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
+Buddies also write one JSON line to stderr for each new or changed loop hold
+and each action that ends without success. Hold lines include the timestamp,
+buddy run, repository, task and reason. Action lines also include the action ID
+and outcome. An unchanged hold logs once per loop across polls; after a cycle
+clears it, the same hold can log again. Stdout retains the CLI's final run
+summary. Redirect both streams to capture these diagnostics in operator logs.
+
 ## Install and safe upgrades
 
 Run source and assets only from an accepted installed copy. Source Land does not change that copy, credentials or model provisioning. Before Land, pass the gate required by the effective trusted policy on the exact candidate and obtain independent read-only Security bound to that candidate, trusted inputs, policy and pre-Land target.
@@ -190,7 +205,7 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run check:full
 ```
 
-Run at the monorepo root under Node 24. Retain exact command statuses and source/policy/target identities. A fast pass is not full runtime coverage. Missing proof after Land remains a hold; retrospective tests or Security cannot fill it.
+Run at the monorepo root under Node 24. Retain exact command statuses and source/policy/target identities. A fast pass is not full runtime coverage.
 
 Only after separate operator authorization, drain old jobs/actions and every consumer, preserve all work and evidence, and review the installation dry-run:
 

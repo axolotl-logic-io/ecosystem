@@ -66,7 +66,7 @@ npm run check:full
 
 Run both commands at the repository root under Node 24. The fast gate alone is not full integration coverage. Retain the exact source commit, trusted-input revision, effective policy, configured target branch/commit, gate results and independent read-only Security clearance.
 
-Before installation, confirm the delivered identity, authenticated receipt and ancestry against that evidence. Missing, stale or mismatched proof keeps installation stopped, even if code has landed. Do not invent a receipt or run retrospective checks or Security to fill the gap. Installation acceptance does not require a second suite after Land.
+Before installation, confirm the delivered identity, authenticated receipt and ancestry against that evidence. Installation acceptance does not require a second suite after Land.
 
 After source delivery, the operator separately authorizes the cutover and reviews the dry-run:
 
@@ -77,13 +77,13 @@ mise //apps/issue-pipeline:install
 
 The installer builds and copies managed programs, prompts and examples into the pipeline root, and agent definitions into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`). It records the source commit in `INSTALLED.json` and backs up replaced files under `$ISSUE_PIPELINE_ROOT-backups/TIMESTAMP-install/`.
 
-It refuses dirty source unless explicitly overridden, and refuses installation from inside the pipeline root. It does not remove files an earlier release installed, and it does not rewrite operator configs, credentials, runtime HOME, setup/teardown scripts, clones, work or recovery evidence. A source base named `main` is not deployment authority.
+It allows uncommitted source changes and records them with `dirty: true` in `INSTALLED.json`. It refuses installation from inside the pipeline root. It does not remove files an earlier release installed, and it does not rewrite operator configs, credentials, runtime HOME, setup/teardown scripts, clones, work or recovery evidence. A source base named `main` is not deployment authority.
 
 ## Installation acceptance
 
 Keep activation stopped until the operator accepts the installed artifacts separately from source delivery:
 
-1. Confirm `INSTALLED.json` identifies the accepted clean source.
+1. Confirm `INSTALLED.json` identifies the source commit and whether it had uncommitted changes.
 2. Compare managed programs with its built artifacts and prompts/examples with reviewed source bytes.
 3. Compare copied agent definitions after filling documented root placeholders.
 4. Confirm backups and preservation match the reviewed dry-run.

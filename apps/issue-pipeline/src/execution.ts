@@ -3,7 +3,11 @@
 // writes with it (controlledMutation). It is not a scheduler.
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
-import { listComments, listRepoComments, rawComment } from "./comments.ts";
+import {
+  listComments,
+  listCoordinationComments,
+  rawComment,
+} from "./comments.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import type {
@@ -90,7 +94,7 @@ function portOf(
       assertReconciled(cfg, issue);
       if (repository) {
         guardExecution(cfg, issue);
-        return listRepoComments(cfg, null);
+        return listCoordinationComments(cfg);
       }
       return listComments(cfg, issue);
     },

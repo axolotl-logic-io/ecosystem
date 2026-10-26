@@ -68,6 +68,42 @@ test("build writes every program and leaves other output files alone", () => {
   }
 });
 
+test("installer accepts uncommitted source and records its dirty identity", () => {
+  const sandbox = fixture();
+  try {
+    const root = path.join(sandbox.root, "operator-root");
+    const agent = path.join(sandbox.root, "agent");
+    const prompt = "# Modified local prompt\n";
+    fs.writeFileSync(path.join(sandbox.source, "prompts/author.md"), prompt);
+    const commit = command(sandbox.source, "git", ["rev-parse", "HEAD"]).trim();
+    const result = spawnSync(process.execPath, ["install.ts"], {
+      cwd: sandbox.source,
+      encoding: "utf8",
+      timeout: TEST_TIMEOUT_MS,
+      env: {
+        ...process.env,
+        ...Object.fromEntries([
+          ["ISSUE_PIPELINE_ROOT", root],
+          ["PI_CODING_AGENT_DIR", agent],
+        ]),
+      },
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(
+      fs.readFileSync(path.join(root, "prompts/author.md"), "utf8"),
+      prompt,
+    );
+    const installed = JSON.parse(
+      fs.readFileSync(path.join(root, "INSTALLED.json"), "utf8"),
+    );
+    assert.equal(installed.commit, commit);
+    assert.equal(installed.dirty, true);
+    assert.ok(result.stdout.includes("with uncommitted changes"));
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
 test("installer dry run plans the buddy distribution and preserves operator files", () => {
   const sandbox = fixture();
   try {

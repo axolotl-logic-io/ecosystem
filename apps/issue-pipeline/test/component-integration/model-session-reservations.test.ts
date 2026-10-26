@@ -454,6 +454,96 @@ test("a record of another version, or a resource record without its version, hol
   assert.match(unversioned?.reason ?? "", VERSION_MISMATCH);
 });
 
+test("unrelated edited state and discussion do not block a repository's model slots", async () => {
+  const at = world(1);
+  seed(at, OLD_ISSUE, LANDING, "<!-- agent-pipeline:state -->\nLegacy receipt");
+  seed(at, OLD_ISSUE, LANDING, "Ordinary discussion");
+  const store = readStore(at.store);
+  for (const comment of store.comments) {
+    comment.editor = "alice";
+  }
+  writeStore(at.store, store);
+  const [reserved, released] = await invoke(at, newInvocation(READER_ISSUE), [
+    { do: "reserve", cap: 1 },
+    { do: "release" },
+  ]);
+  assert.equal(reserved?.state, "reserved");
+  assert.equal(released?.released, true);
+});
+
+for (const { label, listed, current } of [
+  {
+    label: "retains its marker",
+    listed: `${HEADER}{}${END}`,
+    current: `${HEADER}{}${END}`,
+  },
+  {
+    label: "gains its marker",
+    listed: "Ordinary discussion",
+    current: `${HEADER}{}${END}`,
+  },
+  {
+    label: "loses its marker",
+    listed: `${HEADER}{}${END}`,
+    current: "Ordinary discussion",
+  },
+]) {
+  test(`an untrusted coordination edit that ${label} between listing and reread holds the pool`, async () => {
+    const at = world(1);
+    const id = seed(at, OLD_ISSUE, LANDING, listed);
+    const store = readStore(at.store);
+    const comment = store.comments.find((item) => item.id === id);
+    assert.ok(comment !== undefined);
+    comment.currentBody = current;
+    comment.editor = "alice";
+    writeStore(at.store, store);
+    const [held] = await invoke(at, newInvocation(READER_ISSUE), [
+      { do: "reserve", cap: 1 },
+    ]);
+    assert.equal(held?.state, "held");
+    assert.match(held?.reason ?? "", UNTRUSTED_AUTHOR);
+    assert.equal(
+      readStore(at.store).comments.some((item) =>
+        item.body.includes('"model-session"'),
+      ),
+      false,
+    );
+  });
+}
+
+test("a consumer record stripped of its marker before both reads still prevents release", async () => {
+  const at = world(1);
+  const holder = newInvocation(HOLDER_ISSUE);
+  const [reserved, registered] = await invoke(at, holder, [
+    { do: "reserve", cap: 1 },
+    { do: "register", consumer: launch("still-running") },
+  ]);
+  assert.equal(reserved?.state, "reserved");
+  assert.deepEqual(registered, { register: "recorded" });
+  const store = readStore(at.store);
+  const record = store.comments.find((item) =>
+    item.body.includes('"kind":"register"'),
+  );
+  assert.ok(record !== undefined);
+  record.body = "Ordinary discussion";
+  record.editor = "alice";
+  writeStore(at.store, store);
+  // Issue-local execution checks remain strict even when the repository-wide
+  // read ignores ordinary discussion. The holder cannot reach release.
+  await assert.rejects(
+    invoke(at, holder, [{ do: "reserve", cap: 1 }, { do: "release" }]),
+    UNTRUSTED_AUTHOR,
+  );
+  assert.equal(
+    readStore(at.store).comments.some(
+      (item) =>
+        item.body.includes('"kind":"release"') &&
+        item.body.includes('"model-session"'),
+    ),
+    false,
+  );
+});
+
 test("a caller cap that differs from the trusted capacity holds and writes nothing", async () => {
   const at = world(SMALL_CAP);
   const caller = newInvocation(TRUSTED_ISSUE);

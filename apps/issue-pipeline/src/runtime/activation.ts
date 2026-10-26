@@ -34,11 +34,13 @@ import { loadBuddy } from "./buddy-config.ts";
 import type { BuddyRunId } from "./ids.ts";
 import { newBuddyRunId } from "./ids.ts";
 import type {
+  BuddyDiagnostics,
   BuddyRunObservation,
   LoopObservation,
   Observed,
 } from "./observations.ts";
 import {
+  buddyDiagnostics,
   buddyRunFile,
   observed,
   previousBuddyRun,
@@ -140,11 +142,14 @@ function initialObservation(
 
 // Sets loop `task` of `repo` in the observation.
 function setLoop(
-  observation: Observed<BuddyRunObservation>,
+  cycle: Cycle,
   where: { task: TaskId; repo: string },
   change: Partial<Omit<LoopObservation, "task" | "repo">>,
 ): void {
-  observation.update(
+  if (change.state === "held" && typeof change.reason === "string") {
+    cycle.diagnostics.held(where, change.reason);
+  }
+  cycle.observation.update(
     (run: BuddyRunObservation): BuddyRunObservation => ({
       ...run,
       loops: run.loops.map((loop: LoopObservation): LoopObservation => {
@@ -180,6 +185,7 @@ interface Cycle {
   stop: StopControl;
   scope: SignalScope;
   observation: Observed<BuddyRunObservation>;
+  diagnostics: BuddyDiagnostics;
 }
 
 // The signals of `signals` grouped by work item number, in number order.
@@ -243,7 +249,7 @@ async function offerSignal(
     return false;
   }
   if (readiness.state !== "ready" && readiness.state !== "recover") {
-    setLoop(cycle.observation, where, {
+    setLoop(cycle, where, {
       state: readiness.state,
       reason: readiness.reason,
     });
@@ -261,14 +267,14 @@ async function offerSignal(
     scope: cycle.scope,
   });
   if (admission.state !== "admitted") {
-    setLoop(cycle.observation, where, {
+    setLoop(cycle, where, {
       state: admission.state,
       reason: admission.reason,
     });
     return false;
   }
   const { action } = admission;
-  setLoop(cycle.observation, where, {
+  setLoop(cycle, where, {
     state: "acting",
     reason: null,
     action: action.id,
@@ -281,10 +287,11 @@ async function offerSignal(
     scope: cycle.scope,
     stopPollSeconds: cycle.buddy.config.stopPollSeconds,
   });
-  setLoop(cycle.observation, where, {
+  setLoop(cycle, where, {
     state: loopStateOf(summary),
     reason: summary.reason ?? summary.end.reason,
   });
+  cycle.diagnostics.ended(where, summary);
   return summary.notAdmitted === null;
 }
 
@@ -302,7 +309,7 @@ function setAllLoops(
   change: Partial<Omit<LoopObservation, "task" | "repo">>,
 ): void {
   for (const task of cycle.buddy.tasks) {
-    setLoop(cycle.observation, { task, repo }, change);
+    setLoop(cycle, { task, repo }, change);
   }
 }
 
@@ -399,6 +406,7 @@ interface Activation {
   trusted: string;
   pollSeconds: number;
   observation: Observed<BuddyRunObservation>;
+  diagnostics: BuddyDiagnostics;
 }
 
 // Runs cycles until the run stops: each on a freshly reread trusted
@@ -428,7 +436,9 @@ async function cycles(activation: Activation): Promise<void> {
     stop,
     scope: activation.scope,
     observation: activation.observation,
+    diagnostics: activation.diagnostics,
   });
+  activation.diagnostics.settled(activation.observation.current().loops);
   if (!began) {
     await pause(activation.pollSeconds * MS_PER_SECOND, stop.buddy);
   }
@@ -479,6 +489,7 @@ async function activate(file: string, stop: StopControl): Promise<BuddyRunEnd> {
       trusted: digestsOf(buddy),
       pollSeconds,
       observation,
+      diagnostics: buddyDiagnostics(id),
     });
   } catch (error: unknown) {
     failure = messageOf(error);

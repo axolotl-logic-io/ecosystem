@@ -6,6 +6,7 @@
 // before a release counts.
 import { z } from "zod";
 import { assertCommentAuthority } from "./comment-authority.ts";
+import { isCoordinationBody } from "./comment-marks.ts";
 import type { IssueComment } from "./comments.ts";
 import type { Config } from "./config.ts";
 import {
@@ -145,7 +146,7 @@ function refOf(scope: string, epoch: number): string {
 }
 function parseRecord(cfg: Config, comment: IssueComment): Row[] {
   const body = comment.body ?? "";
-  if (!body.includes("agent-pipeline:coordination")) {
+  if (!isCoordinationBody(body)) {
     return [];
   }
   assertCommentAuthority(cfg, comment);

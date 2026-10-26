@@ -25,6 +25,7 @@ import {
   WORK_ITEM_REF,
 } from "../domain.ts";
 import { ROOT } from "../pipeline-root.ts";
+import type { ActionSummary } from "./action.ts";
 
 const OBSERVATION_FILE = "run.json";
 const TIME = z.iso.datetime();
@@ -258,6 +259,70 @@ function processObservation(startedAt: string): ProcessObservation {
 }
 
 // An observation kept current: `update` changes it and rewrites its file.
+type LoopLocation = Pick<LoopObservation, "repo" | "task">;
+interface BuddyDiagnostics {
+  held: (where: LoopLocation, reason: string) => void;
+  settled: (loops: readonly LoopObservation[]) => void;
+  ended: (where: LoopLocation, summary: ActionSummary) => void;
+}
+
+// Stderr diagnostics supplement run records; neither grants runtime authority.
+// Remember holds across the poll's temporary idle reset, until a whole cycle
+// clears them. JSON keeps multiline reasons within one physical log line.
+function buddyDiagnostics(id: string): BuddyDiagnostics {
+  const holds = new Map<string, Set<string>>();
+  const seen = new Map<string, Set<string>>();
+  return {
+    held: (where: LoopLocation, reason: string): void => {
+      const key = JSON.stringify([where.repo, where.task]);
+      const current = seen.get(key) ?? new Set<string>();
+      current.add(reason);
+      seen.set(key, current);
+      const reported = holds.get(key) ?? new Set<string>();
+      if (reported.has(reason)) {
+        return;
+      }
+      reported.add(reason);
+      holds.set(key, reported);
+      process.stderr.write(
+        `${JSON.stringify({
+          at: new Date().toISOString(),
+          buddyRun: id,
+          ...where,
+          state: "held",
+          reason,
+        })}\n`,
+      );
+    },
+    settled: (loops: readonly LoopObservation[]): void => {
+      for (const loop of loops) {
+        const key = JSON.stringify([loop.repo, loop.task]);
+        const current = seen.get(key);
+        if (loop.state !== "held") {
+          holds.delete(key);
+        } else if (current !== undefined) {
+          holds.set(key, current);
+        }
+      }
+      seen.clear();
+    },
+    ended: (where: LoopLocation, summary: ActionSummary): void => {
+      if (summary.notAdmitted !== null || summary.end.outcome === "succeeded") {
+        return;
+      }
+      process.stderr.write(
+        `${JSON.stringify({
+          at: new Date().toISOString(),
+          buddyRun: id,
+          ...where,
+          action: summary.id,
+          ...summary.end,
+        })}\n`,
+      );
+    },
+  };
+}
+
 interface Observed<T> {
   current: () => T;
   update: (change: (now: T) => T) => void;
@@ -277,6 +342,7 @@ function observed<T>(file: string, initial: T): Observed<T> {
 
 export type {
   ActionRunObservation,
+  BuddyDiagnostics,
   BuddyRunObservation,
   LoopObservation,
   Observed,
@@ -287,6 +353,7 @@ export {
   ACTION_RUN,
   actionRunFile,
   BUDDY_RUN,
+  buddyDiagnostics,
   buddyRunFile,
   observed,
   previousBuddyRun,

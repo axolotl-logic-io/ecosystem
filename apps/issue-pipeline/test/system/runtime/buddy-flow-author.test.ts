@@ -176,6 +176,8 @@ test("Author's questions refuse, and its spent start never retries it", async ({
     assert.ok(author !== undefined);
     assert.equal(first.actions.length, 1);
     assert.equal(author.verdict, "refused");
+    assert.ok(first.stderr.includes('"outcome":"refused"'), first.stderr);
+    assert.ok(first.stderr.includes(author.id), first.stderr);
     const [questions] = commentsWith(box, QUESTIONS_MARK);
     assert.equal(questions?.author, LANDING);
     assert.ok(questions?.body.includes("- Do broken widgets count?"));

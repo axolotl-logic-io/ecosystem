@@ -2,9 +2,8 @@
 // Builds programs and installs prompts, examples and filled agent definitions.
 // Every replaced file is backed up; operator config and work stay local.
 // Only an operator-authorized install activates source changes.
-// Usage: node install.ts [--dry-run] [--allow-dirty]
-//   --dry-run      list what would change and write nothing
-//   --allow-dirty  install even with uncommitted changes in this folder
+// Usage: node install.ts [--dry-run]
+//   --dry-run  list what would change and write nothing
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -50,7 +49,6 @@ const AGENT_DIR = path.resolve(
   agentDirVariable || path.join(HOME, ".pi/agent"),
 );
 const dryRun = process.argv.includes("--dry-run");
-const allowDirty = process.argv.includes("--allow-dirty");
 
 function fail(message: string): never {
   console.error(`install: ${message}`);
@@ -222,9 +220,8 @@ function outcome(changed: number, shortSha: string, backup: string): string {
   return `installed ${shortSha}: ${changed} pipeline file(s) changed${where}`;
 }
 
-// Refuses to install from inside the pipeline root, from outside a git
-// checkout, or with uncommitted changes unless allowed, then builds. Returns
-// the commit and the uncommitted changes.
+// Requires a Git checkout outside the pipeline root, then builds. Returns
+// the commit and the uncommitted changes for the installation record.
 function checkedBuild(): { commit: string; dirty: string | null } {
   if (real(SRC) === real(ROOT) || real(SRC).startsWith(real(ROOT) + path.sep)) {
     fail(
@@ -236,11 +233,6 @@ function checkedBuild(): { commit: string; dirty: string | null } {
     fail(`${SRC} is not in a git checkout`);
   }
   const dirty = git("status", "--porcelain", "--", ".");
-  if (dirty !== null && dirty !== "" && !allowDirty) {
-    fail(
-      `uncommitted changes in ${SRC}:\n${dirty}\nCommit them, or pass --allow-dirty`,
-    );
-  }
   const built = spawnSync(process.execPath, [path.join(SRC, "build.ts")], {
     cwd: SRC,
     stdio: "inherit",
