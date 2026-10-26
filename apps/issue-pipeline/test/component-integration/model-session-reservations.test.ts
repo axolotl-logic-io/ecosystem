@@ -511,6 +511,39 @@ for (const { label, listed, current } of [
   });
 }
 
+test("a consumer record stripped of its marker before both reads still prevents release", async () => {
+  const at = world(1);
+  const holder = newInvocation(HOLDER_ISSUE);
+  const [reserved, registered] = await invoke(at, holder, [
+    { do: "reserve", cap: 1 },
+    { do: "register", consumer: launch("still-running") },
+  ]);
+  assert.equal(reserved?.state, "reserved");
+  assert.deepEqual(registered, { register: "recorded" });
+  const store = readStore(at.store);
+  const record = store.comments.find((item) =>
+    item.body.includes('"kind":"register"'),
+  );
+  assert.ok(record !== undefined);
+  record.body = "Ordinary discussion";
+  record.editor = "alice";
+  writeStore(at.store, store);
+  // Issue-local execution checks remain strict even when the repository-wide
+  // read ignores ordinary discussion. The holder cannot reach release.
+  await assert.rejects(
+    invoke(at, holder, [{ do: "reserve", cap: 1 }, { do: "release" }]),
+    UNTRUSTED_AUTHOR,
+  );
+  assert.equal(
+    readStore(at.store).comments.some(
+      (item) =>
+        item.body.includes('"kind":"release"') &&
+        item.body.includes('"model-session"'),
+    ),
+    false,
+  );
+});
+
 test("a caller cap that differs from the trusted capacity holds and writes nothing", async () => {
   const at = world(SMALL_CAP);
   const caller = newInvocation(TRUSTED_ISSUE);
