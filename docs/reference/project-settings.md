@@ -26,7 +26,7 @@ This repository's root `.issue-pipeline.json` supplies its pipeline gate and pra
     "lint": "npm run lint",
     "typecheck": "npm run typecheck"
   },
-  "practices": ["AGENTS.md", "docs/coding-practices.md"],
+  "practices": ["AGENTS.md", "docs/project-practices.md"],
   "lockfiles": [],
   "migrations": null
 }

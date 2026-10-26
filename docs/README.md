@@ -6,9 +6,7 @@ The [PR review decisions](decisions/pr-review.md) replaced the separate-duties t
 
 ## Practices
 
-[Coding practices](coding-practices.md): the shared design, type, lint, test and secrets rules, kept identical in each repository.
-
-[Project practices](project-practices.md): this repository's own rules, which add to the coding practices.
+[Project practices](project-practices.md): the repository's design, type, lint, test and secrets rules.
 
 [Docs style guide](docs-style-guide.md): how to write these docs.
 
