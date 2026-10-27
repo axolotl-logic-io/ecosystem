@@ -60,6 +60,11 @@ const BOTH: BuddyChoice = { role: "developer", tasks: ["author", "implement"] };
 // Author on one poll, Implement on the next; the third stops.
 const BOTH_POLLS = 3;
 const POLLS = 2;
+const ASSIGNEES = `repos/acme/widgets/issues/${ISSUE}/assignees`;
+
+function isAssigneesPath(arg: string): boolean {
+  return arg === ASSIGNEES;
+}
 
 // Issue ISSUE with exactly `labels`, each applied by the human.
 function labelled(labels: readonly string[]): (world: World) => void {
@@ -192,6 +197,36 @@ test("Author's questions refuse, and its spent start never retries it", async ({
     );
     assert.deepEqual(records(box), before);
     assert.equal(box.launches().length, 1);
+    passed = true;
+  } finally {
+    keep(box, passed);
+  }
+});
+
+test("Author writes Gherkin on an issue assigned to a person, and neither backs off nor assigns", async ({
+  signal,
+}) => {
+  const box = machine((world: World): void => {
+    labelled(["start:author"])(world);
+    const issue = world.issues.find((item) => item.number === ISSUE);
+    if (issue !== undefined) {
+      issue.assignees = [HUMAN];
+    }
+  });
+  let passed = false;
+  try {
+    const run = await box.runBuddy([AUTHORS], POLLS, AUTHOR, signal);
+    assert.equal(run.status, 0, run.stderr);
+    const [author] = run.actions;
+    assert.equal(author?.verdict, "passed", author?.reason ?? run.stderr);
+    assert.deepEqual(
+      box.calls().filter((call) => call.args.some(isAssigneesPath)),
+      [],
+    );
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.assignees,
+      [HUMAN],
+    );
     passed = true;
   } finally {
     keep(box, passed);

@@ -46,6 +46,20 @@ Model-session reservations share one repository/base/resource pool at the truste
 
 Land separately acquires the target's integration turn before recording its attempt. An unavailable turn waits without spending an attempt. An uncertain Land retains the turn for read-only reconciliation. The runtime does not create a second target-write pool.
 
+## Issue assignment
+
+Issue assignment shows people who is working on an issue, and it lets a person take an issue over. It grants nothing. The coordination store, on GitHub or PostgreSQL, still decides which pipeline instance owns an issue, and no signal, prerequisite or permission check treats an assignee as authority.
+
+If a person is assigned to an issue, the pipeline leaves it to them. Before a new Implement or Fix attempt takes the issue, the runtime reads the issue's assignees fresh from GitHub. If any assignee is neither the repository's `devAccount` nor its `landingAccount`, compared without case, the action waits with the reason `#N is assigned to LOGIN, so the pipeline leaves it to them`. `N` is the issue number and `LOGIN` is the first such assignee.
+
+A back-off takes no claim, posts nothing and spends no signal. To hand the issue back, unassign yourself; the same start then proceeds on a later poll. If the runtime can't read the assignees, the action holds instead.
+
+Once a new Implement or Fix attempt is recorded, the development account assigns itself to the issue. That change crosses the same stop and permission checks as the action's pushes. When the action settles and releases the issue, the development account removes only itself and never another assignee. A recovery retries a removal that its earlier run failed to make. Both changes are for display only: if one fails, the buddy logs a warning and the action goes on.
+
+If the action retains the issue, the development account stays assigned while the pipeline holds it. It's removed when a later Implement or Fix on the issue releases it.
+
+Verify, Land and Author neither assign the issue nor back off from an assigned person. A machine account as an assignee never causes a back-off.
+
 ## Read observations
 
 The [run-file reference](runtime-runs.md#observation-files) defines buddy and action records. The [dashboard](../../apps/workflow-dash/README.md) shows their explicit links, uncertain outcomes, retained ownership, held reservations and incomplete coverage.

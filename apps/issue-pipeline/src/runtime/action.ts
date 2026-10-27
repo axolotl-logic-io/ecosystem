@@ -6,7 +6,11 @@
 // `recover` readiness, only its read-only recover), records its end and
 // settles: the checkout is preserved and removed, the model-session
 // reservation released once its consumers are done, and the issue's
-// execution released only when nothing about the run is uncertain.
+// execution released only when nothing about the run is uncertain. Once a
+// new Implement or Fix attempt is recorded, it assigns the development
+// account to its issue, and any Implement or Fix run removes that account
+// just before it releases the issue; assignment is display only
+// (issue-assignment.ts).
 //
 // A stop, of the whole buddy run or of the action's work item alone, closes
 // every boundary: no new op or model session starts, and a live session is
@@ -39,6 +43,7 @@ import type {
 } from "../domain.ts";
 import { ACTION_END } from "../domain.ts";
 import { issueExecution } from "../execution.ts";
+import { assignsIssue, changeOwnAssignment } from "../issue-assignment.ts";
 import type { JobDirs } from "../job/checkout.ts";
 import { closeJobCheckout } from "../job/checkout-close.ts";
 import { pushServerOf } from "../job/commit-push.ts";
@@ -150,8 +155,9 @@ interface AdmittedAction {
 }
 
 // What an action runs under: its buddy run, the repository and its config
-// file, the task, the stop control, the signal scope and how often it
-// rereads its work item's stop latch.
+// file, the task, the stop control, the signal scope, how often it
+// rereads its work item's stop latch, and where it logs a failure it goes
+// on past.
 interface ActionSetting {
   buddyRun: BuddyRunId;
   repository: BuddyRepository;
@@ -159,6 +165,7 @@ interface ActionSetting {
   stop: StopControl;
   scope: SignalScope;
   stopPollSeconds: number;
+  warn: (reason: string) => void;
 }
 
 // How an action run settled.
@@ -363,6 +370,10 @@ interface OpenAction {
   // whose success is not confirmed, or prepared. A started preparation is
   // never retried, and its checkout is retained unless it is prepared.
   preparation: "none" | "started" | "prepared";
+  // Whether settling removes the development account from the issue: once
+  // this action asked to assign it, or always for a recovery, which retries
+  // a removal its earlier run may have failed to make.
+  unassigns: boolean;
   startedAt: string;
 }
 
@@ -941,6 +952,40 @@ async function releaseReservation(open: OpenAction): Promise<string | null> {
   return `model-session slot ${String(reservation.slot)} held: ${reason}`;
 }
 
+// Adds or removes the development account as an assignee of an Implement or
+// Fix action's issue. Adding crosses the same stop, grant and cause check
+// as the action's pushes; removing only cleans up the action's own display,
+// so a stopped action still makes it. A failure doesn't stop the action; it
+// is logged.
+function noteAssignment(open: OpenAction, change: "add" | "remove"): void {
+  const { admitted, cfg, workItem, setting } = open;
+  if (!assignsIssue(setting.task.id)) {
+    return;
+  }
+  if (change === "remove" && !open.unassigns) {
+    return;
+  }
+  let writer = cfg;
+  if (change === "add") {
+    open.unassigns = true;
+    writer = guardedMutations(cfg, {
+      kind: "substantive",
+      scope: setting.scope,
+      number: workItem.number,
+      proposed: { binding: admitted.binding, cause: admitted.cause },
+    });
+  }
+  const failed = changeOwnAssignment(writer, workItem.number, change);
+  if (failed === null) {
+    return;
+  }
+  let what = `assign ${cfg.devAccount} to`;
+  if (change === "remove") {
+    what = `unassign ${cfg.devAccount} from`;
+  }
+  setting.warn(`could not ${what} #${workItem.number}: ${failed}`);
+}
+
 // Releases the issue's execution when nothing holds it; returns why it is
 // retained, or null once released.
 function releaseOwnership(
@@ -956,6 +1001,12 @@ function releaseOwnership(
   if (refusal !== null) {
     return refusal;
   }
+  // While the action still owns the issue, no other Implement or Fix can
+  // have assigned the development account since, so removing it is safe.
+  // A recovery's removal retries one its earlier run failed to make. When
+  // settlement retains the issue, the account stays assigned until a later
+  // Implement or Fix on the issue releases it.
+  noteAssignment(open, "remove");
   try {
     issueExecution(cfg, workItem.number).release();
     return null;
@@ -1134,6 +1185,7 @@ async function runTask(open: OpenAction, ctx: ActionContext): Promise<TaskRun> {
   } catch (error: unknown) {
     return { ...notBegun(error), record: null };
   }
+  noteAssignment(open, "add");
   const end = await endOf(open, () => task.act(ctx));
   return {
     end,
@@ -1228,6 +1280,7 @@ async function openAction(
       control,
       checkpoint: { uncertain: null },
       preparation: "none",
+      unassigns: admitted.mode === "recover",
       startedAt: now(),
     };
     return { open };

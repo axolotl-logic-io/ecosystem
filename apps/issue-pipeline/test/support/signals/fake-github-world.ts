@@ -1,9 +1,10 @@
 // The JSON world file behind the signal tests' fake gh and fake task seam:
 // accounts, one organization's memberships, issues with their labels,
-// label events and comments, injected read faults, the POST outcome and the
-// task lane's answers. The fake GitHub server (fake-gh-server.ts) holds
-// it and writes it back whole after each change, so every process that
-// reads the file sees GitHub's state after some completed call.
+// label events, comments and assignees, injected read faults, the POST
+// outcome and the task lane's answers. The fake GitHub server
+// (fake-gh-server.ts) holds it and writes it back whole after each change,
+// so every process that reads the file sees GitHub's state after some
+// completed call.
 import fs from "node:fs";
 import { z } from "zod";
 
@@ -102,6 +103,9 @@ const ISSUE = z.strictObject({
   // Who closed the issue and with which state reason (`gh issue close`);
   // an issue without it is open.
   closed: z.strictObject({ by: z.string(), reason: z.string() }).optional(),
+  // The logins assigned to the issue, in the order they were added; an
+  // issue without it has none.
+  assignees: z.array(z.string()).optional(),
 });
 // An injected answer for one listing page or read: `path` without its query.
 const FAULT = z.strictObject({
@@ -210,6 +214,11 @@ const WORLD = z.strictObject({
   failIssueCloses: z.number().int().positive().optional(),
   // The login whose PR thread replies GitHub refuses (HTTP 422).
   refuseRepliesBy: z.string().optional(),
+  // Whether GitHub refuses every change to an issue's assignees (HTTP 422).
+  refuseAssigneeChanges: z.boolean().optional(),
+  // Whether a whole-issue read, `gh api repos/O/R/issues/N` with no --jq,
+  // answers with assignees that aren't a list of users.
+  garbleAssignees: z.boolean().optional(),
   // The required checks GitHub reports on each head commit, as GitHub
   // Actions or another CI posts them (`gh pr checks --required`).
   checks: z

@@ -83,10 +83,11 @@ An action starts only when all of these pass, freshly and in order:
 2. `bindBuddyAuthorization` accepts the action's envelope.
 3. The work item's stop latch reads clear.
 4. The causal signal still qualifies.
-5. The action wins fenced issue execution under its new UUID.
-6. The repository's shared pool grants a model-session slot at the trusted cap, when the task uses model sessions.
+5. For a new Implement or Fix attempt, no person is assigned to the issue.
+6. The action wins fenced issue execution under its new UUID.
+7. The repository's shared pool grants a model-session slot at the trusted cap, when the task uses model sessions.
 
-A lost race or a full pool waits. Anything unreadable holds. A `recover` readiness runs only the task's read-only recovery: it never begins a new attempt. The runtime doesn't reserve the target's integration turn; Land's own `beginAction` takes it.
+A lost race, a full pool or an issue assigned to a person waits. Anything unreadable holds. See [issue assignment](coordination.md#issue-assignment). A `recover` readiness runs only the task's read-only recovery: it never begins a new attempt. The runtime doesn't reserve the target's integration turn; Land's own `beginAction` takes it.
 
 ## Stop
 

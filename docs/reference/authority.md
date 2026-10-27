@@ -11,6 +11,7 @@ The repository configuration names distinct `devAccount` and `landingAccount` lo
 | Code commits, issue-branch pushes, Fix pushes and permitted recovery pushes | Development |
 | Opening the PR, Fix marking it ready, and permitted source-branch effects | Development |
 | Fix's replies on review threads | Development |
+| Its own issue assignment while Implement or Fix runs, and its removal when the action releases the issue | Development |
 | Authenticated pipeline records, authority reads and issue lifecycle | Landing |
 | Verify's PR reviews and their comments | Landing |
 | Land's merge of the PR, its close of the issue, and marking a conflicting PR a draft | Landing |

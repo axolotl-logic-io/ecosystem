@@ -44,6 +44,8 @@ Each action has a fresh UUID shared by its execution invocation and task attempt
 
 Authenticated coordination and create-only epoch refs fence issue execution. Controlled substantive mutations freshly check the buddy grant, source authority, stop state, ownership and saved write authority. Lost responses retain exact-intent journals; an expired lease or ended process releases nothing. [Coordination](../../docs/reference/coordination.md) describes the boundary.
 
+Issue assignment is for display and grants nothing. If a person is assigned to an issue, Implement and Fix wait for them without a claim, a post or a spent start. Once Implement or Fix records an attempt, the development account assigns itself, and it removes only itself when the action settles and releases the issue. See [issue assignment](../../docs/reference/coordination.md#issue-assignment).
+
 Model-session slots belong to one shared repository/base/resource pool. Live cap mismatches hold the pool. Holders release only after all registered consumers durably finish; pending setups and retained checkouts can retain resources. Resize only after the pool drains. Land separately takes the target's integration turn before recording its attempt; an uncertain Land retains that turn.
 
 Stops are cooperative and scoped to the buddy or work item. Do not kill an in-flight credentialed write, merge, rebase, review submission or Land. Evidence-only settlement remains subject to its recording authority and ownership; it cannot smuggle a new substantive effect past a stop. No undefined restart or continuation operation is supplied.
@@ -187,10 +189,12 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
-Buddies also write one JSON line to stderr for each new or changed loop hold
-and each action that ends without success. Hold lines include the timestamp,
-buddy run, repository, task and reason. Action lines also include the action ID
-and outcome. An unchanged hold logs once per loop across polls; after a cycle
+Buddies also write one JSON line to stderr for each new or changed loop hold,
+each action that ends without success and each failure an action goes on past,
+such as a failed issue assignment. Hold lines include the timestamp, buddy run,
+repository, task and reason. Action lines also include the action ID and
+outcome. Warning lines include the action ID, `"state":"warning"` and the
+reason. An unchanged hold logs once per loop across polls; after a cycle
 clears it, the same hold can log again. Stdout retains the CLI's final run
 summary. Redirect both streams to capture these diagnostics in operator logs.
 
