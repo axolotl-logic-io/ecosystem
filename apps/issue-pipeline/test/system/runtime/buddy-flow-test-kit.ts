@@ -97,6 +97,7 @@ interface PlannedSession {
     | "comments-unreadable"
     | "rival-push"
     | "reapply-author-start"
+    | "apply-verify-start"
     | null;
   // Whether `change` comes before the commit rather than after it.
   changeFirst: boolean;

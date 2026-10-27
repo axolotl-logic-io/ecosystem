@@ -1049,6 +1049,10 @@ async function settle(
 ): Promise<ActionSummary> {
   const recorded = await recordEnd(record);
   if (recorded === null && notAdmitted === null && end.verdict !== "unknown") {
+    let completed: string | null = open.admitted.id;
+    if (open.admitted.mode === "recover") {
+      completed = open.admitted.previous;
+    }
     const failed = clearCompletedStart(
       guardedMutations(open.cfg, {
         kind: "finalization",
@@ -1056,8 +1060,9 @@ async function settle(
         number: open.workItem.number,
         proposed: null,
       }),
-      open.admitted.signal,
+      open.workItem,
       open.setting.task.id,
+      completed,
     );
     if (failed !== null) {
       open.setting.warn(

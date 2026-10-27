@@ -1,9 +1,11 @@
 // A completed start's label is display, not its durable acceptance or spent
 // attempt. Remove only the application that caused this task, after its
 // determined result is confirmed. A newer application belongs to its caller.
+import { listComments } from "../comments.ts";
 import type { Config } from "../config.ts";
-import type { QualifiedSignal, TaskId } from "../domain.ts";
+import type { TaskId, WorkItemRef } from "../domain.ts";
 import { gh } from "../github.ts";
+import { determined, readRecords } from "../tasks/records.ts";
 import { labelEvidence, START_LABELS } from "./label-evidence.ts";
 import { signalId } from "./records.ts";
 
@@ -12,19 +14,29 @@ import { signalId } from "./records.ts";
 // response is not retried: a later application must get its own fresh check.
 function clearCompletedStart(
   cfg: Config,
-  signal: QualifiedSignal,
+  workItem: WorkItemRef,
   task: TaskId,
+  run: string | null,
 ): string | null {
-  if (signal.kind !== "start" || signal.task !== task) {
-    return null;
-  }
   const entry = [...START_LABELS].find(([, requested]) => requested === task);
   if (entry === undefined) {
     return null;
   }
   const [label] = entry;
   try {
-    const evidence = labelEvidence(cfg, signal.workItem.number);
+    if (run === null) {
+      return "the completed task's original run is unknown";
+    }
+    const { rows } = readRecords(
+      cfg,
+      workItem.number,
+      listComments(cfg, workItem.number),
+    );
+    const result = determined(rows, run);
+    if (result === undefined || result.binding.task !== task) {
+      return "the completed task's result is not confirmed";
+    }
+    const evidence = labelEvidence(cfg, workItem.number);
     if (evidence.status !== "ok") {
       return `could not read ${label}'s current application`;
     }
@@ -34,7 +46,7 @@ function clearCompletedStart(
     }
     if (
       event === undefined ||
-      signalId(signal.workItem, event.id) !== signal.id
+      signalId(workItem, event.id) !== result.cause.signal
     ) {
       return null;
     }
@@ -45,7 +57,7 @@ function clearCompletedStart(
         "api",
         "-X",
         "DELETE",
-        `repos/${cfg.repo}/issues/${signal.workItem.number}/labels/${encodeURIComponent(label)}`,
+        `repos/${cfg.repo}/issues/${workItem.number}/labels/${encodeURIComponent(label)}`,
       ],
       { reconciles: true },
     );
