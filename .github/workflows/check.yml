@@ -44,3 +44,30 @@ jobs:
 
       - run: npm ci --ignore-scripts
       - run: mise //apps/workflow-dash:check
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_DB: ecosystem_test
+          POSTGRES_USER: ecosystem_test
+          POSTGRES_PASSWORD: ecosystem_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U ecosystem_test -d ecosystem_test"
+          --health-interval 1s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql://ecosystem_test:ecosystem_test@127.0.0.1:${{ job.services.postgres.ports[5432] }}/ecosystem_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check --workspace @ecosystem/db
+      - run: npm run test:database

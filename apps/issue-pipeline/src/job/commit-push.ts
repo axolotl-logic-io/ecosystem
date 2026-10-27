@@ -23,8 +23,9 @@ import type { PathScope } from "./pipeline-commit.ts";
 import { appendRunLine } from "./run-log.ts";
 import type { JobStatus } from "./status.ts";
 
-// The op a push for `pipeline_commit` is recorded as in pushed.json, which a
-// claim adopts as the pipeline's own push (src/adopt-push.ts).
+// The op a push for `pipeline_commit` is recorded as in pushed.json. A
+// push refused because another worker moved the branch is reported in the
+// reply, with the recovery branch that holds the session's commits.
 const PIPELINE_COMMIT_OP = "pipeline-commit";
 // The job a push server pushes for: its code checkout, the issue branch its
 // caller assigned, and its random id.

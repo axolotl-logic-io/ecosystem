@@ -23,12 +23,12 @@
 // never share or oversubscribe the pool: changing the capacity means
 // draining it first. A declared cap is evidence of what its writer read, not
 // a policy of its own.
+import type { View } from "@ecosystem/db/protocol";
 import type { Config } from "../config.ts";
 import type {
   Consumer,
   ConsumerState,
   InvocationBinding,
-  Snapshot,
 } from "../coordination.ts";
 import { CONSUMER } from "../coordination-record-schema.ts";
 import { sameConsumer } from "../coordination-records.ts";
@@ -77,15 +77,13 @@ function messageOf(error: unknown): string {
 function nameOf(consumer: Consumer): string {
   return `${consumer.kind}:${consumer.id}`;
 }
-function requests(view: Snapshot, instance: string): boolean {
+function requests(view: View, instance: string): boolean {
   return view.pending.some((row) => row.binding.instance === instance);
 }
-function requested(view: Snapshot, instance: string): boolean {
-  return view.records.some(
-    (row) => row.kind === "request" && row.binding.instance === instance,
-  );
+function requested(view: View, instance: string): boolean {
+  return view.requestedInstances.includes(instance);
 }
-function occupied(view: Snapshot): boolean {
+function occupied(view: View): boolean {
   return view.owner !== null || view.pending.length > 0;
 }
 
@@ -93,7 +91,7 @@ function occupied(view: Snapshot): boolean {
 // claim that declares no cap or a different one. A cancelled request or a
 // released owner isn't live, so it never conflicts.
 function capacityConflict(
-  survey: ReadonlyMap<number, Snapshot>,
+  survey: ReadonlyMap<number, View>,
   cap: number,
 ): string | undefined {
   for (const [slot, view] of survey) {
@@ -114,7 +112,7 @@ function capacityConflict(
 // slot that anyone holds or requests counts against the cap, including one
 // beyond a cap that has since shrunk.
 function nextSlot(
-  survey: ReadonlyMap<number, Snapshot>,
+  survey: ReadonlyMap<number, View>,
   instance: string,
   cap: number,
 ): { slot: number } | { waiting: string } {
@@ -180,11 +178,7 @@ function release(
     const slot = slotOf();
     const view = slot.read();
     if (!requests(view, instance)) {
-      if (
-        view.records.some(
-          (row) => row.kind === "release" && row.instance === instance,
-        )
-      ) {
+      if (view.releasedInstances.includes(instance)) {
         return { released: true, reason: "already released" };
       }
       return {
@@ -298,11 +292,9 @@ function reserve(
     }
     const at = { slot: next.slot, cap };
     const slot = resourceSlot(bound, issue, MODEL_SESSION, at);
-    slot.request();
-    if (slot.acquire()) {
+    if (slot.tryAcquire()) {
       return confirmCapacity(bound, execution, slot, at);
     }
-    slot.cancel();
   }
   return {
     state: "waiting",

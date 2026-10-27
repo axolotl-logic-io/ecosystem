@@ -33,7 +33,8 @@ const SESSION = z.strictObject({
   // agents:stop to the issue, the human leaves the organization, GitHub
   // starts failing every comment POST before it applies, or only those of
   // the action's state checkpoint, or the issue's label events become
-  // unreadable.
+  // unreadable, or another worker pushes its own commit to the issue's
+  // branch.
   change: z
     .enum([
       "stop-issue",
@@ -41,6 +42,7 @@ const SESSION = z.strictObject({
       "posts-fail",
       "checkpoint-posts-fail",
       "events-unreadable",
+      "rival-push",
     ])
     .nullable(),
   // Whether `change` comes before the commit rather than after it.
@@ -178,8 +180,48 @@ function resolveConflict(resolved: NonNullable<Session["resolve"]>): void {
   }
 }
 
+function gitOk(args: readonly string[]): string {
+  const result = spawnSync("git", args, { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+// Another worker's commit on issue 7's branch, pushed straight to the
+// checkout's origin from a clone of its own.
+function rivalPush(): void {
+  const origin = gitOk(["-C", "repo", "remote", "get-url", "origin"]);
+  const rival = fs.mkdtempSync(path.join(path.dirname(origin), "rival-"));
+  gitOk(["clone", "--quiet", origin, rival]);
+  fs.writeFileSync(path.join(rival, "rival.txt"), "another worker\n");
+  for (const args of [
+    ["checkout", "--quiet", "-b", `agent/issue-${ISSUE}`],
+    ["add", "rival.txt"],
+    [
+      "-c",
+      "user.name=Rival",
+      "-c",
+      "user.email=rival@example.invalid",
+      "commit",
+      "--quiet",
+      "--no-verify",
+      "-m",
+      "Another worker's commit",
+    ],
+    ["push", "--quiet", "origin", `HEAD:refs/heads/agent/issue-${ISSUE}`],
+  ]) {
+    gitOk(["-C", rival, ...args]);
+  }
+  fs.rmSync(rival, { recursive: true, force: true });
+}
+
 // Makes `change` in the world; the human is autumn, the item issue 7.
 function applyChange(change: NonNullable<Session["change"]>): void {
+  if (change === "rival-push") {
+    rivalPush();
+    return;
+  }
   changeWorld(env("FAKE_GH_SOCKET"), (world) => edit(world, change));
 }
 

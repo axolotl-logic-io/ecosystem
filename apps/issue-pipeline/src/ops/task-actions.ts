@@ -99,6 +99,7 @@ function attemptRefusal(
     cfg,
     evidence,
     req.binding,
+    req.cause,
   );
   if (unmet !== null) {
     return { admitted: false, state: "waiting", reason: unmet };

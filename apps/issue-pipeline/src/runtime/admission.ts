@@ -177,9 +177,7 @@ async function admit(candidate: Candidate): Promise<Admission> {
   }
   try {
     const guard = issueExecution(cfg, issue);
-    guard.request();
-    if (!guard.acquire()) {
-      guard.cancel();
+    if (!guard.tryAcquire()) {
       return {
         state: "waiting",
         reason: `another invocation owns #${issue}`,

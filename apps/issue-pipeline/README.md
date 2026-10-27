@@ -183,7 +183,7 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 ## Programs and observations
 
-`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
+`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
 
 Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
@@ -193,6 +193,25 @@ buddy run, repository, task and reason. Action lines also include the action ID
 and outcome. An unchanged hold logs once per loop across polls; after a cycle
 clears it, the same hold can log again. Stdout retains the CLI's final run
 summary. Redirect both streams to capture these diagnostics in operator logs.
+
+## Database coordination
+
+Private operator config can select the shared `@ecosystem/db` PostgreSQL backend
+for issue ownership, model-session slots/consumers and Land integration turns.
+A transaction creates a claim once; relational constraints enforce exclusivity,
+source ownership, capacity and safe release. Claims and audit history retain
+database-generated timestamps, action and buddy identities, task and reasons.
+GitHub remains the default; requirements, signals, attempts/results and human
+conversation remain there under either backend. The database is short-term
+storage: a reset or a second database can let two buddies work on one issue,
+and fast-forward-only pushes, recovery branches and the GitHub task records
+keep that collision from losing work.
+
+The installed `database.mjs` reads a separate private credential file. It does
+not migrate schema, adopt old claims or fall back to GitHub on failure. Every
+participant for a repository/base must use the same backend. Read the
+[database reference](../../docs/reference/database.md) before provisioning or
+cutover. Source changes authorize neither live selection nor deployment.
 
 ## Install and safe upgrades
 
@@ -225,13 +244,13 @@ For a source defect, preserve the affected action and deliver a tested/reviewed 
 At the repository root:
 
 ```bash
-npm run check        # both apps' fast gates; not full pipeline runtime coverage
-npm run check:full   # pipeline fast gate and Node tests, then dashboard gate
+npm run check        # apps and shared database fast gates; no full runtime coverage
+npm run check:full   # database static gate, pipeline non-external tests, dashboard gate
 ```
 
 From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The pipeline fast gate checks source/test types, Biome, build, installer syntax and all nine built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and all ten built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
 
 Tests are sorted by ISTQB test level, as the [project practices](../../docs/project-practices.md#tests) define them. Each level has its own folder and script, with the full gate's flags:
 
@@ -240,7 +259,10 @@ Tests are sorted by ISTQB test level, as the [project practices](../../docs/proj
 | `test/component/` | Component | `npm run test:component` | the task ledger, read alone in a child process |
 | `test/component-integration/` | Component integration | `npm run test:component-integration` | signals, including Author and Verify starts and PR review signals, reservations, project policy, buddy authorization binding |
 | `test/system/` | System | `npm run test:system` | buddy flows of the built `buddy.mjs`, among them Author, Implement's hardening, Verify, Fix, Land and their recovery, `buddy --check`, `standards-upgrade apply`, the distribution |
+| `test/system-integration/` | System integration | `npm run test:database` | real isolated PostgreSQL, relocated database bundle and reservation adapter; requires explicit test setup |
 | `test/support/` | none | none | helpers more than one level uses, such as the fake GitHub server and signal kit |
+
+The separate [database suite](../../docs/reference/database.md#test-the-database-contract) creates fresh databases on a supplied disposable PostgreSQL server. Root `npm run test:database` runs both shared-store and pipeline database tests; it is not included in either default gate.
 
 [Writing a test](test/README.md) says what each level fakes, which kit to start from and how to run it.
 

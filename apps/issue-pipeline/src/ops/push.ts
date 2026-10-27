@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import type { PushResult } from "../checkouts.ts";
-import { push } from "../checkouts.ts";
+import { PushDiverged, push } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
@@ -23,15 +23,31 @@ function refuseOnceLanded(cfg: Config, n: number, op: string): void {
   }
 }
 
+// A push's reply: the head and what the work changes, and, when the branch
+// held another worker's commits, the recovery branch that keeps this one's.
+type PushReply = PushResult & {
+  diverged?: { branch: string; recovery: string };
+};
+
 // Pushes the issue's code branch for `op`. Once the saved state records the
 // code landed, or binds another branch than the assigned one, it refuses.
-function pushFor(cfg: Config, request: unknown, op: string): PushResult {
+// A diverged branch is a determined answer, not an error: both workers'
+// commits are kept, and the caller decides what to report.
+function pushFor(cfg: Config, request: unknown, op: string): PushReply {
   const { number } = parseRequest(PUSH_REQUEST, op, request);
   refuseOnceLanded(cfg, number, op);
-  return push(cfg, number, op);
+  try {
+    return push(cfg, number, op);
+  } catch (error) {
+    if (!(error instanceof PushDiverged)) {
+      throw error;
+    }
+    const { branch, recovery, headSha } = error;
+    return { headSha, codeChanged: true, diverged: { branch, recovery } };
+  }
 }
 
-function pushOp(cfg: Config, request: unknown): PushResult {
+function pushOp(cfg: Config, request: unknown): PushReply {
   return pushFor(cfg, request, "push");
 }
 

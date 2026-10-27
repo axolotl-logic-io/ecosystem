@@ -34,6 +34,8 @@ Issue delivery has five tasks: Author, Implement, Verify, Fix and Land. The refe
 
 [Coordination](reference/coordination.md): task admission, fenced execution, shared resources, observations and preservation.
 
+[Shared database](reference/database.md): PostgreSQL, shared Drizzle schema, database coordination, constraints, isolated tests, backups and drained cutover.
+
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
 [Land](reference/merge.md): Land's prerequisites, its merge of the PR pinned to the checked head, closing the issue, conflicts and read-only recovery.

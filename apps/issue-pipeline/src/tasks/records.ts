@@ -1,6 +1,8 @@
 // Task attempt and result records, version 2 (docs/reference/task-results.md).
-// Each attempt and each result is its own append-only hidden comment that
-// only the landing account writes. A record names its canonical verb task,
+// Each attempt and each result is its own append-only comment that only the
+// landing account writes. The record is a hidden block at the start of the
+// comment; a result's comment adds prose for people after it, which no
+// reader parses or trusts. A record names its canonical verb task,
 // its binding, the action run (its id and the run it follows), the buddy run
 // that produced it and the signal that caused it. Any other version, a
 // malformed record or records that contradict each other hold the item.
@@ -81,20 +83,28 @@ function isResult(row: Row): row is Row<Result> {
   return row.kind === "result";
 }
 
-function recordBody(record: TaskRecord): string {
+// The comment body of `record`: its hidden block, then `prose` for people,
+// if any. The block's JSON is one line with `-->` escaped, so the first
+// line ending in `-->` ends it.
+function recordBody(record: TaskRecord, prose = ""): string {
   const json = JSON.stringify(RECORD.parse(record)).replace(
     MARK_END_PATTERN,
     ESCAPED_MARK_END,
   );
-  return `${MARK}${json}${END}`;
+  const block = `${MARK}${json}${END}`;
+  if (prose === "") {
+    return block;
+  }
+  return `${block}\n\n${prose}`;
 }
 
 function rawRecord(comment: IssueComment, body: string): unknown {
-  if (!body.endsWith(END)) {
+  const end = body.indexOf(END, MARK.length);
+  if (end < 0) {
     hold(`comment ${comment.id} is a malformed record`);
   }
   try {
-    const raw: unknown = JSON.parse(body.slice(MARK.length, -END.length));
+    const raw: unknown = JSON.parse(body.slice(MARK.length, end));
     return raw;
   } catch {
     return hold(`comment ${comment.id} is an unreadable record`);

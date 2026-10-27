@@ -46,6 +46,12 @@ A result contains the same identity fields, `kind: "result"`, a `verdict` and a 
 
 A result must match its attempt's binding, run, buddy and cause. A run has at most one determined verdict. Read-only reconciliation may follow an unknown observation with a determined verdict for that original attempt; it does not create a replacement action or effect.
 
+## Result comments
+
+Each result comment starts with its hidden record, then speaks to the people on the issue in plain sentences. The prose says what happened, which checks ran or what stopped the run, where any pushed work is, and what happens next. The pipeline writes it from the record alone. Before posting, it replaces local paths and IP addresses in the prose and in the record's receipt: its summary and every string in its evidence. Other record fields identify the work, so a local path or address in one of them refuses the record rather than changing it.
+
+Readers parse only the hidden record. The prose is for people and never grants or changes anything. Attempts have no prose, and claims, reservations, polling and checkpoints post nothing, so a comment appears only when a task has a result to report.
+
 ## Current results
 
 | Task | What its pass attests |
@@ -90,13 +96,27 @@ A determined Land result's evidence is `LAND_EVIDENCE`, in one of two forms:
 
 ## Holds and replay prevention
 
-A missing binding may become ready only with a supported qualified cause, task prerequisites, buddy authorization and ownership. A passed binding waits and never reruns. A failed or refused binding holds; neither is retried automatically. A refused Verify or Land doesn't rerun for its binding either: Fix answers it with a new head, which is a new binding. An unsettled binding uses its task's read-only recovery when authorized, or holds for explicit reconciliation.
+A missing binding may become ready only with a supported qualified cause, task prerequisites, buddy authorization and ownership. A passed binding waits and never reruns. A failed or refused binding holds; neither is retried automatically, except for the [interrupted Implement run](#interrupted-implement-runs). A refused Verify or Land doesn't rerun for its binding either: Fix answers it with a new head, which is a new binding. An unsettled binding uses its task's read-only recovery when authorized, or holds for explicit reconciliation.
 
 Records retain a three-attempt ceiling per task and binding as an additional validation constraint. That ceiling is not a retry mechanism.
 
 The review loop has its own limit. An issue gets at most three Fix rounds that a refused Verify result caused (`VERIFY_FIX_ROUNDS`). After them, a further request-changes holds the issue for a person. Fix rounds that a person's review or Land's conflict caused don't count. See [the loop limit](review.md#loop-limit). Restarting a buddy, removing a label, ending a process, changing a target or linking `run.previous` grants no unsupported continuation.
 
 Readers hold when a record has the wrong work item, unknown version, bad authorship, malformed identity, reused run ID, invalid predecessor, unmatched attempt or conflicting determined verdict. Only a current pass can satisfy a prerequisite; even a pass grants no authority outside its exact scope.
+
+## Interrupted Implement runs
+
+An Implement run can stop before it records a result, for example when its buddy's machine restarts or the coordination database resets. Its pushed commits are still on the issue's branch.
+
+When a buddy next reads the issue's start, it settles the lost run with `implement-reconcile`. That operation only reads. It records a `failed` result whose `receipt.evidence` is `{ "interrupted": { "branch", "head", "continues" } }`:
+
+- `branch` is the issue's branch.
+- `head` is the branch's commit on GitHub now, or null when nothing was pushed.
+- `continues` is true when the run's requirements are still the issue's current requirements and they have attempts left under the three-attempt ceiling.
+
+When `continues` is true, that result is the cause of one continuation, `result:N` with `N` its record. The continuation is a new attempt linked to the lost run by `run.previous`. Its checkout starts from the pushed branch, and its writing session is told to finish that work rather than start again. It goes through the same prerequisite, stop and permission checks as any attempt, and the person's original start is checked again too; the start itself is never spent twice.
+
+When `continues` is false, nothing runs on its own. A person starts Implement again when the issue is ready.
 
 ## Guarded operations
 
@@ -105,7 +125,7 @@ Readers hold when a record has the wrong work item, unknown version, bad authors
 | `task-attempt` | Check fresh prerequisites and authority, then append the bound attempt |
 | `task-result` | Append the original action's authenticated settlement |
 | `checkpoint-action` | Preserve durable action progress in canonical work state, not grant a task pass |
-| Task-specific effects and `*-reconcile` operations | Record their own bound attempt/result or settle that original attempt without replay |
+| Task-specific effects and `*-reconcile` operations | Record their own bound attempt/result or settle that original attempt without replay; `implement-reconcile` settles a lost Implement run as interrupted |
 
 Every operation requires its execution binding and a freshly verified buddy envelope. Substantive effects recheck source qualification, stop evidence and write fences at the controlled mutation. Evidence-only finalization can survive source loss or a stop only under current recording authorization and ownership; it cannot hide a code, PR or target mutation.
 

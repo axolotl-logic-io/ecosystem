@@ -12,6 +12,16 @@ The opt-in Pi [workflow dashboard](apps/workflow-dash/README.md) lives in
 it does not schedule work. Its installation and checks are separate from the
 pipeline's.
 
+## Shared database
+
+`packages/db/` provides `@ecosystem/db`: a shared native PostgreSQL client,
+Drizzle schema and migrations for ecosystem apps. Root Compose files separate
+the persistent operational service from disposable tests. The issue pipeline
+can opt into database ownership and resource coordination; the default remains
+GitHub until an operator authorizes a drained cutover. Read the
+[database reference](docs/reference/database.md) for setup, constraints,
+credentials, tests, backups and cutover.
+
 ## Check
 
 You need Node 24, npm and Git. The root `package.json` declares the
@@ -19,18 +29,21 @@ Node major in `engines`. From the root of a fresh clone:
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund   # setup
-npm run check                                  # fast gate, both apps
-npm run check:full                             # fast gate plus every Node test
+npm run check                                  # fast gate, both apps and shared database
+npm run check:full                             # fast gate plus non-external pipeline Node tests
 ```
 
 The commands need no file under `$HOME` and no absolute path. The pipeline
 uses the same setup and gate, from `commands` in `.issue-pipeline.json`.
 
 The pipeline's fast gate typechecks source and tests, lints, builds and checks
-syntax. Its full gate runs every `apps/issue-pipeline/test/**/*.test.ts`, including
+syntax. Its full gate runs pipeline tests outside `test/system-integration/`, including
 real public-entrypoint delivery, authority, recovery and resource flows. New
 test files are picked up with no change to the scripts. The fast gate does not
 run that suite or prove runtime authority, recovery, isolation or landing behavior.
+The separate `npm run test:database` suite requires the isolated PostgreSQL test
+service and `TEST_DATABASE_URL`; see [database tests](docs/reference/database.md#test-the-database-contract).
+Both default gates typecheck and lint the shared database without connecting to it.
 
 Read the
 [check gates](docs/reference/check-gates.md) before selecting

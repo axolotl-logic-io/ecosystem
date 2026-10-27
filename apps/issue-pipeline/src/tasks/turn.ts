@@ -60,10 +60,8 @@ function waitingFor(cfg: Config, turn: Turn): string {
 function acquireLandTurn(cfg: Config, number: number): Admission {
   const turn = integrationTurn(cfg, number);
   retireEarlier(cfg, number, turn);
-  turn.request();
-  if (!turn.acquire()) {
+  if (!turn.tryAcquire()) {
     const reason = waitingFor(cfg, turn);
-    turn.cancel();
     return { state: "waiting", reason };
   }
   return { state: "admitted" };
@@ -95,9 +93,7 @@ function cancelLandTurn(cfg: Config, number: number): void {
   const turn = integrationTurn(cfg, number);
   if (turn.read().owner?.binding.instance === instanceOf(cfg)) {
     turn.release();
-    return;
   }
-  turn.cancel();
 }
 
 export { acquireLandTurn, assertLandTurn, cancelLandTurn, releaseSettledTurn };

@@ -40,7 +40,7 @@ Results drive the rest of the loop. A new PR head wakes Verify. A refused Verify
 
 Each admitted action has a fresh UUID, used by its execution invocation and task attempt. Each buddy activation and model session has a separate UUID. Explicit parent and previous links connect them; names and timestamps do not.
 
-Issue execution uses authenticated requests and create-only epoch refs. Every substantive mutation freshly checks ownership as well as its task, buddy, cause, stop and saved write authority. A lost response retains its journal until exact read-back settles it. An expired lease, ended process or closed issue releases nothing.
+The default GitHub backend uses authenticated requests and create-only epoch refs for issue execution. The explicitly selected [PostgreSQL backend](database.md) uses one transactional claim protected by relational constraints instead; it has no pending queue, confirmation phase or automatic takeover. Its claims are short-term state that a reset or another database may disagree with, so they prevent most duplicate work but never authorize a merge, review or close on their own. Every substantive mutation freshly checks ownership as well as its task, buddy, cause, stop and saved write authority. A lost response retains its journal until exact read-back settles it. An expired lease, ended process or closed issue releases nothing.
 
 Model-session reservations share one repository/base/resource pool at the trusted cap. Live cap disagreement holds the pool. A holder releases only after every registered consumer has durably finished; a retained checkout or pending setup can retain a resource. Changing capacity requires a drained pool.
 
@@ -58,4 +58,6 @@ A stop prevents new substantive work in its scope. A credentialed write, rebase 
 
 A failed or uncertain checkpoint keeps the work and required ownership/resources. Retain binary-safe staged and working patches, verified Git bundles, stopped-rebase state, journals and consumer records. Do not reset a checkout, clear evidence or release resources merely to permit another action.
 
-Read-only recovery settles the original action; it does not begin a replacement attempt. A review loop at its limit or an uncertain effect remains a hold. There is no label-removal restart, automatic retry or undefined continuation command.
+Read-only recovery settles the original action; it does not begin a replacement attempt. A review loop at its limit or an uncertain effect remains a hold. There is no label-removal restart or automatic retry. The one continuation is an interrupted Implement run, which its own recorded result continues from the pushed branch; see [interrupted Implement runs](task-results.md#interrupted-implement-runs).
+
+Writers push each commit as they make it, so the issue's branch keeps their work if the run is lost. Every push only fast-forwards the branch. If another worker pushed to the branch first, the push goes to a recovery branch named `BRANCH-recovery-ACTION`, where `BRANCH` is the issue's branch and `ACTION` is the first 12 characters of the action's UUID. The run then fails and says where its commits are; Implement opens no PR and Fix posts no replies. Nothing picks a winner by time, and a person compares the two branches.

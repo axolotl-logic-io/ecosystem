@@ -6,8 +6,10 @@
 //                  (signals/inbox.ts), and the action's cause still
 //                  authoritative: a determined v2 result still in the
 //                  records, or else an accepted human signal (a start or a
-//                  review) requalified now. Author and Implement have only
-//                  human causes;
+//                  review) requalified now. Author and Implement have
+//                  human causes, except an Implement continuation, whose
+//                  cause is the interrupted Implement result it follows and
+//                  whose original person's start is requalified now too;
 //   finalization   the buddy's authorization only, for evidence-only
 //                  checkpoints, results and read-only reconciliation, which
 //                  a stop or a revoked source must still let settle.
@@ -18,12 +20,19 @@
 import { listComments } from "../comments.ts";
 import type { Config } from "../config.ts";
 import type { ActionCause, Binding } from "../domain.ts";
+import { INTERRUPTED_EVIDENCE } from "../domain.ts";
 import { OpsError } from "../ops-error.ts";
 import type { RunResult } from "../process.ts";
 import { assertBuddyAuthorization } from "../runtime/buddy-config.ts";
 import type { SignalScope } from "../signals/inbox.ts";
 import { requalifyHumanNow, stopLatchNow } from "../signals/inbox.ts";
-import { determined, isAttempt, readRecords } from "../tasks/records.ts";
+import type { Records } from "../tasks/records.ts";
+import {
+  determined,
+  isAttempt,
+  readRecords,
+  TASK_ATTEMPTS,
+} from "../tasks/records.ts";
 import type { WriteIntent } from "../write-refusal.ts";
 
 type OpClass = "substantive" | "finalization";
@@ -70,12 +79,12 @@ function recordedSource(cfg: Config, number: number): ActionSource {
 }
 
 // The machine cause: a determined v2 result of this item, by its record id.
+// Returns the result.
 function assertResultCause(
-  cfg: Config,
-  number: number,
+  records: Records,
   cause: ActionCause,
-): void {
-  const { rows } = readRecords(cfg, number, listComments(cfg, number));
+): Extract<Records["rows"][number], { kind: "result" }> {
+  const { rows } = records;
   const result = rows.find((row) => row.id === cause.recordId);
   if (
     result === undefined ||
@@ -85,14 +94,50 @@ function assertResultCause(
   ) {
     throw new OpsError(`cause ${cause.signal} is not a current task result`);
   }
+  return result;
+}
+
+// The person's start an Implement continuation goes back to: the cause of
+// the run its interrupted result settled, followed through any earlier
+// continuations. Only an interrupted Implement result may cause one.
+function continuedStart(records: Records, cause: ActionCause): ActionCause {
+  let current = cause;
+  for (let hop = 0; hop < TASK_ATTEMPTS; hop += 1) {
+    if (!RESULT_SIGNAL.test(current.signal)) {
+      return current;
+    }
+    const result = assertResultCause(records, current);
+    if (
+      result.binding.task !== "implement" ||
+      !INTERRUPTED_EVIDENCE.safeParse(result.receipt.evidence).success
+    ) {
+      throw new OpsError(
+        `cause ${current.signal} is not an interrupted Implement result`,
+      );
+    }
+    current = result.cause;
+  }
+  throw new OpsError(`cause ${cause.signal} continues too many runs`);
 }
 
 function assertCause(cfg: Config, guard: TaskGuard): void {
-  const { binding, cause } =
-    guard.proposed ?? recordedSource(cfg, guard.number);
-  if (!HUMAN_CAUSED.has(binding.task) && RESULT_SIGNAL.test(cause.signal)) {
-    assertResultCause(cfg, guard.number, cause);
-    return;
+  const source = guard.proposed ?? recordedSource(cfg, guard.number);
+  const { binding } = source;
+  let { cause } = source;
+  if (RESULT_SIGNAL.test(cause.signal)) {
+    const records = readRecords(
+      cfg,
+      guard.number,
+      listComments(cfg, guard.number),
+    );
+    if (!HUMAN_CAUSED.has(binding.task)) {
+      assertResultCause(records, cause);
+      return;
+    }
+    if (binding.task !== "implement") {
+      throw new OpsError(`${binding.task} takes only a person's cause`);
+    }
+    cause = continuedStart(records, cause);
   }
   const human = requalifyHumanNow(cfg, guard.scope, {
     id: cause.signal,

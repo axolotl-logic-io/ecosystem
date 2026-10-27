@@ -27,6 +27,8 @@
         "src/standards/execute-poetry.ts",
         "src/standards/sandbox.ts",
         "src/ops.ts",
+        "src/database.ts",
+        "src/database-coordination.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
         "src/process-group.ts",

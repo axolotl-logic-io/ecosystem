@@ -9,6 +9,7 @@ Programs run from `$ISSUE_PIPELINE_ROOT`, which defaults to `~/.pi/agent/issue-p
 | Program | Purpose |
 | --- | --- |
 | `buddy.mjs` | Validate a buddy file or activate its task loops |
+| `database.mjs` | Private bounded PostgreSQL coordination transport; no migration or activation |
 | `ops.mjs` | Guarded deterministic operations through framed JSON requests |
 | `shell-supervisor.mjs` | Run configured commands in owned process groups |
 | `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commits |
@@ -27,6 +28,8 @@ A separate private buddy JSON file defines organization scope, repository config
 Land needs literal `permissions.land: true` in both the repository config and the Gatekeeper buddy file, plus the correct account, profile, task responsibility and current exact-binding evidence. A check pass or accepted start cannot substitute for those grants.
 
 Obsolete fields are ignored without a warning; setting one does not make the former scheduler or assignment model active. Keys that #166 renamed, such as `mergeAccount` and `models.implementor`, are read only under their new names.
+
+For database-backed ownership and reservations, the private repository config explicitly selects the PostgreSQL backend and a separate credential file. Omitting that selection keeps GitHub authority. Installation never switches the backend. Follow [database setup and drained cutover](database.md); mixed backends can admit duplicate owners.
 
 ## Credentials
 

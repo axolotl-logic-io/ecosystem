@@ -1,6 +1,7 @@
 // GitHub transport and recovery journal for every coordination scope, and
 // the mutation hook that fences a bound job's or ops request's credentialed
 // writes with it (controlledMutation). It is not a scheduler.
+import type { View } from "@ecosystem/db/protocol";
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
 import {
@@ -15,7 +16,6 @@ import type {
   Evidence,
   InvocationBinding,
   SharedResource,
-  Snapshot,
 } from "./coordination.ts";
 import {
   coordination,
@@ -30,6 +30,12 @@ import {
 } from "./coordination-journal.ts";
 import { INVOCATION_BINDING } from "./coordination-record-schema.ts";
 import { resourceScopeOf, scopeOf } from "./coordination-records.ts";
+import {
+  databaseCoordination,
+  databaseSurvey,
+  databaseView,
+} from "./database-coordination.ts";
+import type { ExecutionCoordinator } from "./execution-coordinator.ts";
 import { gh, ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
@@ -139,7 +145,10 @@ function bindingOf(cfg: Config, issue: number): InvocationBinding {
 }
 // Read authenticated issue ownership without fabricating a run identity.
 // An owner holds the work even when its process ended or its lease expired.
-function readIssueExecution(cfg: Config, issue: number): Snapshot {
+function readIssueExecution(cfg: Config, issue: number): View {
+  if (cfg.coordination.backend === "postgres") {
+    return databaseView(cfg, { kind: "issue", issue });
+  }
   const scope = scopeOf(
     {
       repo: cfg.repo,
@@ -152,11 +161,11 @@ function readIssueExecution(cfg: Config, issue: number): Snapshot {
   return readScope(cfg, portOf(cfg, issue, false), scope);
 }
 
-function issueExecution(
-  cfg: Config,
-  issue: number,
-): ReturnType<typeof coordination> {
+function issueExecution(cfg: Config, issue: number): ExecutionCoordinator {
   const identity = bindingOf(cfg, issue);
+  if (cfg.coordination.backend === "postgres") {
+    return databaseCoordination(cfg, { kind: "issue", issue });
+  }
   return coordination(
     cfg,
     portOf(cfg, issue, false),
@@ -164,10 +173,11 @@ function issueExecution(
     identity,
   );
 }
-function integrationTurn(
-  cfg: Config,
-  issue: number,
-): ReturnType<typeof coordination> {
+function integrationTurn(cfg: Config, issue: number): ExecutionCoordinator {
+  bindingOf(cfg, issue);
+  if (cfg.coordination.backend === "postgres") {
+    return databaseCoordination(cfg, { kind: "integration" });
+  }
   // Issue execution remains an additional restriction, never replaced by a turn.
   assertExecution(cfg, issue);
   const identity = bindingOf(cfg, issue);
@@ -187,7 +197,11 @@ function resourceSlot(
   issue: number,
   resource: SharedResource,
   slot: { slot: number; cap: number },
-): ReturnType<typeof coordination> {
+): ExecutionCoordinator {
+  bindingOf(cfg, issue);
+  if (cfg.coordination.backend === "postgres") {
+    return databaseCoordination(cfg, { kind: resource, ...slot });
+  }
   assertExecution(cfg, issue);
   const identity = bindingOf(cfg, issue);
   return slotCoordination(
@@ -204,7 +218,11 @@ function resourceSurvey(
   issue: number,
   resource: SharedResource,
   cap: number,
-): ReadonlyMap<number, Snapshot> {
+): ReadonlyMap<number, View> {
+  bindingOf(cfg, issue);
+  if (cfg.coordination.backend === "postgres") {
+    return databaseSurvey(cfg, cap);
+  }
   assertExecution(cfg, issue);
   return surveySlots(cfg, portOf(cfg, issue, true), resource, cap);
 }

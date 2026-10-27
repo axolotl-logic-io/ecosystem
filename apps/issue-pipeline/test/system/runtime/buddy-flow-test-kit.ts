@@ -94,6 +94,7 @@ interface PlannedSession {
     | "posts-fail"
     | "checkpoint-posts-fail"
     | "events-unreadable"
+    | "rival-push"
     | null;
   // Whether `change` comes before the commit rather than after it.
   changeFirst: boolean;

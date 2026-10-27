@@ -363,6 +363,7 @@ function authorizationDigestOf(
       base: cfg.baseBranch,
       devAccount: cfg.devAccount,
       landingAccount: cfg.landingAccount,
+      coordination: cfg.coordination,
       land: cfg.permissions?.land === true,
     },
   };

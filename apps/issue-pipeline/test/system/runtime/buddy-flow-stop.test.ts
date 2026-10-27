@@ -3,8 +3,9 @@
 // pipeline_commit push server, Git and ledger on a disposable machine, with
 // only gh (fake-gh.ts) and pi (fake-pi.ts) faked. A stop or authority it
 // can't confirm interrupts only this action, the push guard refuses at the
-// push and keeps the local commit, evidence still settles, and nothing
-// replays the spent start.
+// push and keeps the local commit, and evidence still settles. A run left
+// unsettled is settled later by reading and continued from its branch,
+// never by spending the start again.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -29,6 +30,16 @@ const PUSH_REPLY = z.looseObject({
   isError: z.boolean().optional(),
 });
 const DONE = { outcome: "done", summary: "Counted the widgets." };
+const TASK_ROW = z.looseObject({
+  kind: z.string(),
+  run: z.looseObject({ id: z.string(), previous: z.string().nullable() }),
+  verdict: z.string().optional(),
+  cause: z.looseObject({ signal: z.string() }),
+  receipt: z.looseObject({ evidence: z.unknown().optional() }).optional(),
+});
+const INTERRUPTED_PROSE =
+  /\n\nAn earlier Implement run for this issue stopped before it finished\./u;
+const RESULT_CAUSE = /^result:\d+$/u;
 const BRANCH = `agent/issue-${ISSUE}`;
 const ISSUE_SCOPE = `["acme/widgets","main","issue",${ISSUE},"${BRANCH}"]`;
 const POOL_SCOPE = '["acme/widgets","main","resource","model-session",1]';
@@ -194,7 +205,7 @@ suite("buddy authority changes during an Implement session", {
     }
   });
 
-  test("unreadable stop evidence interrupts locally, and restored evidence replays no start", async () => {
+  test("unreadable stop evidence interrupts locally, and restored evidence settles and continues the run", async () => {
     const box = machine();
     try {
       const first = await box.runBuddy(
@@ -257,27 +268,100 @@ suite("buddy authority changes during an Implement session", {
       // The loop shows the unreadable item held, not idle or waiting.
       assert.equal(first.run.loops[0]?.state, "held");
       assert.match(first.run.loops[0]?.reason ?? "", EVENTS);
-      // Readable again, a new activation sees the start spent by the
-      // unknown attempt: no new action, attempt or session.
+      // Readable again, a new activation settles the unknown run by
+      // reading alone, as interrupted with nothing on the branch. Its
+      // result, not the spent start, causes one continuation, which
+      // implements the issue.
       box.change((world) => {
         world.faults = [];
       });
+      const second = await box.runBuddy(
+        [planned({ commit: COMMIT }), planned({})],
+        STOP_AT_POLL,
+      );
+      assert.equal(second.status, 0);
+      const added = second.actions.filter((item) => item.id !== action.id);
+      const recovery = added.find((item) => item.sessions.length === 0);
+      const continuation = added.find((item) => item.sessions.length > 0);
+      assert.ok(recovery !== undefined && continuation !== undefined);
+      assert.equal(added.length, 2);
+      assert.deepEqual(
+        recovery.operations.map((item) => [item.op, item.outcome]),
+        [["implement-reconcile", "ok"]],
+      );
+      assert.equal(continuation.verdict, "passed");
+      const records = marked(box.world(), "task-result").map((item) =>
+        TASK_ROW.parse(item),
+      );
+      assert.deepEqual(
+        records.map((item) => [item.kind, item.run.id, item.verdict ?? null]),
+        [
+          ["attempt", action.id, null],
+          ["result", action.id, "unknown"],
+          ["result", action.id, "failed"],
+          ["attempt", continuation.id, null],
+          ["result", continuation.id, "passed"],
+        ],
+      );
+      assert.deepEqual(records[2]?.receipt?.evidence, {
+        interrupted: { branch: BRANCH, head: null, continues: true },
+      });
+      const interrupted = box
+        .world()
+        .issues.find((item) => item.number === ISSUE)
+        ?.comments.find((comment) => comment.body.includes('"failed"'));
+      assert.match(interrupted?.body ?? "", INTERRUPTED_PROSE);
+      assert.equal(records[3]?.run.previous, action.id);
+      assert.match(records[3]?.cause.signal ?? "", RESULT_CAUSE);
+      assert.equal(
+        box.git(["log", "-1", "--format=%s", BRANCH]),
+        COMMIT.message,
+      );
+    } finally {
+      box.cleanup();
+    }
+  });
+
+  test("an interrupted run whose requirements changed is settled but not continued", async () => {
+    const box = machine();
+    try {
+      const first = await box.runBuddy(
+        [
+          planned({
+            commit: COMMIT,
+            change: "events-unreadable",
+            changeFirst: true,
+            awaitAbort: true,
+            reply: null,
+          }),
+        ],
+        STOP_AT_POLL,
+      );
+      assert.equal(first.status, 0);
+      const [action] = first.actions;
+      assert.ok(action !== undefined);
+      // Readable again, but the issue now asks for something else. The lost
+      // run is settled by reading; its result belongs to the old
+      // requirements, so nothing continues it and no session runs.
+      box.change((world) => {
+        world.faults = [];
+        const issue = world.issues.find((item) => item.number === ISSUE);
+        if (issue !== undefined) {
+          issue.body = `${issue.body ?? ""}\n\nAlso count the gadgets.`;
+        }
+      });
       const second = await box.runBuddy([], STOP_AT_POLL);
       assert.equal(second.status, 0);
-      assert.deepEqual(
-        { scope: second.run.stop?.scope, reason: second.run.stop?.reason },
-        SIGTERM,
-      );
-      assert.deepEqual(
-        second.actions.map((item) => item.id),
-        [action.id],
-      );
-      assert.equal(second.run.loops[0]?.action, null);
       assert.equal(box.launches().length, 1);
       assert.deepEqual(ledger(box), [
         ["attempt", null],
         ["result", "unknown"],
+        ["result", "failed"],
       ]);
+      const settledRow = TASK_ROW.parse(marked(box.world(), "task-result")[2]);
+      assert.deepEqual(settledRow.receipt?.evidence, {
+        interrupted: { branch: BRANCH, head: null, continues: false },
+      });
       assert.equal(originBranch(box), "");
     } finally {
       box.cleanup();

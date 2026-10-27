@@ -20,29 +20,54 @@ import {
   recordBody,
   withProposed,
 } from "../tasks/records.ts";
+import { resultProse } from "../tasks/result-prose.ts";
 
 // Above every comment id GitHub has given, so a proposed record sorts last.
 const PROPOSED_ID: number = Number.MAX_SAFE_INTEGER;
 
-// Compare the public summary we actually send, not its private diagnostic
-// preimage. No authority field may change at the transport boundary.
+type Json = Exclude<Receipt["evidence"], undefined>;
+
+function redacted(text: string): string {
+  return redactAddresses(redactLocalPaths(text));
+}
+
+// `value` with every string in it redacted; keys, numbers and structure are
+// kept.
+function redactedJson(value: Json): Json {
+  if (typeof value === "string") {
+    return redacted(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactedJson);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, redactedJson(item)]),
+    );
+  }
+  return value;
+}
+
+// The record as it may be posted: no local path or IP address anywhere in
+// it. A result's receipt, its summary and every string of its evidence, is
+// redacted. Every other field identifies the work and must already be
+// clean; one that redaction would change refuses the record instead.
 function publicRecord(record: TaskRecord): TaskRecord {
   let expected = record;
   if (record.kind === "result") {
-    expected = {
-      ...record,
-      receipt: {
-        ...record.receipt,
-        summary: redactAddresses(
-          redactLocalPaths(record.receipt.summary),
-        ).slice(0, MAX_SUMMARY),
-      },
+    const receipt: Receipt = {
+      ...record.receipt,
+      summary: redacted(record.receipt.summary).slice(0, MAX_SUMMARY),
     };
+    if (record.receipt.evidence !== undefined) {
+      receipt.evidence = redactedJson(record.receipt.evidence);
+    }
+    expected = { ...record, receipt };
   }
   const field = `body=${recordBody(expected)}`;
   if (redactGhArgs([field])[0] !== field) {
     throw new OpsError(
-      "task record would change outside its public summary during redaction",
+      "task record names a local path or address outside its receipt",
     );
   }
   return expected;
@@ -100,6 +125,16 @@ function withoutId(row: Row): TaskRecord {
   return record;
 }
 
+// The prose a person reads under `record`: a result says what happened and
+// what comes next; an attempt is bookkeeping and says nothing. Redacted as
+// the transport would, so the posted words are the ones composed.
+function proseOf(record: TaskRecord): string {
+  if (record.kind !== "result") {
+    return "";
+  }
+  return redacted(resultProse(record));
+}
+
 // Appends `record` to the item's records `before`, read fresh by the
 // caller, and returns the records read back with it.
 function appendRecord(
@@ -110,7 +145,7 @@ function appendRecord(
 ): Records {
   const expected = publicRecord(record);
   refusedIfHolds(before, expected);
-  rawComment(cfg, number, recordBody(expected), true);
+  rawComment(cfg, number, recordBody(expected, proseOf(expected)), true);
   return confirmedRecord(cfg, number, expected);
 }
 
@@ -135,4 +170,4 @@ function settleRun(
   });
 }
 
-export { appendRecord, confirmedRecord, freshRecords, settleRun };
+export { appendRecord, confirmedRecord, freshRecords, publicRecord, settleRun };
