@@ -177,6 +177,7 @@ interface Machine {
   recoverImplement: (
     action: string,
     apply: boolean,
+    reason?: string,
   ) => { status: number | null; stdout: string; stderr: string };
   git: (args: string[]) => string;
   // The commits the project's check ran on, in order.
@@ -703,6 +704,7 @@ function machine(
     recoverImplement: (
       action: string,
       apply: boolean,
+      reason = "The interrupted work is preserved for a person.",
     ): { status: number | null; stdout: string; stderr: string } => {
       const args = [
         path.join(pipeline, "recover-implement.mjs"),
@@ -713,7 +715,7 @@ function machine(
         "--action",
         action,
         "--reason",
-        "The interrupted work is preserved for a person.",
+        reason,
       ];
       if (apply) {
         args.push("--apply");

@@ -20,7 +20,12 @@ import {
 } from "../src/execution.ts";
 import { gh, ghJson } from "../src/github.ts";
 import { issueRefusal } from "../src/job/release-predicate.ts";
-import { freshRecords, settleRun } from "../src/ops/task-ledger.ts";
+import {
+  appendRecord,
+  confirmedRecord,
+  freshRecords,
+  publicRecord,
+} from "../src/ops/task-ledger.ts";
 import { ROOT } from "../src/pipeline-root.ts";
 import { RESOURCE_CAPACITY } from "../src/project-policy-schema.ts";
 import type { ActionRunObservation } from "../src/runtime/observations.ts";
@@ -31,7 +36,7 @@ import {
   buddyRunFile,
 } from "../src/runtime/observations.ts";
 import type { Attempt, Row } from "../src/tasks/records.ts";
-import { determined, isAttempt } from "../src/tasks/records.ts";
+import { determined, isAttempt, recordBody } from "../src/tasks/records.ts";
 
 const MAX_REASON = 1000;
 const REQUEST = z.strictObject({
@@ -255,30 +260,30 @@ function recover(request: z.infer<typeof REQUEST>): void {
   assertNoJournals(cfg, request.issue);
   const records = freshRecords(cfg, request.issue);
   if (determined(records.rows, run.id) === undefined) {
-    const summary = `The operator settled this interrupted Implement run without retrying it. ${request.reason}`;
+    const expected = publicRecord({
+      version: 2,
+      kind: "result",
+      binding: attempt.binding,
+      run: attempt.run,
+      buddyRun: attempt.buddyRun,
+      cause: attempt.cause,
+      verdict: "failed",
+      receipt: {
+        summary: `The operator settled this interrupted Implement run without retrying it. ${request.reason}`,
+        evidence: {
+          operatorSettlement: true,
+          preservedPatches: run.preserved.patches.length,
+        },
+      },
+    });
     confirmedWrite(cfg, request.issue, "operator-settlement-result", {
-      evidence: { action: run.id, verdict: "failed", summary },
+      evidence: { action: run.id, result: recordBody(expected) },
       write: () => {
-        settleRun(cfg, request.issue, records, {
-          attempt,
-          verdict: "failed",
-          receipt: {
-            summary,
-            evidence: {
-              operatorSettlement: true,
-              preservedPatches: run.preserved.patches.length,
-            },
-          },
-        });
+        appendRecord(cfg, request.issue, records, expected);
       },
       confirmed: () => {
-        const result = determined(
-          freshRecords(cfg, request.issue).rows,
-          run.id,
-        );
-        return (
-          result?.verdict === "failed" && result.receipt.summary === summary
-        );
+        confirmedRecord(cfg, request.issue, expected);
+        return true;
       },
     });
   }

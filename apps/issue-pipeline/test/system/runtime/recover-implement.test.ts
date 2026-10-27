@@ -97,7 +97,14 @@ test("an operator settles the original interrupted Implement and drains its cons
     assert.equal(published.status, 1);
     assert.ok(published.stderr.includes("the work branch exists"));
     box.git(["update-ref", "-d", branch]);
-    const applied = box.recoverImplement(action.id, true);
+    box.change((world) => {
+      world.post = "lost-after-apply";
+    });
+    const applied = box.recoverImplement(
+      action.id,
+      true,
+      "The work is preserved at /tmp/recovery.patch on 192.0.2.24.",
+    );
     assert.equal(applied.status, 0, applied.stderr);
     assert.deepEqual(RELEASED.parse(JSON.parse(applied.stdout)), {
       action: action.id,
@@ -112,6 +119,21 @@ test("an operator settles the original interrupted Implement and drains its cons
     const [, result] = records;
     assert.ok(result?.kind === "result");
     assert.equal(result.verdict, "failed");
+    assert.ok(result.receipt.summary.includes("[local path]"));
+    assert.ok(result.receipt.summary.includes("[redacted]"));
+    assert.ok(!JSON.stringify(result).includes("/tmp/recovery.patch"));
+    assert.ok(!JSON.stringify(result).includes("192.0.2.24"));
+    assert.ok(
+      !fs.existsSync(
+        path.join(
+          box.pipeline,
+          "runs",
+          "acme__widgets",
+          `issue-${ISSUE}`,
+          "coordination-uncertain.json",
+        ),
+      ),
+    );
     assert.deepEqual(records[1]?.run, records[0]?.run);
     assert.deepEqual(records[1]?.cause, records[0]?.cause);
     assert.deepEqual(fs.readFileSync(patchFile), before);
