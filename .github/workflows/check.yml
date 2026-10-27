@@ -87,12 +87,12 @@ jobs:
           POSTGRES_USER: ecosystem_test
           POSTGRES_PASSWORD: ecosystem_test
         ports:
-          - 5432/tcp
+          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U ecosystem_test -d ecosystem_test"
           --health-interval 1s --health-timeout 3s --health-retries 30
     env:
-      TEST_DATABASE_URL: postgresql://ecosystem_test:ecosystem_test@127.0.0.1:${{ job.services.postgres.ports[5432] }}/ecosystem_test
+      TEST_DATABASE_URL: postgresql://ecosystem_test:ecosystem_test@127.0.0.1:5432/ecosystem_test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
