@@ -11,7 +11,7 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 import type { Config } from "../src/config.ts";
 import { loadConfig, paths } from "../src/config.ts";
-import { assertReconciled } from "../src/coordination-journal.ts";
+import { confirmedWrite } from "../src/coordination-journal.ts";
 import {
   issueExecution,
   resourceSlot,
@@ -44,6 +44,8 @@ const REQUEST = z.strictObject({
 const NO_PROCESS = z.looseObject({ code: z.literal("ESRCH") });
 const PRE_EFFECT_OPS = new Set(["task-attempt", "prepare-checkout"]);
 const NOT_FOUND = /HTTP 404/u;
+const WRITE_JOURNAL =
+  /^coordination-(?:uncertain(?:-\d+)?|inflight-\d+)\.json$/u;
 const PULLS = z.array(z.strictObject({ number: z.int().positive() }));
 
 function refuse(reason: string): never {
@@ -121,6 +123,20 @@ function assertPreEffect(run: ActionRunObservation): void {
   }
 }
 
+// Ordinary dispatch may coexist with a live writer. Operator settlement
+// may not: even a reused PID cannot make an old in-flight journal safe.
+function assertNoJournals(cfg: Config, issue: number): void {
+  const dir = paths.runDir(cfg, issue);
+  if (
+    fs.existsSync(dir) &&
+    fs.readdirSync(dir).some((name) => WRITE_JOURNAL.test(name))
+  ) {
+    refuse(
+      "a write journal still exists; reconcile its exact intent before operator settlement",
+    );
+  }
+}
+
 function assertUnpublished(cfg: Config, run: ActionRunObservation): void {
   const ref = gh(
     cfg,
@@ -191,8 +207,8 @@ function recover(request: z.infer<typeof REQUEST>): void {
   }
   assertPreEffect(run);
   assertPreserved(loaded, run);
+  assertNoJournals(loaded, request.issue);
   assertUnpublished(loaded, run);
-  assertReconciled(loaded, request.issue);
   const refusal = issueRefusal(loaded, request.issue);
   if (refusal !== null) {
     refuse(refusal);
@@ -236,17 +252,33 @@ function recover(request: z.infer<typeof REQUEST>): void {
     );
     return;
   }
+  assertNoJournals(cfg, request.issue);
   const records = freshRecords(cfg, request.issue);
   if (determined(records.rows, run.id) === undefined) {
-    settleRun(cfg, request.issue, records, {
-      attempt,
-      verdict: "failed",
-      receipt: {
-        summary: `The operator settled this interrupted Implement run without retrying it. ${request.reason}`,
-        evidence: {
-          operatorSettlement: true,
-          preservedPatches: run.preserved.patches.length,
-        },
+    const summary = `The operator settled this interrupted Implement run without retrying it. ${request.reason}`;
+    confirmedWrite(cfg, request.issue, "operator-settlement-result", {
+      evidence: { action: run.id, verdict: "failed", summary },
+      write: () => {
+        settleRun(cfg, request.issue, records, {
+          attempt,
+          verdict: "failed",
+          receipt: {
+            summary,
+            evidence: {
+              operatorSettlement: true,
+              preservedPatches: run.preserved.patches.length,
+            },
+          },
+        });
+      },
+      confirmed: () => {
+        const result = determined(
+          freshRecords(cfg, request.issue).rows,
+          run.id,
+        );
+        return (
+          result?.verdict === "failed" && result.receipt.summary === summary
+        );
       },
     });
   }
