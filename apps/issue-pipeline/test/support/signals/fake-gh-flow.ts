@@ -136,6 +136,13 @@ function paginated(world: World, args: readonly string[]): boolean {
     return false;
   }
   const endpoint = endpointOf(args);
+  const [pathname] = endpoint.split("?");
+  const fault = world.faults.find(
+    (entry) => entry.path === pathname && entry.link === null,
+  );
+  if (fault !== undefined) {
+    return fail(`gh: injected listing failure (HTTP ${fault.status})`);
+  }
   const { number } = COMMENTS.exec(endpoint)?.groups ?? {};
   let rows: { issue: FakeIssue; item: FakeComment }[] = [];
   if (number !== undefined) {

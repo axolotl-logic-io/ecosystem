@@ -322,6 +322,54 @@ suite("buddy authority changes during an Implement session", {
     }
   });
 
+  test("a person's stop during continuation prevents further writes and another continuation", async () => {
+    const box = machine();
+    try {
+      const first = await box.runBuddy(
+        [
+          planned({
+            change: "events-unreadable",
+            awaitAbort: true,
+            reply: null,
+          }),
+        ],
+        STOP_AT_POLL,
+      );
+      assert.equal(first.status, 0, first.stderr);
+      const [original] = first.actions;
+      assert.ok(original !== undefined);
+      box.change((world) => {
+        world.faults = [];
+      });
+      const second = await box.runBuddy(
+        [planned({ change: "stop-issue", awaitAbort: true, reply: null })],
+        STOP_AT_POLL,
+      );
+      assert.equal(second.status, 0, second.stderr);
+      const continuation = second.actions.find(
+        (item) => item.id !== original.id && item.sessions.length > 0,
+      );
+      assert.ok(continuation !== undefined);
+      assert.equal(continuation.previous, original.id);
+      assert.equal(continuation.verdict, "unknown");
+      assert.equal(continuation.ownership.state, "released");
+      assert.equal(originBranch(box), "");
+      assert.deepEqual(box.world().pulls ?? [], []);
+      assert.equal(acceptedStops(box).length, 1);
+      assert.equal(box.launches().length, 2);
+      const third = await box.runBuddy([], STOP_AT_POLL);
+      assert.equal(third.status, 0, third.stderr);
+      assert.equal(box.launches().length, 2);
+      assert.deepEqual(
+        new Set(third.actions.map((item) => item.id)),
+        new Set(second.actions.map((item) => item.id)),
+      );
+      assert.equal(originBranch(box), "");
+    } finally {
+      box.cleanup();
+    }
+  });
+
   test("an interrupted run whose requirements changed is settled but not continued", async () => {
     const box = machine();
     try {

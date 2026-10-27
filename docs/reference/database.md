@@ -21,7 +21,7 @@ Docker Compose binds the pinned PostgreSQL 17 image to `127.0.0.1:55432` and sto
 4. Apply the committed migrations:
 
    ```bash
-   node --env-file=.env --run db:migrate
+   (cd packages/db && node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs migrate)
    ```
 
 Run these commands at the ecosystem root under Node 24. Only one operator should run migrations at a time. Apps never create tables or migrate on connection. A pipeline command against a database with no tables fails with a message that asks for `npm run db:migrate`, and it works once the migrations are applied, with no configuration change.

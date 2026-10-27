@@ -9,6 +9,7 @@ Programs run from `$ISSUE_PIPELINE_ROOT`, which defaults to `~/.pi/agent/issue-p
 | Program | Purpose |
 | --- | --- |
 | `buddy.mjs` | Validate a buddy file or activate its task loops |
+| `recover-implement.mjs` | Explicit operator settlement of an interrupted pre-effect Implement; never starts work |
 | `database.mjs` | Private bounded PostgreSQL coordination transport; no migration or activation |
 | `ops.mjs` | Guarded deterministic operations through framed JSON requests |
 | `shell-supervisor.mjs` | Run configured commands in owned process groups |
@@ -113,6 +114,24 @@ Do not run old and new runtimes together or translate old assignments or stages 
 Stop affected dispatch and preserve work, authoritative receipts and uncertain effects. Deliver a tested, reviewed source fix through an ordinary PR. If installed code needs replacement, complete the separately authorized upgrade above.
 
 There is no generic restart-at-stage command or automatic continuation operation. A stopped or spent cause remains stopped or spent. Use only supported, explicitly authorized recovery for the retained action. An uncertain Land requires read-only reconciliation against its original intent, not another push, approval or writer session. Missing authority remains a hold.
+
+## Settle an interrupted pre-effect Implement
+
+Use this only under explicit operator authorization, with every participant stopped. This command supports an original Implement action that ended before checkpoint or task effects, preserved its checkout, and retained its issue or model-session claim because settlement could not read GitHub. It does not support uncertain pushes, retained checkouts, Fix, Land or arbitrary claims.
+
+First inspect the action's run record and preservation artifacts. Confirm that all participants, including other hosts and standalone operators, have stopped. The command conservatively requires every locally observed buddy to have stopped cooperatively on this host. It verifies the original authenticated attempt and confirmed issue ownership, recorded model-process exits, existing preservation artifacts and the absence of uncertain-write journals or lane consumers. A vanished process or old timestamp alone never suffices.
+
+To preview without writing:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/recover-implement.mjs" \
+  --config REPOSITORY_CONFIG --issue ISSUE_NUMBER --action ACTION_UUID \
+  --reason "The interrupted work is preserved for a person."
+```
+
+`REPOSITORY_CONFIG` is the unchanged private repository config, `ISSUE_NUMBER` is the issue number, and `ACTION_UUID` is the original action's full UUID. Review the reason before publication. Add `--apply` to settle that original attempt as failed, report only its confirmed-exited model consumers done, then release its model slots and issue. The result preserves the original run and cause and posts prose on the issue. It carries no automatic-continuation grant and starts no session or GitHub business effect. Preserve its output with the cutover evidence; local run observations remain historical observations.
+
+If any write becomes uncertain, stop and reconcile its exact intent by reading. Do not erase a journal, manufacture a replacement action or repeatedly apply the command to obtain a pass. Resume ordinary dispatch only after a complete legacy authority audit confirms that every claim and consumer drained.
 
 ## Run tests
 

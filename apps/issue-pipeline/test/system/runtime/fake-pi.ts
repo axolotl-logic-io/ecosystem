@@ -42,6 +42,7 @@ const SESSION = z.strictObject({
       "posts-fail",
       "checkpoint-posts-fail",
       "events-unreadable",
+      "comments-unreadable",
       "rival-push",
     ])
     .nullable(),
@@ -192,11 +193,12 @@ function gitOk(args: readonly string[]): string {
 // checkout's origin from a clone of its own.
 function rivalPush(): void {
   const origin = gitOk(["-C", "repo", "remote", "get-url", "origin"]);
+  const head = gitOk(["-C", "repo", "rev-parse", "HEAD"]);
   const rival = fs.mkdtempSync(path.join(path.dirname(origin), "rival-"));
   gitOk(["clone", "--quiet", origin, rival]);
   fs.writeFileSync(path.join(rival, "rival.txt"), "another worker\n");
   for (const args of [
-    ["checkout", "--quiet", "-b", `agent/issue-${ISSUE}`],
+    ["checkout", "--quiet", "-b", `agent/issue-${ISSUE}`, head],
     ["add", "rival.txt"],
     [
       "-c",
@@ -230,6 +232,13 @@ function edit(world: World, change: NonNullable<Session["change"]>): void {
     world.post = "lost-before-apply";
   } else if (change === "checkpoint-posts-fail") {
     world.failPostsContaining = "<!-- agent-pipeline:state\n";
+  } else if (change === "comments-unreadable") {
+    world.faults.push({
+      path: `repos/${world.repo}/issues/${ISSUE}/comments`,
+      page: null,
+      link: null,
+      status: 503,
+    });
   } else if (change === "events-unreadable") {
     world.faults.push({
       path: `repos/${world.repo}/issues/${ISSUE}/events`,

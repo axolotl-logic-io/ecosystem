@@ -9,6 +9,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import {
+  implemented,
+  verifyRequestsChanges,
+} from "./buddy-flow-review-test-kit.ts";
 import type { PlannedSession } from "./buddy-flow-test-kit.ts";
 import { HARDENING, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
@@ -32,6 +36,60 @@ const PUSH_REPLY = z.looseObject({
 const RECOVERY_ID_LENGTH = 12;
 const RECORD_BLOCK = /^<!-- agent-pipeline:task-result\n\{.*\}\n-->\n\n/u;
 const RECORD_JSON = /[{}]|"verdict"/u;
+
+test("a Fix preserves its divergent commit without replying to review threads", async ({
+  signal,
+}) => {
+  const box = machine();
+  try {
+    const item = await implemented(box, signal);
+    const verify = verifyRequestsChanges(box, item, {
+      target: box.git(["rev-parse", "main"]),
+      body: "Use a number.",
+      comments: [{ path: "counter.txt", line: 1, body: "Use a number." }],
+    });
+    const [thread] = verify.threads;
+    assert.ok(thread !== undefined);
+    const fixing: PlannedSession = {
+      ...RIVAL_FIRST,
+      reply: {
+        outcome: "done",
+        summary: "Counted with a number.",
+        replies: [{ comment: thread, reply: "The count is a number now." }],
+      },
+    };
+    const run = await box.runBuddy(
+      [fixing],
+      2,
+      { role: "developer", tasks: ["fix"] },
+      signal,
+    );
+    assert.equal(run.status, 0, run.stderr);
+    const action = run.actions.find((entry) => entry.task === "fix");
+    assert.ok(action !== undefined);
+    assert.equal(action.verdict, "failed", action.reason ?? "");
+    const recovery = `${BRANCH}-recovery-${action.id.replaceAll("-", "").slice(0, RECOVERY_ID_LENGTH)}`;
+    assert.equal(
+      box.git(["log", "-1", "--format=%s", BRANCH]),
+      "Another worker's commit",
+    );
+    assert.equal(
+      box.git(["log", "-1", "--format=%s", recovery]),
+      COMMIT.message,
+    );
+    assert.ok(action.reason?.includes(recovery));
+    const replies = box
+      .world()
+      .pulls?.[0]?.reviewComments?.filter(
+        (comment) => comment.inReplyTo === thread,
+      );
+    assert.deepEqual(replies, []);
+    assert.equal(box.world().pulls?.length, 1);
+    assert.equal(action.ownership.state, "released");
+  } finally {
+    box.cleanup();
+  }
+});
 
 test("a rival push keeps both workers' commits and the action's work goes to its recovery branch", async () => {
   const box = machine();
