@@ -44,7 +44,7 @@ answer=$({
   if [ -n "$input" ]; then cat; fi
 } | curl --silent --show-error --unix-socket ${quoted(socket)} \\
   --header "X-Gh-Argc: $#" --header "X-Gh-Token: \${GH_TOKEN-}" \\
-  --data-binary @- --output /dev/fd/3 --write-out '%header{x-gh-exit}' ${URL_BASE}/gh) || exit 1
+  --data-binary @- --write-out '%{stderr}%header{x-gh-exit}' ${URL_BASE}/gh 2>&1 >&3) || exit 1
 exec 3>&-
 if [ -z "$answer" ]; then
   echo "fake gh: the server gave no answer" >&2

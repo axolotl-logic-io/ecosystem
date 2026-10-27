@@ -207,7 +207,7 @@ for (const failure of [
       });
       const failed = box.recoverImplement(action.id, true);
       assert.equal(failed.status, 1);
-      assert.ok(failed.stderr.includes("uncertain"), failed.stderr);
+      assert.ok(failed.stderr.includes("reconcile"), failed.stderr);
       const journal = path.join(dir, "coordination-uncertain.json");
       assert.ok(fs.existsSync(journal));
       const journalBytes = fs.readFileSync(journal);
