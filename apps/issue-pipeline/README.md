@@ -36,6 +36,8 @@ Qualified human events provide the human signals: the `start:author`, `start:imp
 
 An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. Unchanged requirements don't get an Implement retry from `start:implement`, and Implement doesn't wait for Author. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
 
+After a confirmed passed, refused or failed result, a task removes the start label whose application caused it. It preserves all accepted signals and task records, other labels and any newer application observed during cleanup. Uncertain results retain their label. Cleanup failures warn without changing the result. See [completed starts](../../docs/reference/stops-and-labels.md#completed-starts).
+
 Implement writes the change and hardens it in a fresh session before it records its result. Verify runs the full checks, the required CI and the Security review of the exact head. It then submits a review through the landing account: an approval for nothing or only nits, and a request for changes otherwise. A Security finding always blocks. Fix merges the base into the PR head, answers every blocking comment with code and a thread reply, and pushes. An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`), then holds for a person. See [Hardening, Verify and Fix](../../docs/reference/review.md).
 
 ## Ownership, resources and preservation

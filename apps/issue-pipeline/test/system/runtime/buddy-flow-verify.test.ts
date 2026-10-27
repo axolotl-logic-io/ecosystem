@@ -649,6 +649,12 @@ test("a person's start:verify reviews the head they pushed, which Implement's re
       ["act", "passed"],
       verify.reason ?? "",
     );
+    assert.ok(
+      !box
+        .world()
+        .issues.find((item) => item.number === ISSUE)
+        ?.labels.includes("start:verify"),
+    );
     // The accepted start caused it, and it bound and reviewed the pushed head.
     assert.match(verify.cause.signal, START_SIGNAL);
     assert.ok("revision" in verify.binding);

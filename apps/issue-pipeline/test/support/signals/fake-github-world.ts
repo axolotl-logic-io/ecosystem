@@ -216,6 +216,8 @@ const WORLD = z.strictObject({
   refuseRepliesBy: z.string().optional(),
   // Whether GitHub refuses every change to an issue's assignees (HTTP 422).
   refuseAssigneeChanges: z.boolean().optional(),
+  // Whether GitHub refuses single-label deletions (HTTP 403).
+  refuseLabelChanges: z.boolean().optional(),
   // Whether a whole-issue read, `gh api repos/O/R/issues/N` with no --jq,
   // answers with assignees that aren't a list of users.
   garbleAssignees: z.boolean().optional(),

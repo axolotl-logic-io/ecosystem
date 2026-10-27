@@ -130,6 +130,10 @@ test("Author posts the issue's Gherkin as the pipeline's author comment, and Imp
     assert.ok(author !== undefined && implement !== undefined);
     assert.equal(author.verdict, "passed", author.reason ?? "");
     assert.equal(implement.verdict, "passed", implement.reason ?? "");
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.labels,
+      [],
+    );
     // One read-only Author session on the Author's page and model role.
     assert.deepEqual(
       author.sessions.map((session) => [
@@ -181,6 +185,10 @@ test("Author's questions refuse, and its spent start never retries it", async ({
     assert.ok(author !== undefined);
     assert.equal(first.actions.length, 1);
     assert.equal(author.verdict, "refused");
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.labels,
+      [],
+    );
     assert.ok(first.stderr.includes('"outcome":"refused"'), first.stderr);
     assert.ok(first.stderr.includes(author.id), first.stderr);
     const [questions] = commentsWith(box, QUESTIONS_MARK);
@@ -189,6 +197,11 @@ test("Author's questions refuse, and its spent start never retries it", async ({
     assert.deepEqual(commentsWith(box, GHERKIN_MARK), []);
     assert.deepEqual(box.git(["branch", "--list", `agent/issue-${ISSUE}`]), "");
     const before = records(box);
+    assert.equal(
+      before.filter((record) => record.kind === "attempt").length,
+      1,
+    );
+    assert.equal(before.filter((record) => record.kind === "result").length, 1);
     const again = await box.runBuddy([], POLLS, AUTHOR, signal);
     assert.equal(again.status, 0);
     assert.deepEqual(
@@ -230,5 +243,132 @@ test("Author writes Gherkin on an issue assigned to a person, and neither backs 
     passed = true;
   } finally {
     keep(box, passed);
+  }
+});
+
+test("Author clears only its consumed start label, leaving other labels and durable records", async ({
+  signal,
+}) => {
+  const labels = ["start:author", "start:implement", "task:label:docs"];
+  const box = machine(labelled(labels));
+  try {
+    const run = await box.runBuddy([AUTHORS], POLLS, AUTHOR, signal);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.actions[0]?.verdict, "passed");
+    const issue = box.world().issues.find((item) => item.number === ISSUE);
+    assert.deepEqual(issue?.labels, labels.slice(1));
+    assert.ok(
+      issue?.events.some(
+        (event) =>
+          event.event === "unlabeled" &&
+          event.label === "start:author" &&
+          event.actor === LANDING,
+      ),
+    );
+    assert.equal(commentsWith(box, "<!-- agent-pipeline:signal").length, 2);
+    assert.equal(records(box).length, 2);
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("Author leaves a newer start application in place when its old request completes", async ({
+  signal,
+}) => {
+  const box = machine(labelled(["start:author"]));
+  try {
+    const run = await box.runBuddy(
+      [{ ...AUTHORS, change: "reapply-author-start" }],
+      POLLS,
+      AUTHOR,
+      signal,
+    );
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.actions[0]?.verdict, "passed");
+    const issue = box.world().issues.find((item) => item.number === ISSUE);
+    assert.deepEqual(issue?.labels, ["start:author"]);
+    assert.equal(issue?.events.at(-1)?.event, "labeled");
+    assert.equal(issue?.events.at(-1)?.actor, HUMAN);
+    assert.equal(results(box).length, 1);
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("a determined Author failure clears its spent start without enabling a retry", async ({
+  signal,
+}) => {
+  const box = machine(labelled(["start:author"]));
+  try {
+    const run = await box.runBuddy(
+      [{ ...AUTHORS, reply: { outcome: "invalid" } }],
+      POLLS,
+      AUTHOR,
+      signal,
+    );
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.actions[0]?.verdict, "failed");
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.labels,
+      [],
+    );
+    assert.equal(results(box)[0]?.verdict, "failed");
+    const again = await box.runBuddy([], POLLS, AUTHOR, signal);
+    assert.equal(again.status, 0, again.stderr);
+    assert.equal(box.launches().length, 1);
+    assert.equal(records(box).length, 2);
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("a label deletion failure warns without changing Author's confirmed result", async ({
+  signal,
+}) => {
+  const box = machine((world) => {
+    labelled(["start:author"])(world);
+    world.refuseLabelChanges = true;
+  });
+  try {
+    const run = await box.runBuddy([AUTHORS], POLLS, AUTHOR, signal);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.actions[0]?.verdict, "passed");
+    assert.equal(run.actions[0]?.ownership.state, "released");
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.labels,
+      ["start:author"],
+    );
+    assert.equal(results(box)[0]?.verdict, "passed");
+    assert.ok(run.stderr.includes('"state":"warning"'), run.stderr);
+    assert.ok(
+      run.stderr.includes("could not clear the completed task's start label"),
+      run.stderr,
+    );
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("Author retains its start label when its result cannot be confirmed", async ({
+  signal,
+}) => {
+  const box = machine(labelled(["start:author"]));
+  try {
+    const run = await box.runBuddy(
+      [{ ...AUTHORS, change: "posts-fail" }],
+      POLLS,
+      AUTHOR,
+      signal,
+    );
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.actions[0]?.verdict, "unknown");
+    assert.equal(run.actions[0]?.ownership.state, "retained");
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.labels,
+      ["start:author"],
+    );
+    assert.deepEqual(results(box), []);
+  } finally {
+    box.cleanup();
   }
 });
