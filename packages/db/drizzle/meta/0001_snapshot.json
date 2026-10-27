@@ -1,0 +1,678 @@
+{
+  "id": "7263c91a-20a1-4c54-95fb-0ff929e31f9e",
+  "prevId": "ba2e40b4-9749-45fb-809d-1dd1b97ab908",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.coordination_claims": {
+      "name": "coordination_claims",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "pool_id": {
+          "name": "pool_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "coordination_scope_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_issue_claim_id": {
+          "name": "source_issue_claim_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "instance_id": {
+          "name": "instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lane": {
+          "name": "lane",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_number": {
+          "name": "issue_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "buddy_run_id": {
+          "name": "buddy_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "task": {
+          "name": "task",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slot": {
+          "name": "slot",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "declared_capacity": {
+          "name": "declared_capacity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "released_at": {
+          "name": "released_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_verified_at": {
+          "name": "last_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        }
+      },
+      "indexes": {
+        "coordination_one_slot_owner": {
+          "name": "coordination_one_slot_owner",
+          "columns": [
+            {
+              "expression": "pool_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slot",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"coordination_claims\".\"released_at\" IS NULL",
+          "concurrently": false
+        },
+        "coordination_claim_source": {
+          "name": "coordination_claim_source",
+          "columns": [
+            {
+              "expression": "source_issue_claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "coordination_claim_buddy": {
+          "name": "coordination_claim_buddy",
+          "columns": [
+            {
+              "expression": "buddy_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "coordination_claim_verification": {
+          "name": "coordination_claim_verification",
+          "columns": [
+            {
+              "expression": "last_verified_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"coordination_claims\".\"released_at\" IS NULL",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "coordination_claims_source_issue_claim_id_coordination_claims_id_fk": {
+          "name": "coordination_claims_source_issue_claim_id_coordination_claims_id_fk",
+          "tableFrom": "coordination_claims",
+          "columnsFrom": [
+            "source_issue_claim_id"
+          ],
+          "tableTo": "coordination_claims",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "coordination_claim_pool": {
+          "name": "coordination_claim_pool",
+          "tableFrom": "coordination_claims",
+          "columnsFrom": [
+            "pool_id",
+            "kind"
+          ],
+          "tableTo": "coordination_pools",
+          "columnsTo": [
+            "id",
+            "kind"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "coordination_claim_invocation": {
+          "name": "coordination_claim_invocation",
+          "columns": [
+            "pool_id",
+            "instance_id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "coordination_claim_identity": {
+          "name": "coordination_claim_identity",
+          "value": "\"coordination_claims\".\"issue_number\" > 0 AND length(\"coordination_claims\".\"lane\") > 0 AND length(\"coordination_claims\".\"branch\") > 0"
+        },
+        "coordination_claim_source_kind": {
+          "name": "coordination_claim_source_kind",
+          "value": "(\"coordination_claims\".\"kind\" = 'issue' AND \"coordination_claims\".\"source_issue_claim_id\" IS NULL) OR (\"coordination_claims\".\"kind\" <> 'issue' AND \"coordination_claims\".\"source_issue_claim_id\" IS NOT NULL)"
+        },
+        "coordination_claim_slot": {
+          "name": "coordination_claim_slot",
+          "value": "\"coordination_claims\".\"slot\" > 0 AND \"coordination_claims\".\"slot\" <= \"coordination_claims\".\"declared_capacity\" AND (\"coordination_claims\".\"kind\" = 'model-session' OR (\"coordination_claims\".\"slot\" = 1 AND \"coordination_claims\".\"declared_capacity\" = 1))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.coordination_consumers": {
+      "name": "coordination_consumers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "coordination_consumer_live": {
+          "name": "coordination_consumer_live",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"coordination_consumers\".\"finished_at\" IS NULL",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "coordination_consumers_claim_id_coordination_claims_id_fk": {
+          "name": "coordination_consumers_claim_id_coordination_claims_id_fk",
+          "tableFrom": "coordination_consumers",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "tableTo": "coordination_claims",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "coordination_consumer_identity": {
+          "name": "coordination_consumer_identity",
+          "columns": [
+            "claim_id",
+            "kind",
+            "external_id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "coordination_consumer_present": {
+          "name": "coordination_consumer_present",
+          "value": "length(\"coordination_consumers\".\"kind\") > 0 AND length(\"coordination_consumers\".\"external_id\") > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.coordination_events": {
+      "name": "coordination_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "coordination_event_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_instance_id": {
+          "name": "actor_instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "buddy_run_id": {
+          "name": "buddy_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "task": {
+          "name": "task",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consumer_id": {
+          "name": "consumer_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        }
+      },
+      "indexes": {
+        "coordination_event_claim": {
+          "name": "coordination_event_claim",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "coordination_event_created": {
+          "name": "coordination_event_created",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "coordination_events_claim_id_coordination_claims_id_fk": {
+          "name": "coordination_events_claim_id_coordination_claims_id_fk",
+          "tableFrom": "coordination_events",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "tableTo": "coordination_claims",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "coordination_events_consumer_id_coordination_consumers_id_fk": {
+          "name": "coordination_events_consumer_id_coordination_consumers_id_fk",
+          "tableFrom": "coordination_events",
+          "columnsFrom": [
+            "consumer_id"
+          ],
+          "tableTo": "coordination_consumers",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "coordination_event_reason": {
+          "name": "coordination_event_reason",
+          "value": "length(\"coordination_events\".\"reason\") > 0"
+        },
+        "coordination_event_consumer": {
+          "name": "coordination_event_consumer",
+          "value": "(\"coordination_events\".\"kind\" IN ('registered', 'done')) = (\"coordination_events\".\"consumer_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.coordination_pools": {
+      "name": "coordination_pools",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "coordination_scope_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_number": {
+          "name": "issue_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "capacity": {
+          "name": "capacity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "coordination_pools_repository_id_coordination_repositories_id_fk": {
+          "name": "coordination_pools_repository_id_coordination_repositories_id_fk",
+          "tableFrom": "coordination_pools",
+          "columnsFrom": [
+            "repository_id"
+          ],
+          "tableTo": "coordination_repositories",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "coordination_pool_scope": {
+          "name": "coordination_pool_scope",
+          "columns": [
+            "repository_id",
+            "kind",
+            "issue_number"
+          ],
+          "nullsNotDistinct": false
+        },
+        "coordination_pool_kind": {
+          "name": "coordination_pool_kind",
+          "columns": [
+            "id",
+            "kind"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "coordination_pool_issue": {
+          "name": "coordination_pool_issue",
+          "value": "(\"coordination_pools\".\"kind\" = 'issue' AND \"coordination_pools\".\"issue_number\" > 0) OR (\"coordination_pools\".\"kind\" <> 'issue' AND \"coordination_pools\".\"issue_number\" = 0)"
+        },
+        "coordination_pool_capacity": {
+          "name": "coordination_pool_capacity",
+          "value": "\"coordination_pools\".\"capacity\" > 0 AND (\"coordination_pools\".\"kind\" = 'model-session' OR \"coordination_pools\".\"capacity\" = 1)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.coordination_repositories": {
+      "name": "coordination_repositories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "repository": {
+          "name": "repository",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_branch": {
+          "name": "base_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "coordination_repository_base": {
+          "name": "coordination_repository_base",
+          "columns": [
+            "repository",
+            "base_branch"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "coordination_repository_present": {
+          "name": "coordination_repository_present",
+          "value": "length(\"coordination_repositories\".\"repository\") > 0 AND length(\"coordination_repositories\".\"base_branch\") > 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.coordination_event_kind": {
+      "name": "coordination_event_kind",
+      "schema": "public",
+      "values": [
+        "acquired",
+        "released",
+        "saved",
+        "registered",
+        "done"
+      ]
+    },
+    "public.coordination_scope_kind": {
+      "name": "coordination_scope_kind",
+      "schema": "public",
+      "values": [
+        "issue",
+        "integration",
+        "model-session"
+      ]
+    }
+  },
+  "schemas": {},
+  "views": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

@@ -6,19 +6,13 @@
 // assumed, not a trusted capacity policy. Any other version reads as no
 // record, which holds its scope. Which scope each version may name is
 // coordination-records.ts's rule.
+import { BINDING } from "@ecosystem/db/protocol";
 import { z } from "zod";
 
 // The version of every record in a resource slot's scope, and only of those.
 const RESOURCE_RECORD_VERSION = 3;
 const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
-const INVOCATION_BINDING = z.strictObject({
-  instance: z.string().uuid(),
-  lane: z.string().min(1),
-  issue: z.number().int().positive(),
-  branch: z.string().min(1),
-  repo: z.string().min(1),
-  base: z.string().min(1),
-});
+const INVOCATION_BINDING: typeof BINDING = BINDING;
 // One consumer of a resource slot, such as a model session, named by its
 // kind and an id unique within that kind.
 const CONSUMER = z.strictObject({

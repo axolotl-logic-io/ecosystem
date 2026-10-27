@@ -23,7 +23,7 @@
 //       anything else → held (unknown)
 
 import { z } from "zod";
-import { lastPush, pushHead } from "../checkouts.ts";
+import { lastPush, PushDiverged, pushHead } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { isRevisionBinding } from "../domain.ts";
@@ -322,8 +322,10 @@ function answersFor(
 }
 
 // Pushes the checked head, replies in each blocking thread and marks a
-// draft PR ready; returns the head it pushed, or the uncertain outcome of a
-// push that left the branch elsewhere.
+// draft PR ready; returns the head it pushed, or the outcome of a push that
+// left the branch elsewhere. When another worker moved the branch first,
+// this run's head is on its recovery branch, nothing was replied, and the
+// run fails for a person to compare the two.
 function delivered(
   fix: FixRun,
   pr: number,
@@ -331,7 +333,17 @@ function delivered(
 ): string | EffectOutcome {
   const { cfg, number, attempt } = fix.open;
   const local = head(fix.wt);
-  pushHead(cfg, number, FINISH_OP, attempt.run.id);
+  try {
+    pushHead(cfg, number, FINISH_OP, attempt.run.id);
+  } catch (error) {
+    if (!(error instanceof PushDiverged)) {
+      throw error;
+    }
+    return failed(
+      fix,
+      `another worker pushed to \`${error.branch}\` first, so I didn't overwrite its commits; this run's work is on \`${error.recovery}\` at ${error.headSha}`,
+    );
+  }
   const remote = remoteHead(cfg, number);
   if (remote !== local) {
     return {

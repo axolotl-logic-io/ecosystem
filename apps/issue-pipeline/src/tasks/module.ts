@@ -5,7 +5,12 @@
 // op may record.
 
 import type { Config } from "../config.ts";
-import type { ActionEnd, Binding, TaskDefinition } from "../domain.ts";
+import type {
+  ActionCause,
+  ActionEnd,
+  Binding,
+  TaskDefinition,
+} from "../domain.ts";
 import { isRevisionBinding, sameBinding } from "../domain.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 import { currentBinding } from "./chain.ts";
@@ -17,11 +22,13 @@ type Admission =
 
 interface TaskModule {
   definition: TaskDefinition;
-  // Why a new attempt of `binding` may not be recorded now, or null.
+  // Why a new attempt of `binding`, for `cause` when the attempt names
+  // one, may not be recorded now, or null.
   prerequisite: (
     cfg: Config,
     evidence: TaskEvidence,
     binding: Binding,
+    cause?: ActionCause,
   ) => string | null;
   // What the task must hold before its attempt is recorded.
   admit?: (cfg: Config, number: number) => Admission;

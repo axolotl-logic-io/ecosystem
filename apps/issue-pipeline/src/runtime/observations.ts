@@ -264,6 +264,9 @@ interface BuddyDiagnostics {
   held: (where: LoopLocation, reason: string) => void;
   settled: (loops: readonly LoopObservation[]) => void;
   ended: (where: LoopLocation, summary: ActionSummary) => void;
+  // A failure that action `action` goes on past, such as a failed issue
+  // assignment change.
+  warned: (where: LoopLocation, action: string, reason: string) => void;
 }
 
 // Stderr diagnostics supplement run records; neither grants runtime authority.
@@ -317,6 +320,18 @@ function buddyDiagnostics(id: string): BuddyDiagnostics {
           ...where,
           action: summary.id,
           ...summary.end,
+        })}\n`,
+      );
+    },
+    warned: (where: LoopLocation, action: string, reason: string): void => {
+      process.stderr.write(
+        `${JSON.stringify({
+          at: new Date().toISOString(),
+          buddyRun: id,
+          ...where,
+          action,
+          state: "warning",
+          reason,
         })}\n`,
       );
     },

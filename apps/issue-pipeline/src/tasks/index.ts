@@ -22,7 +22,13 @@ import type {
 import { MAX_SUMMARY } from "../domain.ts";
 import { OpsError } from "../ops-error.ts";
 import { MODULES } from "./modules.ts";
-import { attemptsOf, isAttempt, isResult, readRecords } from "./records.ts";
+import {
+  attemptsOf,
+  determined,
+  isAttempt,
+  isResult,
+  readRecords,
+} from "./records.ts";
 import { taskEvidence } from "./view.ts";
 
 const ADMISSION = z.union([
@@ -111,15 +117,22 @@ function previousAction(cfg: Config, binding: Binding): Promise<string | null> {
   });
 }
 
+// Every attempt's binding and cause, in record order, and whether its run
+// is still unsettled.
 function actionCauses(
   cfg: Config,
   number: number,
-): Promise<readonly { binding: Binding; cause: ActionCause }[]> {
-  return read(() =>
-    readRecords(cfg, number, listComments(cfg, number))
-      .rows.filter(isAttempt)
-      .map((row) => ({ binding: row.binding, cause: row.cause })),
-  );
+): Promise<
+  readonly { binding: Binding; cause: ActionCause; unsettled?: boolean }[]
+> {
+  return read(() => {
+    const { rows } = readRecords(cfg, number, listComments(cfg, number));
+    return rows.filter(isAttempt).map((row) => ({
+      binding: row.binding,
+      cause: row.cause,
+      unsettled: determined(rows, row.run.id) === undefined,
+    }));
+  });
 }
 
 // Every determined v2 result of the item as a result signal: evidence for

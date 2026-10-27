@@ -19,7 +19,12 @@ import { WRITER_REPLY } from "./replies.ts";
 import type { SessionKind } from "./session-task.ts";
 import { sessionTask } from "./session-task.ts";
 
-const PUSHED = z.looseObject({ headSha: SHA });
+const PUSHED = z.looseObject({
+  headSha: SHA,
+  diverged: z
+    .looseObject({ branch: z.string().min(1), recovery: z.string().min(1) })
+    .optional(),
+});
 const OPENED = z.looseObject({ pr: z.number().int().positive() });
 
 // What a writer session ended with: its summary, or why it didn't finish.
@@ -93,19 +98,48 @@ function hardeningFacts(ctx: ActionContext): string[] {
   ];
 }
 
-async function pushed(ctx: ActionContext): Promise<string> {
+// A continuation's own facts: the cause is the interrupted result it
+// follows, and the checkout starts from the branch that run pushed.
+function continuationFacts(ctx: ActionContext): string[] {
+  if (!ctx.cause.signal.startsWith("result:")) {
+    return [];
+  }
+  return [
+    "## Continuation",
+    "",
+    "An earlier Implement run for this issue stopped before it finished. This checkout starts from the commits it pushed to the branch, if any.",
+    "",
+    `Read them before you write anything: \`git -C ${ctx.checkout.repo} log origin/${ctx.cfg.baseBranch}..HEAD\``,
+    "",
+    "Keep the work that is right, finish what is missing, and fix what is wrong. Don't start again from the base.",
+    "",
+  ];
+}
+
+// Pushes the branch and opens its PR. When another worker moved the branch
+// first, both sets of commits stay on GitHub and the run fails for a person
+// to compare them; nothing chooses between them.
+async function pushed(ctx: ActionContext, summary: string): Promise<ActionEnd> {
   const { number } = ctx.workItem;
-  const { headSha } = PUSHED.parse(await ctx.op("push", { number }));
+  const push = PUSHED.parse(await ctx.op("push", { number }));
+  if (push.diverged !== undefined) {
+    const { branch, recovery } = push.diverged;
+    return ended(
+      "failed",
+      `another worker pushed to \`${branch}\` first, so I didn't overwrite its commits; this run's work is on \`${recovery}\` at ${push.headSha}`,
+    );
+  }
   OPENED.parse(await ctx.op("open-task-pr", { number }));
-  return headSha;
+  return ended("passed", summary, push.headSha);
 }
 
 // Implement's action: the writing session, the fresh hardening session,
-// then the branch push and the development account's ready PR.
+// then the branch push and the development account's ready PR. A
+// continuation's writing session is told what the branch already holds.
 async function implementAction(ctx: ActionContext): Promise<ActionEnd> {
   await ctx.prepare();
   await ctx.boundary("session");
-  const writing = await written(ctx, "development", []);
+  const writing = await written(ctx, "development", continuationFacts(ctx));
   if (!writing.ok) {
     return ended("failed", writing.reason);
   }
@@ -118,7 +152,7 @@ async function implementAction(ctx: ActionContext): Promise<ActionEnd> {
   await ctx.checkpoint({ session: "hardening", summary: hardening.summary });
   await ctx.boundary("push");
   try {
-    return ended("passed", writing.summary, await pushed(ctx));
+    return await pushed(ctx, writing.summary);
   } catch (error) {
     return ended("unknown", `the push or PR is uncertain: ${messageOf(error)}`);
   }

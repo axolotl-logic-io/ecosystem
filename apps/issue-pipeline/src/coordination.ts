@@ -181,6 +181,16 @@ class Coordination {
     this.assertOwner();
     return true;
   }
+  // The public execution boundary leaves nothing pending after a known loss.
+  // An unknown response still retains its original request for reconciliation.
+  tryAcquire(): boolean {
+    this.request();
+    if (this.acquire()) {
+      return true;
+    }
+    this.cancel();
+    return false;
+  }
   assertOwner(): void {
     own(this.read(), this.binding);
   }
@@ -241,7 +251,7 @@ class Coordination {
   // caller has read that the request's consumer is done and holds that
   // work's execution itself (ops/land-turn.ts); the record names it. A
   // resource slot is released only by its own holder, so none is retired.
-  retire(request: Request): void {
+  retire(request: Pick<Request, "id" | "binding">): void {
     if (this.version === RESOURCE_RECORD_VERSION) {
       hold("only its holder releases a resource slot");
     }

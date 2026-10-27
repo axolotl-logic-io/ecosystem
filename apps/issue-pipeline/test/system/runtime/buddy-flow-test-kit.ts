@@ -94,6 +94,8 @@ interface PlannedSession {
     | "posts-fail"
     | "checkpoint-posts-fail"
     | "events-unreadable"
+    | "comments-unreadable"
+    | "rival-push"
     | null;
   // Whether `change` comes before the commit rather than after it.
   changeFirst: boolean;
@@ -172,6 +174,11 @@ interface Machine {
     buddy?: BuddyChoice,
     signal?: AbortSignal,
   ) => Promise<BuddyOutcome>;
+  recoverImplement: (
+    action: string,
+    apply: boolean,
+    reason?: string,
+  ) => { status: number | null; stdout: string; stderr: string };
   git: (args: string[]) => string;
   // The commits the project's check ran on, in order.
   checksRun: () => string[];
@@ -694,6 +701,37 @@ function machine(
         .filter((line) => line !== "")
         .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
     runBuddy,
+    recoverImplement: (
+      action: string,
+      apply: boolean,
+      reason = "The interrupted work is preserved for a person.",
+    ): { status: number | null; stdout: string; stderr: string } => {
+      const args = [
+        path.join(pipeline, "recover-implement.mjs"),
+        "--config",
+        repositoryConfig,
+        "--issue",
+        String(ISSUE),
+        "--action",
+        action,
+        "--reason",
+        reason,
+      ];
+      if (apply) {
+        args.push("--apply");
+      }
+      const result = spawnSync(process.execPath, args, {
+        cwd: root,
+        env,
+        encoding: "utf8",
+        timeout: OVERSTAY_MS,
+      });
+      return {
+        status: result.status,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    },
     git: (args: string[]) => git(origin, args),
     checksRun: (): string[] => {
       if (!fs.existsSync(checksLog(root))) {

@@ -1,0 +1,26 @@
+// Shared Node database package. Domain code keeps the full root policy.
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "extends": "//",
+  "files": {
+    // drizzle/meta is rewritten by drizzle-kit on every generate.
+    "includes": ["**", "!drizzle/meta"]
+  },
+  "overrides": [
+    {
+      // The environment boundary and real database tests use Node APIs.
+      "includes": ["src/env.ts", "test/**"],
+      "linter": {
+        "rules": {
+          "correctness": { "noNodejsModules": "off" },
+          "style": { "noProcessEnv": "off" }
+        }
+      }
+    },
+    {
+      // drizzle-kit discovers its configuration through a default export.
+      "includes": ["drizzle.config.ts"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    }
+  ]
+}

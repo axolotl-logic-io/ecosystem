@@ -1,11 +1,12 @@
 // The parts of gh that the buddy flow tests' runtime, tasks and ops use
 // beyond the signal reads fake-gh.ts answers: whole paginated comment
 // listings (`--paginate --jq '.[] | @json'`), comment edits, plain resource
-// reads (issues, collaborators), the repository's git database, which is
-// the real local bare origin in FAKE_GH_ORIGIN, and `gh pr` for the item's
-// pull request: its view, checks, creation, draft and ready changes, merge
-// commit, submitted reviews and thread replies. flowCall answers from the
-// world and says whether the call was one of these.
+// reads (issues, collaborators), issue assignee changes, the repository's
+// git database, which is the real local bare origin in FAKE_GH_ORIGIN, and
+// `gh pr` for the item's pull request: its view, checks, creation, draft
+// and ready changes, merge commit, submitted reviews and thread replies.
+// flowCall answers from the world and says whether the call was one of
+// these.
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 import { z } from "zod";
@@ -24,6 +25,7 @@ const COMMENTS = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/comments\?/u;
 const REPO_COMMENTS = /^repos\/[^/]+\/[^/]+\/issues\/comments\?/u;
 const EDITED = /^repos\/[^/]+\/[^/]+\/issues\/comments\/(?<id>\d+)$/u;
 const ISSUE = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)$/u;
+const ASSIGNEES = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/assignees$/u;
 const COLLABORATOR = /^repos\/[^/]+\/[^/]+\/collaborators\/(?<login>[^/]+)$/u;
 const REF = /^repos\/[^/]+\/[^/]+\/git\/ref\/(?<ref>.+)$/u;
 const GIT_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits\/(?<sha>[0-9a-f]{40})$/u;
@@ -65,6 +67,7 @@ const COMMIT_INPUT = z.object({
   parents: z.array(z.string()),
 });
 const REF_INPUT = z.object({ ref: z.string(), sha: z.string() });
+const ASSIGNEES_INPUT = z.object({ assignees: z.array(z.string()) });
 // Written comments and events are dated from this instant, a second apart
 // by id, as fake-gh.ts dates posted comments.
 const POSTED_FROM = Date.parse("2026-10-25T12:00:00Z");
@@ -133,6 +136,13 @@ function paginated(world: World, args: readonly string[]): boolean {
     return false;
   }
   const endpoint = endpointOf(args);
+  const [pathname] = endpoint.split("?");
+  const fault = world.faults.find(
+    (entry) => entry.path === pathname && entry.link === null,
+  );
+  if (fault !== undefined) {
+    return fail(`gh: injected listing failure (HTTP ${fault.status})`);
+  }
   const { number } = COMMENTS.exec(endpoint)?.groups ?? {};
   let rows: { issue: FakeIssue; item: FakeComment }[] = [];
   if (number !== undefined) {
@@ -161,6 +171,7 @@ interface IssueRow {
   state: "open" | "closed";
   user: { login: string };
   labels: { name: string }[];
+  assignees: { login: string }[];
 }
 
 // A pull request as `gh pr list --json` prints it.
@@ -195,6 +206,7 @@ function issueRow(issue: FakeIssue): IssueRow {
     state: issueState(issue),
     user: { login: issue.author ?? "someone" },
     labels: issue.labels.map((name) => ({ name })),
+    assignees: (issue.assignees ?? []).map((login) => ({ login })),
   };
 }
 
@@ -205,6 +217,10 @@ function issueGet(world: World, args: readonly string[], number: string): void {
   }
   const jq = flagValue(args, "--jq");
   if (jq === undefined) {
+    if (world.garbleAssignees === true) {
+      print({ ...issueRow(issue), assignees: "unknown" });
+      return;
+    }
     print(issueRow(issue));
     return;
   }
@@ -302,6 +318,61 @@ function gitWrite(args: readonly string[]): boolean {
     return true;
   }
   return false;
+}
+
+// `gh api -X POST|DELETE repos/O/R/issues/N/assignees --input -`: adds
+// the logins its input names, each once, or removes them, leaving every
+// other assignee; answers with the issue as GitHub does. Like GitHub, it
+// adds an `assigned` or `unassigned` event, by `login`, for each change, so
+// the issue's event readers meet events that aren't labels.
+function assigneesWrite(
+  world: World,
+  args: readonly string[],
+  login: string,
+): boolean {
+  const { number } = ASSIGNEES.exec(endpointOf(args))?.groups ?? {};
+  const method = flagValue(args, "-X");
+  if (number === undefined || (method !== "POST" && method !== "DELETE")) {
+    return false;
+  }
+  const issue = world.issues.find((item) => String(item.number) === number);
+  if (issue === undefined) {
+    return fail("gh: Not Found (HTTP 404)");
+  }
+  if (world.refuseAssigneeChanges === true) {
+    return fail("gh: Validation Failed (HTTP 422)");
+  }
+  const { assignees } = ASSIGNEES_INPUT.parse(JSON.parse(stdin()));
+  const present = issue.assignees ?? [];
+  function named(who: string, among: readonly string[]): boolean {
+    return among.some((item) => item.toLowerCase() === who.toLowerCase());
+  }
+  let changed: string[];
+  if (method === "POST") {
+    changed = assignees.filter((name) => !named(name, present));
+    issue.assignees = [...present, ...changed];
+  } else {
+    changed = present.filter((name) => named(name, assignees));
+    issue.assignees = present.filter((name) => !named(name, assignees));
+  }
+  let event = "assigned";
+  if (method === "DELETE") {
+    event = "unassigned";
+  }
+  const first = world.nextId;
+  issue.events.push(
+    ...changed.map((_name, at) => ({
+      id: first + at,
+      event,
+      label: null,
+      actor: login,
+      viaApp: false,
+      createdAt: postedAt(first + at),
+    })),
+  );
+  world.nextId += changed.length;
+  print(issueRow(issue));
+  return true;
 }
 
 // A comment edit.
@@ -785,6 +856,9 @@ function flowCall(
     return { handled: false, changed: false };
   }
   if (commentEdit(world, args)) {
+    return { handled: true, changed: true };
+  }
+  if (assigneesWrite(world, args, login)) {
     return { handled: true, changed: true };
   }
   if (args.includes("POST") && pullWrite(world, args, login)) {

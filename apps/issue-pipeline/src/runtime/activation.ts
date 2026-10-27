@@ -286,6 +286,9 @@ async function offerSignal(
     stop: cycle.stop,
     scope: cycle.scope,
     stopPollSeconds: cycle.buddy.config.stopPollSeconds,
+    warn: (reason: string): void => {
+      cycle.diagnostics.warned(where, action.id, reason);
+    },
   });
   setLoop(cycle, where, {
     state: loopStateOf(summary),

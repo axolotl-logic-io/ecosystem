@@ -2,16 +2,29 @@
   "name": "ecosystem",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "engines": {
     "node": ">=24 <25"
   },
   "scripts": {
     "check": "npm run check --workspaces",
-    "check:full": "npm run check:full --workspace @ecosystem/issue-pipeline && npm run check --workspace @ecosystem/workflow-dash"
+    "check:full": "npm run check --workspace @ecosystem/db && npm run check:full --workspace @ecosystem/issue-pipeline && npm run check --workspace @ecosystem/workflow-dash",
+    "test:database": "npm run test:database --workspace @ecosystem/db && npm run build --workspace @ecosystem/issue-pipeline && npm run test:database --workspace @ecosystem/issue-pipeline",
+    "db:up": "docker compose up --detach --wait database",
+    "db:down": "docker compose down",
+    "db:generate": "npm run db:generate --workspace @ecosystem/db",
+    "db:migrate": "npm run db:migrate --workspace @ecosystem/db",
+    "db:test:up": "docker compose --file compose.test.yml up --detach --wait",
+    "db:test:down": "docker compose --file compose.test.yml down"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
   }
 }

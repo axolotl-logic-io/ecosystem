@@ -24,7 +24,7 @@ import type {
   Machine,
   PlannedSession,
 } from "./buddy-flow-test-kit.ts";
-import { DEVELOPER, ISSUE, machine } from "./buddy-flow-test-kit.ts";
+import { DEVELOPER, HUMAN, ISSUE, machine } from "./buddy-flow-test-kit.ts";
 
 const FIXER: BuddyChoice = { role: "developer", tasks: ["fix"] };
 // The Fix acts on one poll and its recovery on the next.
@@ -34,6 +34,9 @@ const SLUG = "acme__widgets";
 // Implement's writing and hardening sessions, and the one Fix session.
 const SESSIONS = 3;
 const BLOCKING = "Count with a number, not words.";
+const ASSIGNEES = `repos/acme/widgets/issues/${ISSUE}/assignees`;
+// Implement's assignment and removal, then the original Fix's assignment.
+const FIX_ASSIGNED = 3;
 // Only the passed result's receipt evidence lists the replies: GitHub
 // refuses that post after the real push and replies, and nothing else.
 const PASSED_EVIDENCE = '"replies":[';
@@ -49,6 +52,14 @@ const UNRESOLVED: PlannedSession = {
   awaitAbort: false,
   reply: { outcome: "done", summary: "Left the merge as it was.", replies: [] },
 };
+
+// The assignee changes the buddy asked GitHub for, as [login, method].
+function assigneeChanges(box: Machine): string[][] {
+  return box
+    .calls()
+    .filter((call) => call.args.includes(ASSIGNEES))
+    .map((call) => [call.login, call.args[call.args.indexOf("-X") + 1] ?? ""]);
+}
 
 function fixRecords(box: Machine): ReturnType<typeof records> {
   return records(box).filter((record) => record.binding.task === "fix");
@@ -113,7 +124,20 @@ test("Fix reconciles its own pushed head and replies without another attempt, se
         replies: [{ comment: thread, reply: "The count is a number now." }],
       },
     };
-    const run = await box.runBuddy([fixes], RECOVERY_POLLS, FIXER, signal);
+    const running = box.runBuddy([fixes], RECOVERY_POLLS, FIXER, signal);
+    // A person takes the issue while the original Fix runs. Its recovery
+    // only settles the pipeline's own run by reading, so it doesn't back off.
+    await box.when(() => assigneeChanges(box).length === FIX_ASSIGNED, {
+      signal,
+    });
+    box.change((world) => {
+      const issue = world.issues.find((entry) => entry.number === ISSUE);
+      if (issue === undefined) {
+        throw new Error(`the world has no issue ${ISSUE}`);
+      }
+      issue.assignees = [...(issue.assignees ?? []), HUMAN];
+    });
+    const run = await running;
     assert.equal(run.status, 0, run.stderr);
     const fix = run.actions.filter((action) => action.task === "fix");
     assert.equal(fix.length, 2);
@@ -163,6 +187,21 @@ test("Fix reconciles its own pushed head and replies without another attempt, se
     );
     // Implement's two sessions and the Fix's one: recovery started none.
     assert.equal(box.launches().length, SESSIONS);
+    // Implement and the Fix each assigned the development account and
+    // removed it as they settled. The recovery settles through the same
+    // release, so it retries the removal and never adds the account; the
+    // person stays assigned.
+    assert.deepEqual(assigneeChanges(box), [
+      [DEVELOPER, "POST"],
+      [DEVELOPER, "DELETE"],
+      [DEVELOPER, "POST"],
+      [DEVELOPER, "DELETE"],
+      [DEVELOPER, "DELETE"],
+    ]);
+    assert.deepEqual(
+      box.world().issues.find((entry) => entry.number === ISSUE)?.assignees,
+      [HUMAN],
+    );
     passed = true;
   } finally {
     keep(box, passed);

@@ -38,6 +38,18 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
 };
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const DATABASE_FILE = /^(?:\/|[A-Za-z]:[\\/])/u;
+const COORDINATION_STORE = z
+  .discriminatedUnion("backend", [
+    z.strictObject({ backend: z.literal("github") }),
+    z.strictObject({
+      backend: z.literal("postgres"),
+      credentialsEnvFile: z
+        .string()
+        .regex(DATABASE_FILE, "must be an absolute path"),
+    }),
+  ])
+  .default({ backend: "github" });
 
 const OPTIONAL_TEXT = z.string().nullish();
 // Access-profile metadata and credential-variable names to strip from model
@@ -74,6 +86,7 @@ const CONFIG_SCHEMA = z.looseObject({
   devAccount: z.string(),
   landingAccount: z.string(),
   credentialsEnvFile: z.string(),
+  coordination: COORDINATION_STORE,
   allowedUsers: z.array(z.string()),
   baseBranch: z.string(),
   requireCi: z.boolean(),

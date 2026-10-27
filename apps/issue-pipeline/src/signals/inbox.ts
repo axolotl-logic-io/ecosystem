@@ -681,13 +681,16 @@ function deliverQualified(
   }
 }
 
+// Delivers `start` when no action ran its binding yet, or when it
+// `recovers` its requirements' lost Implement run.
 async function deliverStart(
   cfg: Config,
   scope: SignalScope,
   poll: IssuePoll,
-  signal: StartSignal,
+  start: { signal: StartSignal; recovers: boolean },
 ): Promise<void> {
-  if (signal.task !== "verify") {
+  const { signal, recovers } = start;
+  if (signal.task !== "verify" && !recovers) {
     const previous = await previousOf(cfg, {
       workItem: signal.workItem,
       task: signal.task,
@@ -705,12 +708,37 @@ async function deliverStart(
   deliverQualified(cfg, scope, poll, signal);
 }
 
+// Whether `signal` is an Implement start whose requirements' latest
+// attempt never settled: it is delivered again only so Implement can settle
+// that run by reading. It never records another attempt.
+function recovering(
+  attempts: readonly AttemptCause[],
+  signal: StartSignal,
+): boolean {
+  if (signal.task !== "implement") {
+    return false;
+  }
+  const latest = attempts
+    .filter(
+      ({ binding }) =>
+        binding.task === "implement" &&
+        "requirements" in binding &&
+        binding.requirements === signal.requirements,
+    )
+    .at(-1);
+  return latest?.unsettled === true;
+}
+
 // Whether `signal` still requests work: not spent by an attempt of its task
-// and, for Author or Implement, its requirements not attempted by its task.
+// and, for Author or Implement, its requirements not attempted by its task;
+// or else an Implement start that recovers its requirements' lost run.
 function pendingStart(
   attempts: readonly AttemptCause[],
   signal: StartSignal,
 ): boolean {
+  if (recovering(attempts, signal)) {
+    return true;
+  }
   if (spends(attempts, signal)) {
     return false;
   }
@@ -745,7 +773,12 @@ async function deliverStarts(
   const pending = starts.filter((signal) =>
     pendingStart(attempts.value, signal),
   );
-  await inOrder(pending, (signal) => deliverStart(cfg, scope, poll, signal));
+  await inOrder(pending, (signal) =>
+    deliverStart(cfg, scope, poll, {
+      signal,
+      recovers: recovering(attempts.value, signal),
+    }),
+  );
 }
 
 // Delivers each accepted review that still stands on its PR and whose

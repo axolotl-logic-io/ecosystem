@@ -3,7 +3,9 @@
 // not stopping or stopped, the trusted buddy and repository configuration
 // still authorize the task (Land needs both permissions.land grants), the
 // work item's stop latch reads clear, the causal signal still qualifies,
-// the action wins fenced issue-execution ownership under its own new UUID,
+// for a new Implement or Fix attempt no person is assigned to the issue
+// (issue-assignment.ts), the action wins fenced issue-execution ownership
+// under its own new UUID,
 // and its model-session reservation is granted from the repository's
 // shared pool at the trusted cap. A loser or a full pool waits; anything
 // unreadable or contradictory holds. Whatever admission took before it
@@ -23,6 +25,7 @@ import type {
   WorkItemRef,
 } from "../domain.ts";
 import { issueExecution, withExecution } from "../execution.ts";
+import { assignedPerson, assignsIssue } from "../issue-assignment.ts";
 import type { SignalScope } from "../signals/inbox.ts";
 import { requalify, stopLatch } from "../signals/inbox.ts";
 import { previousAction } from "../tasks/index.ts";
@@ -82,6 +85,37 @@ function giveBack(cfg: Config, issue: number, why: string): Admission {
       reason: `${why}; execution release unconfirmed: ${messageOf(error)}`,
     };
   }
+}
+
+// Why a new attempt of `candidate` leaves its issue to the person assigned
+// to it, or null. Only Implement and Fix back off, and a recovery, which
+// only settles the pipeline's own earlier run by reading, never does. It
+// waits rather than spending anything, so the same start proceeds once the
+// person is unassigned; unreadable assignees hold.
+function assignmentRefusal(
+  candidate: Candidate,
+  cfg: Config,
+  issue: number,
+): Admission | null {
+  if (candidate.mode === "recover" || !assignsIssue(candidate.task.id)) {
+    return null;
+  }
+  let person: string | null;
+  try {
+    person = assignedPerson(cfg, issue);
+  } catch (error: unknown) {
+    return {
+      state: "held",
+      reason: `the assignees of #${issue} are unreadable: ${messageOf(error)}`,
+    };
+  }
+  if (person === null) {
+    return null;
+  }
+  return {
+    state: "waiting",
+    reason: `#${issue} is assigned to ${person}, so the pipeline leaves it to them`,
+  };
 }
 
 // Reserves the action's model session, when its task uses one and it acts.
@@ -159,6 +193,10 @@ async function admit(candidate: Candidate): Promise<Admission> {
       reason: `previous action unreadable: ${messageOf(error)}`,
     };
   }
+  const assigned = assignmentRefusal(candidate, authorized, issue);
+  if (assigned !== null) {
+    return assigned;
+  }
   const id = newActionRunId();
   let cfg: Config;
   let execution: AdmittedAction["execution"];
@@ -177,9 +215,7 @@ async function admit(candidate: Candidate): Promise<Admission> {
   }
   try {
     const guard = issueExecution(cfg, issue);
-    guard.request();
-    if (!guard.acquire()) {
-      guard.cancel();
+    if (!guard.tryAcquire()) {
       return {
         state: "waiting",
         reason: `another invocation owns #${issue}`,

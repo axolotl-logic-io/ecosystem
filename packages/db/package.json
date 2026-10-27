@@ -1,0 +1,31 @@
+{
+  "name": "@ecosystem/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/client.ts",
+    "./coordination": "./src/coordination.ts",
+    "./schema": "./src/tables/coordination.ts",
+    "./protocol": "./src/protocol.ts",
+    "./testing": "./test/support/test-database.ts"
+  },
+  "scripts": {
+    "check": "npm run typecheck && npm run lint",
+    "typecheck": "tsc -p .",
+    "lint": "biome check --error-on-warnings",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "test:database": "node --test --test-concurrency=1 --test-timeout=60000 'test/system-integration/*.test.ts'"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "pg": "8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^5"
+  }
+}

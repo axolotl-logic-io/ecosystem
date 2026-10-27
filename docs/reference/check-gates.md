@@ -71,9 +71,10 @@ After Land, confirm only the existing identity, receipt, ancestry, pre-Land veri
 
 A change to the repository's scripts doesn't rewrite an operator's `commands.test` or test wrapper. A wrapper that calls the full suite directly still runs it. To change a live wrapper, prepare the smallest proposal outside live configuration, keep its isolation and fake-transport boundaries, and get source review and operator approval first.
 
-`.github/workflows/check.yml` runs on every PR and on each push to `main`. It has two results:
+`.github/workflows/check.yml` runs on every PR and on each push to `main`. It has three results:
 
 - `check` runs `npm run check`, the fast gate of every workspace. Branch protection on `main` requires it, and requires a PR's branch to be up to date with `main` before it merges.
 - `tests` passes when every shard of the issue pipeline's Node tests passes. The tests are split by file across eight runners, so they finish in a fraction of the time one runner takes. Branch protection doesn't require `tests`; Verify runs the full gate on each head the pipeline lands.
+- `database` runs `npm run test:database` against a disposable PostgreSQL service. Branch protection doesn't require it.
 
 A newer push to a PR cancels that PR's older run.

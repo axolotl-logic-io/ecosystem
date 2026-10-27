@@ -203,6 +203,19 @@ const LAND_EVIDENCE = z.discriminatedUnion("outcome", [
   }),
 ]);
 
+// What the failed result that settles an interrupted Implement run holds:
+// the item's branch and the head its recovery read there (null when the
+// branch had no commits), and whether a continuation of the same binding may
+// follow from that branch without a new start. The branch keeps the work;
+// the result grants nothing beyond the continuation's own fresh checks.
+const INTERRUPTED_EVIDENCE = z.strictObject({
+  interrupted: z.strictObject({
+    branch: z.string().min(1),
+    head: SHA.nullable(),
+    continues: z.boolean(),
+  }),
+});
+
 const TASK_RESULT = z.strictObject({
   binding: BINDING,
   run: RUN_REF,
@@ -253,6 +266,7 @@ type ReviewState = z.infer<typeof REVIEW_STATE>;
 type StartTask = (typeof START_TASKS)[number];
 type VerifyEvidence = z.infer<typeof VERIFY_EVIDENCE>;
 type LandEvidence = z.infer<typeof LAND_EVIDENCE>;
+type InterruptedEvidence = z.infer<typeof INTERRUPTED_EVIDENCE>;
 type QualifiedSignal = z.infer<typeof QUALIFIED_SIGNAL>;
 type EvidenceHold = z.infer<typeof EVIDENCE_HOLD>;
 type SignalInbox = z.infer<typeof SIGNAL_INBOX>;
@@ -372,6 +386,7 @@ export type {
   Binding,
   EvidenceHold,
   HumanProvenance,
+  InterruptedEvidence,
   LandEvidence,
   PrReview,
   QualifiedSignal,
@@ -404,6 +419,7 @@ export {
   DIGEST,
   EVIDENCE_HOLD,
   HUMAN_PROVENANCE,
+  INTERRUPTED_EVIDENCE,
   isRevisionBinding,
   LAND_EVIDENCE,
   MAX_SUMMARY,

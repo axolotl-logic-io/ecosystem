@@ -73,6 +73,8 @@ interface Snapshot {
   pending: Request[];
   epoch: number;
   records: Row[];
+  requestedInstances: string[];
+  releasedInstances: string[];
   // The current owner's consumers, in registration order.
   consumers: ConsumerState[];
 }
@@ -326,6 +328,18 @@ function snapshot(
     pending: [],
     epoch: 0,
     records,
+    requestedInstances: records.flatMap((row) => {
+      if (row.kind === "request") {
+        return [row.binding.instance];
+      }
+      return [];
+    }),
+    releasedInstances: records.flatMap((row) => {
+      if (row.kind === "release") {
+        return [row.instance];
+      }
+      return [];
+    }),
     consumers: [],
   };
   for (const row of records) {

@@ -87,8 +87,7 @@ async function main(): Promise<void> {
   };
   const bound = withExecution(cfg, execution);
   const issue = issueExecution(bound, plan.issue);
-  issue.request();
-  if (!issue.acquire()) {
+  if (!issue.tryAcquire()) {
     throw new Error(`issue ${plan.issue}'s execution is not this invocation's`);
   }
   // The steps run in order, each on the handle the last reserve returned.

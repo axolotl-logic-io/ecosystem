@@ -31,25 +31,21 @@ function quoted(text: string): string {
   return `'${text.replaceAll("'", `'\\''`)}'`;
 }
 
-function client(socket: string, scratch: string): string {
+function client(socket: string): string {
   return `#!/bin/sh
 # gh, answered by the fake gh server on ${socket}.
 input=
 for arg in "$@"; do
   if [ "$arg" = --input ]; then input=1; fi
 done
-head=${quoted(scratch)}/gh-head.$$
-{
+exec 3>&1
+answer=$({
   printf '%s\\0' "$@"
   if [ -n "$input" ]; then cat; fi
 } | curl --silent --show-error --unix-socket ${quoted(socket)} \\
   --header "X-Gh-Argc: $#" --header "X-Gh-Token: \${GH_TOKEN-}" \\
-  --data-binary @- --dump-header "$head" ${URL_BASE}/gh || {
-  rm -f "$head"
-  exit 1
-}
-answer=$(sed -n 's/^x-gh-exit: \\([0-9]*:[0-7\\\\]*\\).*$/\\1/p' "$head")
-rm -f "$head"
+  --data-binary @- --write-out '%{stderr}%header{x-gh-exit}' ${URL_BASE}/gh 2>&1 >&3) || exit 1
+exec 3>&-
 if [ -z "$answer" ]; then
   echo "fake gh: the server gave no answer" >&2
   exit 1
@@ -135,7 +131,7 @@ function startFakeGitHub(options: {
     );
   }
   const gh = path.join(bin, "gh");
-  fs.writeFileSync(gh, client(socket, root));
+  fs.writeFileSync(gh, client(socket));
   fs.chmodSync(gh, EXECUTABLE);
   return {
     socket,

@@ -2,6 +2,13 @@
 // token's name before #166 stays hidden too, in case an operator environment
 // still sets it; it never selects an authentication identity.
 const CREDENTIAL_VARIABLES: readonly string[] = [
+  "DATABASE_URL",
+  "TEST_DATABASE_URL",
+  "PGPASSWORD",
+  "PGPASSFILE",
+  "PGSERVICE",
+  "PGSERVICEFILE",
+  "POSTGRES_PASSWORD",
   "GH_TOKEN",
   "GITHUB_TOKEN",
   "GH_ENTERPRISE_TOKEN",

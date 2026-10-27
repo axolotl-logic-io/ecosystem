@@ -1,0 +1,20 @@
+name: ecosystem
+services:
+  database:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ecosystem}
+      POSTGRES_USER: ${POSTGRES_USER:-ecosystem}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready --username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB"']
+      interval: 1s
+      timeout: 3s
+      retries: 30
+volumes:
+  database:

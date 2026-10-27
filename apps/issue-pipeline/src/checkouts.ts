@@ -103,9 +103,57 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
   return { codeChanged: result.code === 1 };
 }
 
+// A push the remote refused because its branch holds commits this checkout
+// lacks: another worker's work. Nothing was overwritten, and this checkout's
+// HEAD is on its own recovery branch.
+class PushDiverged extends OpsError {
+  readonly branch: string;
+  readonly recovery: string;
+  readonly headSha: string;
+
+  constructor(branch: string, recovery: string, headSha: string) {
+    super(
+      `${branch} has commits this checkout doesn't contain, so nothing was overwritten; this checkout's work is on ${recovery} at ${headSha}`,
+    );
+    this.branch = branch;
+    this.recovery = recovery;
+    this.headSha = headSha;
+  }
+}
+
+// What git prints when a branch moved to history the pushed head lacks.
+const NOT_FAST_FORWARD =
+  /\[rejected\][^\n]*\((?:non-fast-forward|fetch first)\)/u;
+const RECOVERY_ID_LENGTH = 12;
+
+// The branch that preserves one action's diverged work: the item branch
+// with the action's own id, or else its head commit. Two workers never
+// share one, so neither replaces the other's.
+function recoveryBranch(cfg: Config, branch: string, headSha: string): string {
+  const id = cfg.execution?.instance ?? headSha;
+  return `${branch}-recovery-${id.replaceAll("-", "").slice(0, RECOVERY_ID_LENGTH)}`;
+}
+
+// Pushes `wt`'s HEAD to `branch` without force; true when the remote
+// refused it as a non-fast-forward. Any other failure throws.
+function fastForward(cfg: Config, wt: string, branch: string): boolean {
+  const args = ["-C", wt, "push", "origin", `HEAD:refs/heads/${branch}`];
+  const result = git(cfg, "dev", args, { reconciles: true, allowFail: true });
+  if (result.code === 0) {
+    return false;
+  }
+  if (NOT_FAST_FORWARD.test(result.stderr)) {
+    return true;
+  }
+  throw new OpsError(runFailure("git", args, result));
+}
+
 // Pushes the issue's checkout's HEAD to its branch for `op` of task run
-// `taskRun`, recording the push first, with --force-with-lease against the head
-// it last pushed, and returns the head pushed. A refused push throws.
+// `taskRun`, recording the push first, and returns the head pushed. Pushes
+// only fast-forward: when the branch holds commits this checkout lacks,
+// another worker's, it publishes HEAD on its recovery branch instead and
+// throws PushDiverged. No push replaces anyone's commits, and no timestamp
+// picks a winner. Any other refused push throws.
 function pushHead(
   cfg: Config,
   n: number,
@@ -114,18 +162,23 @@ function pushHead(
 ): string {
   const wt = paths.worktree(cfg, n);
   const headSha = head(wt);
-  const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
+  const branch = paths.branch(cfg, n);
   if (!readWriteAuthority(cfg, n).codeWritable) {
     throw new OpsError(`#${n}'s code merged; refusing code push`);
   }
+  // Recorded before the push. A reader trusts the record only when the
+  // remote branch is at exactly this head, so a push that went to a
+  // recovery branch instead is never taken as the branch's own.
   recordPush(cfg, n, { sha: headSha, op, run: taskRun });
-  // The push record lets the next claim adopt the head (adopt-push.ts).
-  git(
-    cfg,
-    "dev",
-    ["-C", wt, "push", "--force-with-lease", "-u", "origin", target],
-    { reconciles: true },
-  );
+  if (fastForward(cfg, wt, branch)) {
+    const recovery = recoveryBranch(cfg, branch, headSha);
+    if (fastForward(cfg, wt, recovery)) {
+      throw new OpsError(
+        `${branch} and its recovery branch ${recovery} both hold other work; the checkout keeps ${headSha}`,
+      );
+    }
+    throw new PushDiverged(branch, recovery, headSha);
+  }
   return headSha;
 }
 
@@ -213,6 +266,7 @@ export {
   claimSetupStart,
   ensureClone,
   lastPush,
+  PushDiverged,
   push,
   pushHead,
   recordPush,

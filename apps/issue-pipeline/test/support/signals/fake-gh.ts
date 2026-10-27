@@ -312,6 +312,7 @@ function single(world: World, path: string): Answer | null {
       number: issue.number,
       state: issueState(issue),
       labels: issue.labels.map((name) => ({ name, color: "ededed" })),
+      assignees: (issue.assignees ?? []).map((name) => ({ login: name })),
       ...pullRequestOf(issue),
     };
     return { status: HTTP_OK, body, link: null };

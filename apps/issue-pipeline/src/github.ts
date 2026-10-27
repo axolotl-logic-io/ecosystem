@@ -20,8 +20,10 @@ import type { WriteIntent } from "./write-refusal.ts";
 
 // `reconciles`: the write's own operation reconciles an uncertain result by
 // reading, from a record it kept before the write (a push record, a Land
-// attempt, a task record) or the PR its branch names. Its ownership is
-// still read fresh, but it isn't journaled a second time (#169).
+// attempt, a task record) or the PR its branch names, or the write is
+// display only and safe to repeat, such as an issue assignment, so a lost
+// answer leaves nothing to reconcile. Its ownership is still read fresh,
+// but it isn't journaled (#169).
 type GhOptions = Omit<RunOptions, "env"> & { reconciles?: boolean };
 
 const WRITE_FLAG = /^(?:-X|--method|-f|-F|--field|--raw-field|--input)$/u;
