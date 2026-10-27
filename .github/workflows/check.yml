@@ -8,26 +8,16 @@ on:
 permissions:
   contents: read
 
+# A newer push to a PR cancels that PR's older run, since only its newest
+# head can merge. Runs on main always finish.
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # The fast gate of every workspace: typecheck, lint, build. Branch
+  # protection requires this job, so keep it fast.
   check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-
-      - uses: jdx/mise-action@v3
-        with:
-          version: 2026.9.4
-
-      - run: npm ci
-      - run: mise //apps/issue-pipeline:check
-
-  workflow-dash:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -38,13 +28,54 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: jdx/mise-action@v3
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check
+
+  # The issue pipeline's Node tests, split across runners by test file.
+  # Each shard builds first, since system tests run the built program.
+  test-shard:
+    name: tests (shard ${{ matrix.shard }} of 8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    defaults:
+      run:
+        working-directory: apps/issue-pipeline
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
         with:
-          version: 2026.9.4
+          node-version: 24
+          cache: npm
 
-      - run: npm ci --ignore-scripts
-      - run: mise //apps/workflow-dash:check
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: .
+      - run: npm run build
+      - run: >-
+          node --test --test-shard=${{ matrix.shard }}/8
+          --test-concurrency=4 --test-timeout=180000
+          'test/{component,component-integration,system,acceptance}/**/*.test.ts'
 
+  # One result for all shards, so branch protection can name a single check.
+  tests:
+    if: always()
+    needs: test-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every shard to pass
+        env:
+          RESULT: ${{ needs.test-shard.result }}
+        run: |
+          echo "Shards: $RESULT"
+          test "$RESULT" = success
+
+  # The shared database package's checks and the real-database suites,
+  # against a disposable PostgreSQL service.
   database:
     runs-on: ubuntu-latest
     timeout-minutes: 10
