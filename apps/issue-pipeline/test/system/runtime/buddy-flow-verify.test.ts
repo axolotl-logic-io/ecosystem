@@ -29,6 +29,7 @@ import type {
 import { LANDING } from "../../support/signals/signal-test-kit.ts";
 import type {
   ActionRun,
+  BuddyChoice,
   BuddyOutcome,
   Machine,
   PlannedSession,
@@ -539,6 +540,7 @@ test("a Verify whose result post is lost settles from its submitted review witho
   const { box, head } = await implemented("pass", signal);
   let passed = false;
   try {
+    applyLabel(box, "start:verify");
     box.change((reported) => {
       reported.failPostOnceContaining = `"summary":"Verify approved ${head}`;
     });
@@ -555,6 +557,13 @@ test("a Verify whose result post is lost settles from its submitted review witho
     const reconciler = actions.find((action) => action.mode === "recover");
     assert.ok(original !== undefined && reconciler !== undefined);
     assert.equal(actions.length, 2);
+    assert.match(original.cause.signal, START_SIGNAL);
+    assert.ok(
+      !box
+        .world()
+        .issues.find((item) => item.number === ISSUE)
+        ?.labels.includes("start:verify"),
+    );
     // The original submitted its review, then lost its result's post.
     assert.deepEqual(
       [original.verdict, opsOf(original)],
@@ -613,6 +622,70 @@ test("a Verify whose result post is lost settles from its submitted review witho
   }
 });
 
+test("Verify recovery leaves a new start pending until its own requested attempt completes", async ({
+  signal,
+}) => {
+  const { box } = await implemented("pass", signal);
+  const gatekeeper: BuddyChoice = { role: "gatekeeper", tasks: ["verify"] };
+  let passed = false;
+  try {
+    box.change((world) => {
+      world.failPostOnceContaining = '"verdict":"failed"';
+    });
+    const first = await box.runBuddy(
+      [
+        {
+          ...reviewOf([]),
+          strayWrite: { file: "counter.txt", content: "0 widgets\n" },
+          change: "apply-verify-start",
+        },
+      ],
+      DEVELOPER_POLLS,
+      gatekeeper,
+      signal,
+    );
+    assert.equal(first.status, 0, first.stderr);
+    const original = verifyActions(first).find(
+      (action) => action.mode === "act",
+    );
+    const reconciler = verifyActions(first).find(
+      (action) => action.mode === "recover",
+    );
+    assert.ok(original !== undefined, first.stderr);
+    assert.equal(original.verdict, "unknown");
+    assert.ok(reconciler !== undefined, first.stderr);
+    assert.equal(reconciler.previous, original.id);
+    assert.equal(reconciler.verdict, "failed");
+    assert.match(reconciler.cause.signal, START_SIGNAL);
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.labels,
+      ["start:verify"],
+    );
+    assert.deepEqual(pullOf(box.world()).reviews ?? [], []);
+    const next = await box.runBuddy(
+      [reviewOf([])],
+      START_POLLS,
+      gatekeeper,
+      signal,
+    );
+    assert.equal(next.status, 0, next.stderr);
+    const retried = verifyActions(next).find(
+      (action) => action.mode === "act" && action.id !== original.id,
+    );
+    assert.ok(retried !== undefined);
+    assert.equal(retried.cause.signal, reconciler.cause.signal);
+    assert.equal(retried.verdict, "passed");
+    assert.deepEqual(
+      box.world().issues.find((item) => item.number === ISSUE)?.labels,
+      [],
+    );
+    assert.equal(reviewPosts(box).length, 1);
+    passed = true;
+  } finally {
+    finish(box, passed);
+  }
+});
+
 test("a person's start:verify reviews the head they pushed, which Implement's result doesn't wake Verify for", async ({
   signal,
 }) => {
@@ -648,6 +721,12 @@ test("a person's start:verify reviews the head they pushed, which Implement's re
       [verify.mode, verify.verdict],
       ["act", "passed"],
       verify.reason ?? "",
+    );
+    assert.ok(
+      !box
+        .world()
+        .issues.find((item) => item.number === ISSUE)
+        ?.labels.includes("start:verify"),
     );
     // The accepted start caused it, and it bound and reviewed the pushed head.
     assert.match(verify.cause.signal, START_SIGNAL);

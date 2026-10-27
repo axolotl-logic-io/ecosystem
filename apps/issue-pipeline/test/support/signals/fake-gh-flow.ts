@@ -26,6 +26,8 @@ const REPO_COMMENTS = /^repos\/[^/]+\/[^/]+\/issues\/comments\?/u;
 const EDITED = /^repos\/[^/]+\/[^/]+\/issues\/comments\/(?<id>\d+)$/u;
 const ISSUE = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)$/u;
 const ASSIGNEES = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/assignees$/u;
+const LABEL =
+  /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/labels\/(?<label>[^/]+)$/u;
 const COLLABORATOR = /^repos\/[^/]+\/[^/]+\/collaborators\/(?<login>[^/]+)$/u;
 const REF = /^repos\/[^/]+\/[^/]+\/git\/ref\/(?<ref>.+)$/u;
 const GIT_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits\/(?<sha>[0-9a-f]{40})$/u;
@@ -372,6 +374,42 @@ function assigneesWrite(
   );
   world.nextId += changed.length;
   print(issueRow(issue));
+  return true;
+}
+
+// GitHub removes one label and records who removed it, leaving other labels.
+function labelDelete(
+  world: World,
+  args: readonly string[],
+  login: string,
+): boolean {
+  const { number, label } = LABEL.exec(endpointOf(args))?.groups ?? {};
+  if (
+    number === undefined ||
+    label === undefined ||
+    flagValue(args, "-X") !== "DELETE"
+  ) {
+    return false;
+  }
+  const issue = world.issues.find((item) => String(item.number) === number);
+  const name = decodeURIComponent(label);
+  if (issue === undefined || !issue.labels.includes(name)) {
+    return fail("gh: Not Found (HTTP 404)");
+  }
+  if (world.refuseLabelChanges === true) {
+    return fail("gh: Forbidden (HTTP 403)");
+  }
+  issue.labels = issue.labels.filter((present) => present !== name);
+  issue.events.push({
+    id: world.nextId,
+    event: "unlabeled",
+    label: name,
+    actor: login,
+    viaApp: false,
+    createdAt: postedAt(world.nextId),
+  });
+  world.nextId += 1;
+  print(issue.labels.map((present) => ({ name: present })));
   return true;
 }
 
@@ -856,6 +894,9 @@ function flowCall(
     return { handled: false, changed: false };
   }
   if (commentEdit(world, args)) {
+    return { handled: true, changed: true };
+  }
+  if (labelDelete(world, args, login)) {
     return { handled: true, changed: true };
   }
   if (assigneesWrite(world, args, login)) {

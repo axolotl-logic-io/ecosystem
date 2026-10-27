@@ -44,6 +44,8 @@ const SESSION = z.strictObject({
       "events-unreadable",
       "comments-unreadable",
       "rival-push",
+      "reapply-author-start",
+      "apply-verify-start",
     ])
     .nullable(),
   // Whether `change` comes before the commit rather than after it.
@@ -253,11 +255,28 @@ function edit(world: World, change: NonNullable<Session["change"]>): void {
     if (issue === undefined) {
       throw new Error(`the world has no issue ${ISSUE}`);
     }
-    issue.labels.push("agents:stop");
+    let label = "agents:stop";
+    if (change === "apply-verify-start") {
+      label = "start:verify";
+    }
+    if (change === "reapply-author-start") {
+      label = "start:author";
+      issue.events.push({
+        id: world.nextId,
+        event: "unlabeled",
+        label,
+        actor: HUMAN,
+        viaApp: false,
+        createdAt: "2026-10-25T13:00:00Z",
+      });
+      world.nextId += 1;
+    } else {
+      issue.labels.push(label);
+    }
     issue.events.push({
       id: world.nextId,
       event: "labeled",
-      label: "agents:stop",
+      label,
       actor: HUMAN,
       viaApp: false,
       createdAt: "2026-10-25T13:00:00Z",

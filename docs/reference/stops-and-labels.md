@@ -38,6 +38,14 @@ An authenticated attempt spends its start whatever its verdict. Target movement 
 
 `start:implement` doesn't retry a failed Implement, and Implement doesn't wait for an unsettled Author.
 
+## Completed starts
+
+After a task confirms a passed, refused or failed result, it removes the matching start label through the landing account. Removing the label changes only its display: the accepted signal, spent attempt and result remain on GitHub. It never enables a retry. An action that never began, or whose result is uncertain, leaves the label alone. Read-only recovery can clear the original start after it confirms settlement.
+
+Cleanup checks the current label application against the event that caused the task. It leaves other labels and any newer application observed during that check unchanged. GitHub offers no atomic event-conditional label removal, so a person can still reapply a label between the check and deletion. Its durable accepted record, if already recorded, remains valid.
+
+An unreadable or unexplained application, a revoked writer grant or a failed deletion leaves the task result unchanged and logs a warning. Cleanup never blindly repeats a lost deletion response: a later application needs its own fresh check.
+
 ## Local interruption
 
 An active action watches stop evidence. An accepted stop cooperatively interrupts model work for that issue. A newly observed, not-yet-accepted human stop or unreadable evidence can instead cause a local unknown interruption. That local hold isn't a fabricated accepted human stop, and it doesn't stop every work item in the buddy.

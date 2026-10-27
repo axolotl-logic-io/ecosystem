@@ -77,6 +77,7 @@ import { TASK_OP_CLASSES } from "../ops/task-ops.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { SignalScope } from "../signals/inbox.ts";
 import { requalify, stopLatch } from "../signals/inbox.ts";
+import { clearCompletedStart } from "../signals/start-label.ts";
 import {
   ActionNotAdmitted,
   beginAction,
@@ -1047,6 +1048,28 @@ async function settle(
   { end, record, notAdmitted }: TaskRun,
 ): Promise<ActionSummary> {
   const recorded = await recordEnd(record);
+  if (recorded === null && notAdmitted === null && end.verdict !== "unknown") {
+    let completed: string | null = open.admitted.id;
+    if (open.admitted.mode === "recover") {
+      completed = open.admitted.previous;
+    }
+    const failed = clearCompletedStart(
+      guardedMutations(open.cfg, {
+        kind: "finalization",
+        scope: open.setting.scope,
+        number: open.workItem.number,
+        proposed: null,
+      }),
+      open.workItem,
+      open.setting.task.id,
+      completed,
+    );
+    if (failed !== null) {
+      open.setting.warn(
+        `could not clear the completed task's start label: ${failed}`,
+      );
+    }
+  }
   open.control.close();
   const checkout = await preserveCheckout(open, end);
   const reservation = await releaseReservation(open);
