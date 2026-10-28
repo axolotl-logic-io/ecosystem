@@ -18,7 +18,7 @@ pipeline's.
 Drizzle schema and migrations for ecosystem apps. Root Compose files separate
 the persistent operational service from disposable tests. The issue pipeline
 can opt into database ownership and resource coordination; the default remains
-GitHub until an operator authorizes a drained cutover. Read the
+GitHub until the repository's buddies are drained and cut over. Read the
 [database reference](docs/reference/database.md) for setup, constraints,
 credentials, tests, backups and cutover.
 

@@ -67,7 +67,7 @@ Installation is a separate, operator-authorized action. Landing source installs 
 
 Before installation, confirm the exact-source gate result and independent, read-only pre-Land Security result that the effective policy required. Record both against the same full source commit, trusted-input revision, checking policy and pre-Land target branch and commit. A fast pass alone is not full-gate evidence.
 
-After Land, confirm only the existing identity, receipt, ancestry, pre-Land verification and saved clearance. Run no check suite, fresh Security model, repair writer or second Land. The installer dry-run, backups, draining jobs and test consumers, a controlled cutover and [installation acceptance](operations.md#installation-acceptance) each still need separate authorization. Authorized evidence checkpoints and completion bookkeeping aren't post-Land validation.
+After Land, confirm only the existing identity, receipt, ancestry, pre-Land verification and saved clearance. Run no check suite, fresh Security model, repair writer or second Land. To make the change take effect, [install it](operations.md#upgrade-safely).
 
 A change to the repository's scripts doesn't rewrite an operator's `commands.test` or test wrapper. A wrapper that calls the full suite directly still runs it. To change a live wrapper, prepare the smallest proposal outside live configuration, keep its isolation and fake-transport boundaries, and get source review and operator approval first.
 

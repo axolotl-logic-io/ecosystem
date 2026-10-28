@@ -2,7 +2,7 @@
 
 The pipeline runs configured buddies. Each buddy activation is a buddy run; each admitted task execution is an action run. Tasks own sensors, matching, prerequisites, effects and recovery. The runtime activates every configured task loop and may execute its actions sequentially. It has no saved stage cursor, assignment scheduler or caller-selected next job.
 
-Source delivery does not install, activate or deploy anything. The operator separately authorizes a drained cutover. Start with the [pipeline reference](../../docs/README.md), [domain contract](../../docs/domain-runtime-contract.md), [runtime configuration and run records](../../docs/reference/runtime-runs.md) and [operations](../../docs/reference/operations.md).
+Landing a change doesn't install it. To make it take effect, drain the buddies, install and restart them; see [install and safe upgrades](#install-and-safe-upgrades). Start with the [pipeline reference](../../docs/README.md), [domain contract](../../docs/domain-runtime-contract.md), [runtime configuration and run records](../../docs/reference/runtime-runs.md) and [operations](../../docs/reference/operations.md).
 
 ## Configure a buddy
 
@@ -14,7 +14,7 @@ To validate an installed buddy configuration without activating it:
 node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 ```
 
-`BUDDY_FILE` is an absolute path to the operator-owned JSON file. Omit `--check` only for separately authorized activation. The [runtime reference](../../docs/reference/runtime-runs.md#buddy-configuration) defines the exact keys and trust checks. Merely configuring a task does not supply a causal signal.
+`BUDDY_FILE` is an absolute path to the operator-owned JSON file. Omit `--check` to activate the buddy. The [runtime reference](../../docs/reference/runtime-runs.md#buddy-configuration) defines the exact keys and trust checks. Merely configuring a task does not supply a causal signal.
 
 ## Tasks and signals
 
@@ -221,29 +221,27 @@ cutover. Source changes authorize neither live selection nor deployment.
 
 ## Install and safe upgrades
 
-Run source and assets only from an accepted installed copy. Source Land does not change that copy, credentials or model provisioning. Before Land, pass the gate required by the effective trusted policy on the exact candidate and obtain independent read-only Security bound to that candidate, trusted inputs, policy and pre-Land target.
-
-This refactor requires the full gate before Land:
+Run source and assets only from an installed copy. Landing doesn't change that copy, credentials or model provisioning. Before landing, run the full gate:
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
 npm run check:full
 ```
 
-Run at the monorepo root under Node 24. Retain exact command statuses and source/policy/target identities. A fast pass is not full runtime coverage.
+Run at the monorepo root under Node 24. A fast pass is not full runtime coverage.
 
-Only after separate operator authorization, drain old jobs/actions and every consumer, preserve all work and evidence, and review the installation dry-run:
+To install, stop the buddies cooperatively and let their in-flight actions settle, then install and restart them. Old and new runtimes must not run together, because they can claim the same work twice:
 
 ```bash
 mise //apps/issue-pipeline:install:dry-run
 mise //apps/issue-pipeline:install
 ```
 
-The installer backs up the files it replaces and records `INSTALLED.json`. It removes no file it doesn't install. It does not rewrite operator configs, provision credentials or grant activation permission. Complete [installation acceptance](../../docs/reference/operations.md#installation-acceptance) separately; it compares managed artifacts and bounded CLI parsing without running a post-Land suite or model.
+The installer backs up the files it replaces and records `INSTALLED.json`. It removes no file it doesn't install. It does not rewrite operator configs or provision credentials.
 
 Prompt pages and agent definitions are installed assets. Prompt selection and tool authority remain checked by code; a prompt cannot grant credentials, commit scope or permission. Preserve pinned prompt bytes, hashes, receipts and recovery artifacts through cutover. A binary rollback does not undo Land or clear a Security rejection.
 
-For a source defect, preserve the affected action and deliver a tested/reviewed fix. Installation and supported recovery remain separately authorized. There is no restart-at-stage recipe. An uncertain Land permits only its supported read-only reconciliation, never a blind retry. See [operations](../../docs/reference/operations.md#recover-after-a-source-defect).
+For a source defect, preserve the affected action and deliver a tested fix, then install it. There is no restart-at-stage recipe. An uncertain Land permits only its supported read-only reconciliation, never a blind retry. See [operations](../../docs/reference/operations.md#recover-after-a-source-defect).
 
 ## Tests
 

@@ -1,6 +1,6 @@
 # Operations
 
-The installed runtime activates configured buddies and their task loops. Source delivery does not install, activate or deploy either application. The operator separately authorizes a drained cutover.
+The installed runtime activates configured buddies and their task loops. Landing a change doesn't install it; install it with the [upgrade](#upgrade-safely) steps.
 
 ## Programs
 
@@ -72,7 +72,7 @@ Run both commands at the repository root under Node 24. The fast gate alone is n
 
 Before installation, confirm the delivered identity, authenticated receipt and ancestry against that evidence. Installation acceptance does not require a second suite after Land.
 
-After source delivery, the operator separately authorizes the cutover and reviews the dry-run:
+To install the current checkout, optionally review the dry-run first:
 
 ```bash
 mise //apps/issue-pipeline:install:dry-run
@@ -85,39 +85,34 @@ It allows uncommitted source changes and records them with `dirty: true` in `INS
 
 ## Installation acceptance
 
-Keep activation stopped until the operator accepts the installed artifacts separately from source delivery:
+Optional: to audit an installation, check its artifacts before restarting the buddies:
 
 1. Confirm `INSTALLED.json` identifies the source commit and whether it had uncommitted changes.
 2. Compare managed programs with its built artifacts and prompts/examples with reviewed source bytes.
 3. Compare copied agent definitions after filling documented root placeholders.
 4. Confirm backups and preservation match the reviewed dry-run.
 5. Run bounded installed-CLI parsing and invalid-input checks that launch no buddy, model, server or credentialed operation.
-6. Record installed identity, comparisons, exact commands/results and operator acceptance.
-
-These checks accept installed artifacts, not runtime integration coverage. Do not run a repository suite, repair writer, fresh Security pass or second Land after source Land. Authorized evidence checkpoints and completion bookkeeping remain distinct from forbidden post-Land validation.
+6. Record the installed identity and the results.
 
 ## Upgrade safely
 
 1. Stop new dispatch in the old runtime.
 2. Drain every old job, action, model session and resource consumer; let in-flight writes and Land settle without killing them.
 3. Preserve configs, saved authority, uncertain-write journals, checkouts, patches, bundles and receipts.
-4. Confirm exact-source pre-Land gate and independent Security evidence.
-5. Review the installation dry-run.
-6. Install the accepted source under separate operator authorization.
-7. Complete installation acceptance.
-8. Verify current credentials, membership capability, policy, grants and capacity before authorizing activation.
+4. Install.
+5. Restart the buddies.
 
 Do not run old and new runtimes together or translate old assignments or stages into accepted starts. Saved state, task records and coordination records that an earlier release wrote in another version hold their work item or scope; reconcile them explicitly. A model-session pool resize requires all its holders and consumers to drain. Never erase attempt evidence, Security rejections, landed truth or retained work to make the upgrade pass. Installing or rolling back binaries does not undo source Land.
 
 ## Recover after a source defect
 
-Stop affected dispatch and preserve work, authoritative receipts and uncertain effects. Deliver a tested, reviewed source fix through an ordinary PR. If installed code needs replacement, complete the separately authorized upgrade above.
+Stop affected dispatch and preserve work, authoritative receipts and uncertain effects. Deliver a tested, reviewed source fix through an ordinary PR. If installed code needs replacement, complete the upgrade above.
 
-There is no generic restart-at-stage command or automatic continuation operation. A stopped or spent cause remains stopped or spent. Use only supported, explicitly authorized recovery for the retained action. An uncertain Land requires read-only reconciliation against its original intent, not another push, approval or writer session. Missing authority remains a hold.
+There is no generic restart-at-stage command or automatic continuation operation. A stopped or spent cause remains stopped or spent. Use only supported recovery for the retained action. An uncertain Land requires read-only reconciliation against its original intent, not another push, approval or writer session. Missing authority remains a hold.
 
 ## Settle an interrupted pre-effect Implement
 
-Use this only under explicit operator authorization, with every participant stopped. This command supports an original Implement action that ended before checkpoint or task effects, preserved its checkout, and retained its issue or model-session claim because settlement could not read GitHub. It does not support uncertain pushes, retained checkouts, Fix, Land or arbitrary claims.
+Use this only with every participant stopped. This command supports an original Implement action that ended before checkpoint or task effects, preserved its checkout, and retained its issue or model-session claim because settlement could not read GitHub. It does not support uncertain pushes, retained checkouts, Fix, Land or arbitrary claims.
 
 First inspect the action's run record and preservation artifacts. Confirm that all participants, including other hosts and standalone operators, have stopped. The command conservatively requires every locally observed buddy to have stopped cooperatively on this host. It verifies the original authenticated attempt and confirmed issue ownership, recorded model-process exits, existing preservation artifacts and the absence of uncertain-write journals or lane consumers. A vanished process or old timestamp alone never suffices.
 
