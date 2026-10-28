@@ -28,35 +28,34 @@ type Annotated =
   | ts.ArrowFunction
   | ts.FunctionExpression;
 
-const PRINTER = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
+const PRINTER = ts.createPrinter({
+  removeComments: true,
+  newLine: ts.NewLineKind.LineFeed,
+});
 const CHECK_DIRECTIVE = /@ts-(?:ignore|nocheck|expect-error)\b/u;
 const TYPESCRIPT_FILE = /\.[cm]?tsx?$/u;
 const FRAGMENT_NAME = "__RefactorType";
 
-// Type text is not replacement source. Reject extra statements and comments,
-// including compiler directives, before printing a single accepted type node.
+function commentAt(text: string, position: number): boolean {
+  return (
+    (ts.getLeadingCommentRanges(text, position)?.length ?? 0) > 0 ||
+    (ts.getTrailingCommentRanges(text, position)?.length ?? 0) > 0
+  );
+}
+
+function commented(source: ts.SourceFile, node: ts.Node): boolean {
+  return (
+    commentAt(source.text, node.pos) ||
+    commentAt(source.text, node.end) ||
+    node.getChildren(source).some((child) => commented(source, child))
+  );
+}
+
+// The parser supplies template-continuation boundaries that a context-free
+// scanner cannot establish. Examine trivia at parsed node/token boundaries.
 function parsed(text: string): ts.SourceFile {
   if (text.includes("\0") || Buffer.from(text).toString("utf8") !== text) {
     throw new Error("type syntax must be valid UTF-8 without NUL");
-  }
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
-    false,
-    ts.LanguageVariant.Standard,
-    text,
-  );
-  let token = scanner.scan();
-  while (token !== ts.SyntaxKind.EndOfFileToken) {
-    if (
-      token === ts.SyntaxKind.SingleLineCommentTrivia ||
-      token === ts.SyntaxKind.MultiLineCommentTrivia ||
-      token === ts.SyntaxKind.ShebangTrivia
-    ) {
-      throw new Error(
-        "comments and directives are not accepted as type syntax",
-      );
-    }
-    token = scanner.scan();
   }
   const result = ts.transpileModule(text, {
     fileName: "refactor-type.ts",
@@ -73,13 +72,17 @@ function parsed(text: string): ts.SourceFile {
   ) {
     throw new Error("invalid type syntax");
   }
-  return ts.createSourceFile(
+  const source = ts.createSourceFile(
     "refactor-type.ts",
     text,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TS,
   );
+  if (text.startsWith("#!") || commented(source, source)) {
+    throw new Error("comments and directives are not accepted as type syntax");
+  }
+  return source;
 }
 
 function declaration(text: string, name: string): string {
@@ -274,6 +277,14 @@ function changeTypes(project: Project, operation: TypeOperation): void {
     } else {
       const target = namedTarget(source, operation.target.symbol);
       let text = "";
+      if (
+        operation.operation === "remove-type" &&
+        commentAt(source.text, target.pos)
+      ) {
+        throw new Error(
+          "type removal refuses leading comments to avoid retargeting directives",
+        );
+      }
       if (operation.operation === "modify-type") {
         text = declaration(operation.declaration, target.name.text);
       }

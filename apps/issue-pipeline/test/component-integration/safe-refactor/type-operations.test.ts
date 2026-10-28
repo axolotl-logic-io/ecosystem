@@ -9,6 +9,19 @@ import {
   type RefactorFixture,
 } from "../../support/safe-refactor-test-kit.ts";
 
+const COMMENT_TYPES = z
+  .strictObject({
+    literal: z.string(),
+    annotationBlock: z.string(),
+    annotationLine: z.string(),
+    declarationBlock: z.string(),
+    declarationLine: z.string(),
+  })
+  .parse(
+    JSON.parse(
+      fs.readFileSync(new URL("./comment-types.json", import.meta.url), "utf8"),
+    ),
+  );
 const HASH_HEX_LENGTH = 64;
 const APPLIED = z.looseObject({
   checkpoint: z.string(),
@@ -487,6 +500,45 @@ test("type operations refuse JavaScript targets without changing their JSDoc or 
   }
 });
 
+test("template and string literal contents are not mistaken for actual comments", () => {
+  const box = fixture();
+  const engine = box.engine();
+  try {
+    engine.execute(
+      box.operation("introduce-type", "Label", {
+        declaration: COMMENT_TYPES.literal,
+      }),
+    );
+    assert.ok(box.source().includes("https://"));
+    assert.ok(box.source().includes("/* literal */"));
+  } finally {
+    engine.dispose();
+    box.cleanup();
+  }
+});
+
+test("type removal refuses leading comments instead of retargeting them to the next declaration", () => {
+  const box = fixture({
+    "source.ts": `/** Domain count. */\n${NULLABLE_COUNTER}`,
+  });
+  const engine = box.engine();
+  try {
+    const refused = refusal(
+      box,
+      engine,
+      box.operation("remove-type", "Count", {
+        annotations: [{ symbol: "total.amount", type: "number | undefined" }],
+      }),
+    );
+    assert.ok(refused.error.includes("leading comments"), refused.error);
+    assert.equal(refused.after, refused.before);
+    assert.deepEqual(refused.artifactsAfter, refused.artifactsBefore);
+  } finally {
+    engine.dispose();
+    box.cleanup();
+  }
+});
+
 const INVALID_TYPES: {
   name: string;
   operation: string;
@@ -534,6 +586,38 @@ const INVALID_TYPES: {
     operation: "set-type-annotation",
     symbol: "total.amount",
     fields: { type: "number /* @ts-ignore */" },
+    reason: "comments and directives",
+  },
+  {
+    name: "template-literal annotation block directives",
+    operation: "set-type-annotation",
+    symbol: "total.amount",
+    fields: { type: COMMENT_TYPES.annotationBlock },
+    reason: "comments and directives",
+  },
+  {
+    name: "template-literal annotation line directives",
+    operation: "set-type-annotation",
+    symbol: "total.amount",
+    fields: { type: COMMENT_TYPES.annotationLine },
+    reason: "comments and directives",
+  },
+  {
+    name: "template-literal declaration block directives",
+    operation: "introduce-type",
+    symbol: "Count",
+    fields: {
+      declaration: COMMENT_TYPES.declarationBlock,
+    },
+    reason: "comments and directives",
+  },
+  {
+    name: "template-literal declaration lint suppressions",
+    operation: "introduce-type",
+    symbol: "Count",
+    fields: {
+      declaration: COMMENT_TYPES.declarationLine,
+    },
     reason: "comments and directives",
   },
   {
