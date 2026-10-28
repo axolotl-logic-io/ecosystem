@@ -17,6 +17,8 @@ const BIOME_REPORT = z.looseObject({
   summary: z.looseObject({
     diagnosticsNotPrinted: z.literal(0),
     skipped: z.literal(0),
+    changed: z.number().int().nonnegative(),
+    unchanged: z.number().int().nonnegative(),
   }),
   diagnostics: z.array(
     z.looseObject({ category: z.string().nullable(), severity: z.string() }),
@@ -53,6 +55,7 @@ function biomeCheck(
   assignment: Assignment,
   metrics: boolean,
   version: string | null,
+  targets?: readonly string[],
 ): CheckEvidence["checks"][number] {
   const args = [
     "check",
@@ -75,7 +78,11 @@ function biomeCheck(
       error: "unsupported or unavailable Biome version; require 2.5.15",
     };
   }
-  args.push("--", ".", ...assignment.files);
+  if (targets === undefined) {
+    args.push("--", ".", ...assignment.files);
+  } else {
+    args.push("--", ...targets);
+  }
   const result = spawnSync(process.execPath, [assignment.biome, ...args], {
     cwd: assignment.root,
     env: {},
@@ -93,6 +100,9 @@ function biomeCheck(
   if (
     result.error !== undefined ||
     !parsed.success ||
+    (targets !== undefined &&
+      parsed.data.summary.changed + parsed.data.summary.unchanged !==
+        targets.length) ||
     (result.status !== 0 && result.status !== 1) ||
     parsed.data.diagnostics.some(
       (entry) =>
@@ -231,5 +241,96 @@ function evidencePage(
   };
 }
 
+// The baseline already checked unchanged files. Format only projected type
+// edits, without lint autofixes, then check each complete projected file
+// under the same default policy before the engine opens a source descriptor.
+function prepareTypeEdits(
+  project: Project,
+  assignment: Assignment,
+  before: ReadonlyMap<string, string>,
+  directory: string,
+): void {
+  const version = versionOf(assignment.biome);
+  if (version !== BIOME_VERSION) {
+    throw new Error("projected type edits require the trusted Biome version");
+  }
+  const changed = [...project.texts].filter(
+    ([file, text]) => before.get(file) !== text,
+  );
+  for (const [file, text] of changed) {
+    const relative = path.relative(project.root, file);
+    const formatted = spawnSync(
+      process.execPath,
+      [assignment.biome, "format", "--stdin-file-path", relative],
+      {
+        cwd: assignment.root,
+        env: {},
+        encoding: "utf8",
+        timeout: CHECK_TIMEOUT_MS,
+        maxBuffer: MAX_OUTPUT_BYTES,
+        input: text,
+      },
+    );
+    if (formatted.error !== undefined || formatted.status !== 0) {
+      throw new Error(
+        "projected type formatting failed; no source was written",
+      );
+    }
+    project.replace(file, formatted.stdout);
+  }
+  // Biome 2.5 stdin mode formats but does not provide complete lint evidence.
+  // Check a private projection instead, with unchanged consulted policy and
+  // source bytes plus the overlays; never accept an in-memory lint autofix.
+  const projection = fs.mkdtempSync(path.join(directory, "projection-"));
+  try {
+    const inputs = new Map([...project.inputs, ...project.texts]);
+    for (const [file, text] of inputs) {
+      if (
+        file.startsWith(`${project.root}${path.sep}`) &&
+        !path
+          .relative(project.root, file)
+          .split(path.sep)
+          .includes("node_modules")
+      ) {
+        const destination = path.join(
+          projection,
+          path.relative(project.root, file),
+        );
+        fs.mkdirSync(path.dirname(destination), {
+          recursive: true,
+          mode: 0o700,
+        });
+        fs.writeFileSync(destination, text, { mode: 0o600 });
+      }
+    }
+    const initialized = spawnSync(
+      "/usr/bin/git",
+      ["init", "--quiet", projection],
+      { env: {}, encoding: "utf8", timeout: CHECK_TIMEOUT_MS },
+    );
+    if (initialized.error !== undefined || initialized.status !== 0) {
+      throw new Error(
+        "cannot establish projected checker scope; no source was written",
+      );
+    }
+    for (const [file] of changed) {
+      const relative = path.relative(project.root, file);
+      const checked = biomeCheck(
+        { ...assignment, root: projection },
+        false,
+        version,
+        [relative],
+      );
+      if (checked.verdict !== "passed") {
+        throw new Error(
+          "projected type edits fail default Biome checks; no source was written",
+        );
+      }
+    }
+  } finally {
+    fs.rmSync(projection, { recursive: true, force: true });
+  }
+}
+
 export type { CheckEvidence };
-export { check, evidencePage, METRICS };
+export { check, evidencePage, METRICS, prepareTypeEdits };

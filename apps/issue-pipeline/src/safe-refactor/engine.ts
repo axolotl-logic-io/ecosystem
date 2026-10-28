@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type CheckEvidence, check, evidencePage } from "./check.ts";
+import {
+  type CheckEvidence,
+  check,
+  evidencePage,
+  prepareTypeEdits,
+} from "./check.ts";
+import { javascriptOf, sameJavascript } from "./emission.ts";
 import { inspect, transform } from "./operations.ts";
 import {
   digest,
@@ -146,11 +152,29 @@ function mutation(
     );
   }
   const before = new Map(project.texts);
+  const typeOnly =
+    operation.operation !== "rename-symbol" &&
+    operation.operation !== "extract-function";
+  let javascript: ReadonlyMap<string, string> | undefined;
+  if (typeOnly) {
+    javascript = javascriptOf(project);
+  }
   let applied = false;
   try {
     transform(project, operation);
+    if (typeOnly) {
+      prepareTypeEdits(project, assignment, before, directory);
+    }
     if (project.diagnostics().length > 0) {
       throw new Error("refactoring introduces or retains type/syntax errors");
+    }
+    if (
+      javascript !== undefined &&
+      !sameJavascript(javascript, javascriptOf(project))
+    ) {
+      throw new Error(
+        "type edit changes emitted JavaScript; no source was written",
+      );
     }
     const edits: Edit[] = [];
     for (const [file, text] of project.texts) {
@@ -163,7 +187,7 @@ function mutation(
       throw new Error("operation produced no edits");
     }
     // Return overlays to disk state for the final freshness check. The
-    // application receives only engine-computed edits, never model text.
+    // application receives only validated, engine-computed edits.
     for (const [file, text] of before) {
       project.replace(file, text);
     }

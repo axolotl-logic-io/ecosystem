@@ -48,6 +48,28 @@ const ASSIGNMENT = z.strictObject({
 
 type Assignment = z.infer<typeof ASSIGNMENT>;
 
+const TYPE_TEXT = z.string().min(1).max(MAX_PAGE_CHARACTERS);
+const ANNOTATION_SLOT = z.enum(["annotation", "return"]).default("annotation");
+const ANNOTATION_EDITS = z
+  .array(
+    z.strictObject({
+      symbol: z.string().min(1),
+      type: TYPE_TEXT.nullable(),
+      slot: ANNOTATION_SLOT,
+    }),
+  )
+  .max(MAX_ASSIGNED_FILES)
+  .default([]);
+const TYPE_EDIT: {
+  target: typeof TARGET;
+  source: typeof HASH;
+  rationale: z.ZodString;
+} = {
+  target: TARGET,
+  source: HASH,
+  rationale: z.string().min(1),
+};
+
 const OPERATION = z.discriminatedUnion("operation", [
   z.strictObject({ operation: z.literal("inspect"), ...PAGE }),
   z.strictObject({ operation: z.literal("read"), ...PAGE }),
@@ -70,6 +92,34 @@ const OPERATION = z.discriminatedUnion("operation", [
     source: HASH,
     name: z.string().min(1),
     rationale: z.string().min(1),
+  }),
+  z.strictObject({
+    operation: z.literal("introduce-type"),
+    ...TYPE_EDIT,
+    declaration: TYPE_TEXT,
+    annotations: ANNOTATION_EDITS,
+  }),
+  z.strictObject({
+    operation: z.literal("modify-type"),
+    ...TYPE_EDIT,
+    declaration: TYPE_TEXT,
+    annotations: ANNOTATION_EDITS,
+  }),
+  z.strictObject({
+    operation: z.literal("remove-type"),
+    ...TYPE_EDIT,
+    annotations: ANNOTATION_EDITS,
+  }),
+  z.strictObject({
+    operation: z.literal("set-type-annotation"),
+    ...TYPE_EDIT,
+    type: TYPE_TEXT,
+    slot: ANNOTATION_SLOT,
+  }),
+  z.strictObject({
+    operation: z.literal("remove-type-annotation"),
+    ...TYPE_EDIT,
+    slot: ANNOTATION_SLOT,
   }),
 ]);
 

@@ -348,6 +348,13 @@ function projectOf(assignment: Assignment): Project {
       if (!texts.has(file)) {
         throw new Error("library edit is outside assigned write scope");
       }
+      if (
+        Buffer.byteLength(text) > MAX_FILE_BYTES ||
+        text.includes("\0") ||
+        Buffer.from(text).toString("utf8") !== text
+      ) {
+        throw new Error("edited source must remain bounded UTF-8 without NUL");
+      }
       texts.set(file, text);
       versions.set(file, (versions.get(file) ?? 0) + 1);
     },

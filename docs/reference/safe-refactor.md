@@ -1,6 +1,6 @@
 # Safe Refactor
 
-Safe Refactor is an explicit Developer task, performed by Hippy. The caller supplies requirements, an exact source commit, a reviewed policy and a bounded write scope. The model reads project text and requests named refactoring operations. It cannot edit files, supply replacement source, run transforms or execute commands.
+Safe Refactor is an explicit Developer task, performed by Hippy. The caller supplies requirements, an exact source commit, a reviewed policy and a bounded write scope. The model reads project text and requests named refactoring operations. It can supply bounded type syntax only to named type operations. It cannot edit files, supply executable replacement source, run transforms or execute commands.
 
 This implementation is standalone. Existing job dispatch, the retained orchestrator, general writer tools, accounts and delivery authority are unchanged. Landing this source does not install or activate it.
 
@@ -12,7 +12,7 @@ The assignment must explicitly select this contract. The tool does not silently 
 
 The engine checks operation-specific preconditions independently of the model. A rejected operation stays rejected: there is no editor, shell, patch or arbitrary-code fallback. Downstream Hardening must still verify the requirements and meaningful design improvement. Independent Security and Land keep their existing prerequisites and authority.
 
-## Initial catalog
+## Operation catalog
 
 | Operation | Scope and limits |
 | --- | --- |
@@ -21,6 +21,11 @@ The engine checks operation-specific preconditions independently of the model. A
 | `check` | Current or retained baseline evidence for default Biome checks, the explicit metric profile and one TypeScript project. Tool responses are paginated; the explicit CLI `check` returns full evidence. No autofix, build, test command or model call. |
 | `rename-symbol` | A simple function-local primitive variable or parameter. The TypeScript language service computes references and preserves shorthand property names. Parameter properties, decorated parameters, implicit `arguments` bindings, prototype-sensitive `__proto__` shorthand, dynamic scope, ambiguous targets, capture and an already-occurring new name refuse. Public symbols, files and APIs cannot be renamed. |
 | `extract-function` | One complete pure primitive return expression directly in a synchronous named function body. The TypeScript language service extracts a non-escaping inner helper with closed-over inputs and no parameters. Whole-function forwarding, block-local returns, implicit `arguments`, calls, property access, writes, asynchronous work and unsupported syntax refuse. |
+| `introduce-type` | Create a top-level alias or interface whose name is `target.symbol`. Supply exactly one type-only `declaration`. The new name must not capture an existing project identifier. Optional `annotations` update uses atomically in the same file. |
+| `modify-type` | Replace one uniquely identified alias or interface with a parsed `declaration` of the same name. Generic declarations and alias/interface conversion are allowed when all checks pass. Optional `annotations` can change its uses in the same file. |
+| `remove-type` | Remove one uniquely identified alias or interface. Optional `annotations` can replace its uses atomically; remaining project consumers must still typecheck. |
+| `set-type-annotation` | Introduce or modify a variable, parameter, property or named function/method return annotation with one `type` expression. Return predicates are supported. Use `slot: "return"` for a variable or property whose initializer is a function; adding a return annotation requires an existing parenthesized parameter list. |
+| `remove-type-annotation` | Remove an explicit annotation from the same supported targets. Inference must leave project checks and emitted JavaScript unchanged. |
 
 An extraction names a cohesive calculation; it is not a general function/file decomposition tool. An inner helper can leave enclosing-function and file-length findings unchanged or increase them. Defer findings that need unsupported structural changes rather than add arbitrary helpers to improve scores. Names and rationales still need independent design review.
 
@@ -28,11 +33,23 @@ A Target describes a program element with `file` and its qualified `symbol`, suc
 
 A library-provided rename is not always preserving: expanding `{ __proto__ }` into `{ __proto__: renamed }` changes an own data property into prototype-setting syntax. The adapter refuses this case before writes. A real module-execution regression test reproduced the change before the guard was added. Implicit `arguments` also needs a refusal because a new helper has its own binding.
 
-The backend uses TypeScript's `getRenameInfo`, `findRenameLocations`, `getApplicableRefactors` and `getEditsForRefactor`.
+The rename/extraction backend uses TypeScript's `getRenameInfo`, `findRenameLocations`, `getApplicableRefactors` and `getEditsForRefactor`. Type operations use the compiler's parser and printer rather than a general source replacement.
 
 The build includes the compiler package under `vendor/node_modules/` beside the programs. This keeps it in the protected dependency namespace, including when the build lives inside the target checkout. Its inputs retain freshness hashes; they do not substitute for source revision inputs. Installed tools do not rely on a global TypeScript installation.
 
 The adapter does not expose arbitrary jscodeshift transforms or reimplement their transformation mechanics. See the [TypeScript language-service API](https://github.com/microsoft/TypeScript/wiki/Using-the-Language-Service-API).
+
+## Type-only edits
+
+Named-type operations accept a single alias or interface declaration, including generic parameters and interface heritage. Annotation operations accept one type expression, or a return predicate in a return position. Comments, compiler directives, extra statements, classes and enums refuse. Source containing typecheck suppression directives also refuses type operations. Only assigned TypeScript implementation files can change; JavaScript and declaration files remain outside this catalog's type edits.
+
+The engine formats each projected type edit through the trusted Biome formatter, without lint autofixes. Before opening a source file for writing, it checks the projected files with the unchanged consulted project policies in a private external projection. Each requested file must be processed, and skipped or incomplete evidence refuses. Biome's stdin mode is used only for formatting, never as lint evidence. Projects whose checker needs additional unmirrored inputs may defer rather than accept weaker evidence.
+
+Project-wide TypeScript diagnostics must pass on the complete projected edit. The engine also captures whole-project JavaScript emission in memory before and after the edit, retaining runtime-relevant compiler settings while enabling JavaScript emission and disabling declaration, source-map and incremental-build outputs. The emission probe must resolve and typecheck the same source graph as the checked project; unresolved imports cannot stand in for real type information. It compares canonical JavaScript with comments and formatting removed; module markers, value imports, helpers and decorator metadata must remain unchanged, including in unassigned project consumers. An unavailable or changed emission refuses before any source write or application checkpoint. This probe executes no emitted code and does not replace the downstream build.
+
+These operations preserve the selected JavaScript values/effects contract, not every external consumer's TypeScript API. A changed public type can compile in this project but break consumers outside it. Review that compatibility separately. Ambiguous declarations, unsupported syntax and failed projected checks have no editor or arbitrary-code fallback.
+
+Each optional `annotations` entry names a qualified `symbol` in the same file and supplies a `type`, or `null` to remove its annotation. Its optional `slot` defaults to `"annotation"`; `"return"` selects a function initializer's return. Up to 32 entries can accompany a named-type operation. The complete edit is checked atomically, avoiding temporarily unused or missing types under strict compiler rules.
 
 ## Check evidence
 
@@ -127,7 +144,22 @@ node apps/issue-pipeline/dist/safe-refactor.mjs operation --request REQUEST_JSON
 }
 ```
 
-Replace `SOURCE_SHA256` with the hash returned by inspection and use an assigned file and unique declaration. There is no replacement-text argument. The standalone mutation command rechecks the clean assigned revision on every invocation; it is not a shortcut to continue modifying an already-changed checkout. A task session owns its sequence of source-bound operations. For `operation`, exit code 0 means the request returned evidence, not that every evidence verdict passed.
+Replace `SOURCE_SHA256` with the hash returned by inspection and use an assigned file and unique declaration. There is no general replacement-text argument. Type operations accept only their parsed type-specific fields. To introduce a named type and replace an inline annotation in the same checked edit:
+
+```json
+{
+  "operation": "introduce-type",
+  "target": { "file": "src/totals.ts", "symbol": "Count" },
+  "source": "SOURCE_SHA256",
+  "declaration": "type Count = number;",
+  "annotations": [{ "symbol": "total.amount", "type": "Count" }],
+  "rationale": "Name the counter's domain value without changing its calculation."
+}
+```
+
+To change a declaration, use `modify-type` with its existing qualified symbol and a declaration of the same name. To remove `Count` and restore an inline parameter type, use `remove-type` with `annotations: [{ "symbol": "total.amount", "type": "number" }]`. To change a return annotation directly, use `set-type-annotation` on the named function with `type: "number"`; for a function-valued variable, also set `slot: "return"`. Every operation needs the current source hash from inspection.
+
+The standalone mutation command rechecks the clean assigned revision on every invocation; it is not a shortcut to continue modifying an already-changed checkout. A task session owns its sequence of source-bound operations. For `operation`, exit code 0 means the request returned evidence, not that every evidence verdict passed.
 
 ## Artifacts and recovery
 
@@ -154,13 +186,17 @@ The restricted tool API, not prompt compliance, prevents model-directed general 
 
 ## Verification
 
-`apps/issue-pipeline/test/safe-refactor/` exercises the feature through real files, compiler/Biome processes, module execution, the built launcher and the actual extension. The offline Pi transport supplies no transformation logic. Cases cover JavaScript/TypeScript behavior, shorthand API preservation, forbidden tools/arguments, dynamic scope, source/policy freshness, index-only changes, linked compiler inputs, a real short source write and no replay. These are real-boundary tests, not new isolated unit tests.
+`test/component-integration/safe-refactor/type-operations.test.ts` exercises type edits through real files, TypeScript and Biome. It covers atomic named-type uses, annotations, generic declarations, runtime behavior, executable injection, failed or skipped projected checks, source/input freshness and pending-write holds. It also checks the existing rename/extraction operations, NodeNext module format and package export-map resolution. It also proves refusal when a type-only export changes a script's module emission or an alias changes decorator metadata in an unassigned consumer.
 
-To check the actual pinned native tool registry without model generation, network, shell or project writes, explicitly supply the reviewed native package directory:
+`test/system/safe-refactor-types.test.ts` exercises the built CLI's exact-revision path and the restricted extension's generated schema, execution and tool boundary. These tests use disposable projects, not models or live credentials. Historical `test/safe-refactor/` tests and its native proof are no longer in the repository; do not report those old paths as current coverage.
+
+Run the focused tests from `apps/issue-pipeline/` after building:
 
 ```bash
-cd apps/issue-pipeline
-node test/safe-refactor/native-proof.ts NATIVE_PACKAGE_DIRECTORY
+npm run build
+node --test --test-timeout=180000 \
+  test/component-integration/safe-refactor/type-operations.test.ts \
+  test/system/safe-refactor-types.test.ts
 ```
 
-`NATIVE_PACKAGE_DIRECTORY` is the absolute directory of the approved Pi 1.4.0 package. This opt-in proof also checks schemas with the actual native argument validator and uses a provider that refuses generation. It is not a live task or a proof of model output quality. The ordinary full gate remains `npm run check:full`.
+The ordinary full gate remains `npm run check:full`. Source delivery runs no model and installs or activates nothing.
