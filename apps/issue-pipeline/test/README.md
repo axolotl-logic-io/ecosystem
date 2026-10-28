@@ -125,3 +125,5 @@ Put the file at `acceptance/<issue number>-<short name>.test.ts`, so the test le
 Look in `support/` and the level's own folder before writing a helper, and extend what's there. A kit used by more than one level belongs in `support/`, under its subject's path. Fakes are named `fake-*.ts`, fixtures `*-fixtures.ts` and kits `*-test-kit.ts`.
 
 A fake external service is one long-lived server per test machine, not a process per call. Fake GitHub is `support/signals/fake-gh-server.ts`. The `gh` on the machine's `PATH` is a small sh script that forwards each call to it with `curl --unix-socket`.
+
+`fake-gh-service.ts` and `startFakeGhTransport` share that protocol and process startup across the signal/runtime fake and the reservation fake in `component-integration/fake-coordination-gh.ts`. Reservation scenarios pass their native test signal to each driver, await driver closure before teardown, and stop their owned service between cases. A cancelled driver retains its evidence and prevents later scenarios from starting; expected negative driver results do not count as cancellation.
