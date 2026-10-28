@@ -14,7 +14,13 @@ import {
   verifyRequestsChanges,
 } from "./buddy-flow-review-test-kit.ts";
 import type { PlannedSession } from "./buddy-flow-test-kit.ts";
-import { HARDENING, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import {
+  applyStart,
+  HARDENING,
+  ISSUE,
+  machine,
+  marked,
+} from "./buddy-flow-test-kit.ts";
 
 const BRANCH = `agent/issue-${ISSUE}`;
 const COMMIT = {
@@ -58,6 +64,7 @@ test("a Fix preserves its divergent commit without replying to review threads", 
         replies: [{ comment: thread, reply: "The count is a number now." }],
       },
     };
+    applyStart(box, "start:fix");
     const run = await box.runBuddy(
       [fixing],
       2,

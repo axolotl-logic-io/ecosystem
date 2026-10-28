@@ -4,7 +4,7 @@ Three parts of issue delivery decide whether a change is good enough to land. Im
 
 **Note:** The installed pipeline still runs separate Harden, Sync, Integrate and Review Security tasks. Nothing on this page runs until this source is installed.
 
-The loop between Verify and Fix looks like this:
+The loop between Verify and Fix looks like this. A person applies the start label for each step; no result starts the next task:
 
 ```
 Implement ──► Verify ──approve──► Land ──merge commit──► issue closed
@@ -26,7 +26,7 @@ A failed or interrupted hardening session doesn't become a passed Implement. It 
 
 ## Verify
 
-Verify belongs to the Gatekeeper and uses the reader profile. It binds the item PR's current head, with its trusted inputs, policy and observed base. It becomes ready for a head that has no Verify result, or when a qualified person applies `start:verify` to the issue.
+Verify belongs to the Gatekeeper and uses the reader profile. It binds the item PR's current head, with its trusted inputs, policy and observed base. It runs only when a qualified person applies `start:verify` to the issue, and it reviews the head that is current when it runs, even if someone pushed after the label was applied.
 
 Verify runs three checks on that exact head:
 
@@ -64,15 +64,15 @@ A Security finding always blocks. A failing check or red required CI is a blocki
 
 The result's evidence records the submitted review, the counts of blocking findings and nits, and whether a Security finding was among them. See [Verify and Land evidence](task-results.md#verify-and-land-evidence).
 
-A Verify result binds one head. A new head, from Fix or from a person's push, has no Verify result, so Verify becomes ready again. A passed or refused Verify doesn't rerun for the same head. A Verify that failed to judge the head, for example because CI turned pending, isn't retried automatically. A new `start:verify` for that head retries it, up to the binding's three attempts.
+A Verify result binds one head. A new head, from Fix or from a person's push, needs a new `start:verify`. A passed or refused Verify doesn't rerun for the same head. A Verify that failed to judge the head, for example because CI turned pending, isn't retried automatically. A new `start:verify` for that head retries it, up to the binding's three attempts.
 
 ## Fix
 
-Fix belongs to the Developer and uses the writer profile. It binds the item PR's current head. It has no start label; one of these wakes it:
+Fix belongs to the Developer and uses the writer profile. It binds the item PR's current head. It runs only when a qualified person applies `start:fix`, and it answers what stands on that head:
 
 - Verify's request-changes review on the current head;
-- a qualified person's request-changes review on the current head;
-- Land's refused result for a PR that conflicts with its base.
+- Land's refused result for a PR that conflicts with its base;
+- otherwise, a qualified person's request-changes review on the current head. Fix confirms on GitHub that one stands, and records a failure when none does.
 
 Fix does two things in one run:
 
@@ -87,7 +87,7 @@ The session stages its resolution and concludes the merge with one [pipeline_com
 
 A blocking thread is the first comment of a request-changes review that still stands on the head. Fix also gives the session each such review's body, but GitHub has no thread to reply to there, so a finding in the body gets a code change and no reply. Only the landing account's reviews, which are Verify's, and a qualified person's direct Fix. Fix checks the reviewer's membership again when it reads the reviews. A request from anyone else, or from someone whose membership can't be read, is neither given to the session nor answered.
 
-Fix's passed result names the new head as the code it produced. Every earlier review and result was for the old head, so Verify becomes ready for the new one.
+Fix's passed result names the new head as the code it produced. Every earlier review and result was for the old head; apply `start:verify` to review the new one.
 
 ### Conflicts
 
@@ -111,9 +111,7 @@ Two things show that this run pushed the head. The finish step records the head 
 
 ## Loop limit
 
-An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`). A Fix round counts when its cause is a refused Verify result. After the third, if Verify still requests changes, the issue holds for a person.
-
-Fix rounds that a person's review or Land's conflict triggered don't count, because a person or the base branch caused them. The limit replaces the attempt ceiling for this loop only. Each task still has at most three attempts for one binding.
+The loop has no automatic rounds: a person applies `start:fix` for each one. `VERIFY_FIX_ROUNDS` still limits Fix attempts that a refused Verify result caused before start labels were required, so those older attempts settle as before. Each task still has at most three attempts for one binding.
 
 ## Failure and recovery
 

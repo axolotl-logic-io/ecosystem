@@ -1,7 +1,7 @@
 // TEST-ONLY stand-in for src/tasks/index.ts, which the tasks lane owns and
 // hasn't delivered to this worktree. fake-tasks-hook.ts redirects the
 // signal inbox's import of src/tasks/index.ts here, in the driver process
-// only. It answers the four task-lane functions the inbox consumes from the
+// only. It answers the task-lane functions the inbox consumes from the
 // same world file as the fake gh, so the tests exercise the signal module's
 // real gh, provenance and journal paths against canned task answers. It
 // proves component transport, not integration with the real task lane.
@@ -12,6 +12,7 @@ import type {
   QualifiedSignal,
   TaskView,
 } from "../../../src/domain.ts";
+import { continuable } from "../../../src/tasks/requirements-start.ts";
 import { readWorld, type TaskAnswers } from "./fake-github-world.ts";
 
 function answersFor(number: number): TaskAnswers {
@@ -51,4 +52,15 @@ function machineSignals(
   return Promise.resolve(answersFor(number).machine);
 }
 
-export { actionCauses, machineSignals, previousAction, readTaskView };
+// The real, pure rule, applied to the canned view.
+function continuesImplement(view: TaskView): boolean {
+  return continuable(view) !== undefined;
+}
+
+export {
+  actionCauses,
+  continuesImplement,
+  machineSignals,
+  previousAction,
+  readTaskView,
+};

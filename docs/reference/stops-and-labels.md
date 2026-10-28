@@ -1,6 +1,6 @@
 # Stops and labels
 
-Control signals come from qualified human events, not from a label's presence alone. People control issue delivery with three start labels, one stop label and their reviews of the issue's pull request (PR). Accepted records, current authority and exact task results decide what may happen; status labels and process observations don't. See [signals](signals.md) and [authority](authority.md).
+Control signals come from qualified human events, not from a label's presence alone. People control issue delivery with five start labels, one stop label and their reviews of the issue's pull request (PR). Accepted records, current authority and exact task results decide what may happen; status labels and process observations don't. See [signals](signals.md) and [authority](authority.md).
 
 **Note:** The installed pipeline accepts only `start:implement` and `agents:stop`. `start:author`, `start:verify` and review signals run only once this source is installed.
 
@@ -13,9 +13,11 @@ Every control label goes on the issue. A label on a PR grants nothing.
 | `start:author` | Request Author for the issue's current requirements |
 | `start:implement` | Request one Implement attempt for the issue's current requirements |
 | `start:verify` | Request Verify for the current head of the issue's linked PR |
+| `start:fix` | Request Fix for the current head of the issue's linked PR |
+| `start:land` | Request Land for the current head of the issue's linked PR |
 | `agents:stop` | Stop the affected work item after the event and the person are qualified |
 
-A task gets a start label only when it can run without another task's result. Fix and Land have no label: other results wake them. The issue's linked PR is the one PR from its branch, `agent/issue-N`. Implement opens it with a closing reference, such as `Closes #187`, in its body, so merging the PR closes the issue too.
+Every task runs only when a person applies its start label. No task result or PR review starts another task; each result's comment names the label to apply next. The issue's linked PR is the one PR from its branch, `agent/issue-N`. Implement opens it with a closing reference, such as `Closes #187`, in its body, so merging the PR closes the issue too.
 
 The producer must be a qualified person: an active member of the configured organization. Apps, bots, machine label changes and issue assignment grant no authority. Incomplete event pages or unreadable membership evidence hold work rather than treating a control as absent.
 
@@ -25,18 +27,20 @@ A qualified person's submitted review on the issue's linked PR is a signal too. 
 
 | Review on the current head | Effect |
 |---|---|
-| `CHANGES_REQUESTED` | Wakes [Fix](review.md#fix); the round doesn't count toward Verify's loop limit |
+| `CHANGES_REQUESTED` | Something a started [Fix](review.md#fix) answers |
 | `APPROVED` | Counts as an approval for [Land](merge.md#land-prerequisites) |
+
+A review requests no task. Apply `start:fix` or `start:land` to act on it.
 
 A comment-only or dismissed review binds nothing. A review of an earlier head doesn't count for the current one. The landing account's reviews are Verify's results, never human signals. The development account can't review the PR, because it authored it.
 
 ## Spent starts and retries
 
-An accepted stop is durable after label removal. Removing or reapplying a label doesn't lift it. No continuation signal is defined.
+An accepted stop is durable after label removal. Removing or reapplying a label doesn't lift it.
 
-An authenticated attempt spends its start whatever its verdict. Target movement or a new activation doesn't replenish it. `start:implement` doesn't request a new attempt after a failed Implement for the same requirements; that event holds with "retrying requirements Implement already attempted is unsupported". `start:author` holds the same way for Author. Newly edited requirements need a newly accepted start. A `start:verify` binds the PR head it was accepted for; after a push, Verify waits for a new start for the new head unless the push's own result wakes it. A new `start:verify` for a head whose Verify failed to judge it requests a new attempt, up to the binding's three attempts. A passed or refused Verify of the head stands.
+An authenticated attempt spends its start whatever its verdict. Target movement or a new activation doesn't replenish it. `start:implement` doesn't request a new attempt after a failed Implement for the same requirements; that event holds with "retrying requirements Implement already attempted is unsupported". `start:author` holds the same way for Author. Newly edited requirements need a newly accepted start. A `start:verify`, `start:fix` or `start:land` requests its task on the PR's head as it is when the task runs, whether or not someone pushed after the label was applied. The start is spent by that one attempt. A new start for a head whose run of that task failed requests a new attempt, up to the binding's three attempts. A passed or refused run of the head stands.
 
-`start:implement` doesn't retry a failed Implement, and Implement doesn't wait for an unsettled Author.
+`start:implement` doesn't retry a failed Implement, and Implement doesn't wait for an unsettled Author. It does continue an [interrupted Implement run](task-results.md#interrupted-implement-runs) that can continue.
 
 ## Completed starts
 

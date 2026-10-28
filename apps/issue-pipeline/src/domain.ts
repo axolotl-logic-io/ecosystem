@@ -21,8 +21,11 @@ const TASK_IDS = [
 // branch's head.
 const REQUIREMENTS_TASKS = ["author", "implement"] as const;
 const REVISION_TASKS = ["verify", "fix", "land", "refactor-safely"] as const;
-// The tasks a start label requests on the issue.
-const START_TASKS = ["author", "implement", "verify"] as const;
+// The tasks a start label requests on the issue. A start label is the only
+// thing that requests a task: no result or review wakes one.
+const START_TASKS = ["author", "implement", "verify", "fix", "land"] as const;
+// The start tasks that bind the head of the issue's linked PR.
+const HEAD_START_TASKS = ["verify", "fix", "land"] as const;
 // At most this many Fix rounds that Verify's request-changes triggered, per
 // work item; after them a further request-changes holds the item for a
 // person.
@@ -89,8 +92,8 @@ const PR_REVIEW = z.strictObject({
 });
 
 // A start requests one task for the issue: Author or Implement for the
-// requirements and target read when it was accepted, Verify for the head of
-// the issue's linked PR read then.
+// requirements and target read when it was accepted; Verify, Fix or Land for
+// the head of the issue's linked PR read then.
 const START_SIGNAL = z.discriminatedUnion("task", [
   z.strictObject({
     kind: z.literal("start"),
@@ -106,7 +109,7 @@ const START_SIGNAL = z.discriminatedUnion("task", [
     kind: z.literal("start"),
     id: SIGNAL_ID,
     workItem: WORK_ITEM_REF,
-    task: z.literal("verify"),
+    task: z.enum(HEAD_START_TASKS),
     pr: PR_NUMBER,
     head: SHA,
     target: TARGET_STATE,
@@ -118,9 +121,10 @@ const START_SIGNAL = z.discriminatedUnion("task", [
 const QUALIFIED_SIGNAL = z.discriminatedUnion("kind", [
   START_SIGNAL,
   // A qualified person's submitted review of the issue's linked PR, accepted
-  // as a record like a label: CHANGES_REQUESTED on the current head wakes
-  // Fix, APPROVED on it counts toward Land. The landing account's reviews are
-  // Verify's results, never review signals.
+  // as a record like a label. It requests no task: CHANGES_REQUESTED on the
+  // current head is what a started Fix answers, APPROVED on it counts toward
+  // Land. The landing account's reviews are Verify's results, never review
+  // signals.
   z.strictObject({
     kind: z.literal("review"),
     id: SIGNAL_ID,
@@ -185,7 +189,7 @@ const VERIFY_EVIDENCE = z.strictObject({
 // What a determined Land result's receipt evidence holds. A passed Land
 // merged the PR at exactly its checked head with a merge commit and closed
 // the issue; a Land that found the approved PR conflicting with its base
-// marked it a draft, and its refused result says why, which wakes Fix.
+// marked it a draft, and its refused result says why, for a started Fix.
 const LAND_EVIDENCE = z.discriminatedUnion("outcome", [
   z.strictObject({
     outcome: z.literal("merged"),
@@ -264,6 +268,7 @@ type HumanProvenance = z.infer<typeof HUMAN_PROVENANCE>;
 type PrReview = z.infer<typeof PR_REVIEW>;
 type ReviewState = z.infer<typeof REVIEW_STATE>;
 type StartTask = (typeof START_TASKS)[number];
+type HeadStartTask = (typeof HEAD_START_TASKS)[number];
 type VerifyEvidence = z.infer<typeof VERIFY_EVIDENCE>;
 type LandEvidence = z.infer<typeof LAND_EVIDENCE>;
 type InterruptedEvidence = z.infer<typeof INTERRUPTED_EVIDENCE>;
@@ -348,6 +353,12 @@ interface TaskDefinition {
   recover?: (ctx: ActionContext) => Promise<ActionEnd>;
 }
 
+const HEAD_START = new Set<string>(HEAD_START_TASKS);
+
+function isHeadStartTask(task: string): task is HeadStartTask {
+  return HEAD_START.has(task);
+}
+
 function isRevisionBinding(binding: Binding): binding is RevisionBinding {
   return "revision" in binding;
 }
@@ -385,6 +396,7 @@ export type {
   ActionEnd,
   Binding,
   EvidenceHold,
+  HeadStartTask,
   HumanProvenance,
   InterruptedEvidence,
   LandEvidence,
@@ -418,8 +430,10 @@ export {
   bindingKey,
   DIGEST,
   EVIDENCE_HOLD,
+  HEAD_START_TASKS,
   HUMAN_PROVENANCE,
   INTERRUPTED_EVIDENCE,
+  isHeadStartTask,
   isRevisionBinding,
   LAND_EVIDENCE,
   MAX_SUMMARY,

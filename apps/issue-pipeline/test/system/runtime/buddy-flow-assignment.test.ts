@@ -30,6 +30,7 @@ import type {
   PlannedSession,
 } from "./buddy-flow-test-kit.ts";
 import {
+  applyStart,
   DEVELOPER,
   HARDENING,
   HUMAN,
@@ -78,6 +79,7 @@ const WRITE_FLAGS = ["--input", "-f", "-F", "--field", "--raw-field"];
 const QUERY = /^query=query[ ({]/u;
 const WARNING = /"state":"warning"/u;
 const HELD = /"state":"held"/u;
+const NO_HEAD_TO_FIX = /^start:fix event \d+ not accepted: PR #\d+ is MERGED/u;
 const UNREADABLE = `the assignees of #${ISSUE} are unreadable`;
 const SIGNAL = z.looseObject({ id: z.string() });
 const LOGGED_WARNING = z.object({
@@ -331,6 +333,7 @@ test("Fix leaves an issue assigned to a person alone", async ({ signal }) => {
     assign(box, [HUMAN]);
     const before = box.calls().length;
     const comments = issueComments(box.world());
+    applyStart(box, "start:fix");
     const run = await box.runBuddy([FIX], POLLS, FIXER, signal);
     assert.equal(run.status, 0, run.stderr);
     assert.deepEqual(
@@ -342,11 +345,23 @@ test("Fix leaves an issue assigned to a person alone", async ({ signal }) => {
     const loop = run.run.loops.find((entry) => entry.task === "fix");
     assert.equal(loop?.reason, LEFT_TO_HUMAN);
     assert.equal(HELD.test(run.stderr), false, run.stderr);
-    assert.equal(issueComments(box.world()), comments);
+    // The start's acceptance record is the one new comment and write; Fix
+    // made none.
+    assert.equal(issueComments(box.world()), comments + 1);
     assert.equal(box.git(["rev-parse", BRANCH]), item.head);
     // Implement's writing and hardening sessions, and no Fix session.
     assert.equal(box.launches().length, IMPLEMENT_SESSIONS);
-    assert.deepEqual(apiWrites(box, before), []);
+    assert.deepEqual(apiWrites(box, before), [
+      [
+        "api",
+        "-X",
+        "POST",
+        `repos/acme/widgets/issues/${ISSUE}/comments`,
+        "-f",
+        "body=<record>",
+        "--silent",
+      ],
+    ]);
     assert.deepEqual(assignees(box.world()), [HUMAN]);
     passed = true;
   } finally {
@@ -366,6 +381,7 @@ test("Verify reviews an issue assigned to a person and leaves its assignees alon
     });
     assign(box, [HUMAN]);
     const before = assigneeChanges(box).length;
+    applyStart(box, "start:verify");
     const run = await box.runBuddy([VERIFY], VERIFY_POLLS, VERIFIER, signal);
     assert.equal(run.status, 0, run.stderr);
     const verify = run.actions.find(
@@ -393,6 +409,7 @@ test("Land merges an issue assigned to a person and leaves its assignees alone",
     });
     assign(box, [HUMAN]);
     const before = assigneeChanges(box).length;
+    applyStart(box, "start:land");
     const run = await box.runBuddy([], POLLS, GATEKEEPER, signal);
     assert.equal(run.status, 0, run.stderr);
     const land = run.actions.find(
@@ -420,8 +437,8 @@ test("a Fix whose attempt is never recorded changes no assignee", async ({
       body: "The count must be a number.",
       comments: [],
     });
-    // The PR merged after Verify, so Fix's prerequisite refuses the attempt
-    // after admission: code on a merged PR is no longer writable.
+    // The PR merged after Verify, so the person's start:fix is refused
+    // before any attempt: a merged PR has no head to fix.
     box.change((world) => {
       const pull = world.pulls?.[0];
       if (pull === undefined) {
@@ -431,13 +448,11 @@ test("a Fix whose attempt is never recorded changes no assignee", async ({
       pull.mergeCommit = item.head;
     });
     const before = assigneeChanges(box).length;
+    applyStart(box, "start:fix");
     const run = await box.runBuddy([FIX], POLLS, FIXER, signal);
     assert.equal(run.status, 0, run.stderr);
     const loop = run.run.loops.find((entry) => entry.task === "fix");
-    assert.ok(
-      loop?.reason?.startsWith("no attempt began: code is not writable"),
-      loop?.reason ?? run.stderr,
-    );
+    assert.match(loop?.reason ?? run.stderr, NO_HEAD_TO_FIX);
     assert.deepEqual(assigneeChanges(box).slice(before), []);
     assert.deepEqual(assignees(box.world()), []);
     passed = true;

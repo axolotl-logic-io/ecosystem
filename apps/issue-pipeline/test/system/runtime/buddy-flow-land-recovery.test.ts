@@ -19,7 +19,7 @@ import {
   retainOnFailure,
   verified,
 } from "./buddy-flow-land-test-kit.ts";
-import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import { applyStart, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 // The uncertain Land and its settlement each take one poll; the third
 // stops the run.
@@ -42,6 +42,7 @@ test("an uncertain Land settles its original attempt read-only, without a second
       reported.failPostOnceContaining = MERGED_RESULT;
     });
 
+    applyStart(box, "start:land");
     const gatekeeper = await box.runBuddy(
       [],
       GATEKEEPER_POLLS,

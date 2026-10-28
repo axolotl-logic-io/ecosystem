@@ -1,19 +1,21 @@
 // Fix: the Developer's answer to a change that didn't pass review. It binds a
-// revision, the item PR's head R, and becomes ready for exactly that head
-// when one of these wakes it:
+// revision, the item PR's head R. Only a `start:fix` naming exactly R
+// requests it; no result or review wakes it. Its run answers what stands on
+// R:
 //
 //   - Verify's latest result for R refused: its request for changes;
-//   - a qualified person's accepted review requesting changes on R;
-//   - Land's latest result for R refused for a conflict with the base.
+//   - Land's latest result for R refused for a conflict with the base;
+//   - otherwise, a qualified person's request for changes on R, which its
+//     ops confirm on GitHub.
 //
 // In one run its ops merge target T into R's branch with a merge commit,
 // never a rebase; one Developer session (phase `fix`) resolves any conflict
 // and answers every blocking review comment with code; then the branch is
 // pushed through the development account, each blocking thread gets a reply,
-// and a draft PR is marked ready (ops/fix-task.ts). At most VERIFY_FIX_ROUNDS
-// of an item's Fix rounds may be Verify's; a further request for changes from
-// Verify holds the item for a person. An unsettled run is reconciled
-// read-only and never pushed again.
+// and a draft PR is marked ready (ops/fix-task.ts). An unsettled run is
+// reconciled read-only and never pushed again. Attempts recorded before
+// starts were required keep their original result cause, and with it
+// VERIFY_FIX_ROUNDS.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -32,14 +34,9 @@ import {
   LAND_EVIDENCE,
   VERIFY_FIX_ROUNDS,
 } from "../domain.ts";
-import {
-  currentBinding,
-  held,
-  runReadiness,
-  unsettledRun,
-  verifyFixRounds,
-} from "./chain.ts";
+import { runReadiness, unsettledRun, verifyFixRounds } from "./chain.ts";
 import { EFFECT_REPLY, effectEnd, recoverEnd } from "./effect.ts";
+import { headStartReadiness, startedHead } from "./head-start.ts";
 import { messageOf } from "./message.ts";
 import type { TaskModule } from "./module.ts";
 import { ended, notCurrent, notWritable } from "./module.ts";
@@ -48,7 +45,7 @@ import { sensed } from "./sensing.ts";
 import type { TaskEvidence } from "./view.ts";
 import { developerSession } from "./writer-session.ts";
 
-// What woke a Fix: Verify's request for changes, a person's, or Land's
+// What a Fix answers: Verify's request for changes, a person's, or Land's
 // conflict.
 type FixCause = "verify" | "review" | "conflict";
 
@@ -133,22 +130,18 @@ function resultCause(
   return null;
 }
 
-function signalCause(
-  signal: QualifiedSignal,
-  view: TaskView,
-  code: string,
-): FixCause | null {
-  if (signal.kind === "result") {
-    return resultCause(view, signal.recordId, code);
+// What stands on head `code` for a person's start to answer: Verify's
+// request for changes, Land's conflict, or else a person's review, which
+// the op confirms.
+function standingOn(view: TaskView, code: string): FixCause {
+  if (latestOn(view, "verify", code)?.verdict === "refused") {
+    return "verify";
   }
-  if (
-    signal.kind === "review" &&
-    signal.review.state === "CHANGES_REQUESTED" &&
-    signal.review.commit === code
-  ) {
-    return "review";
+  const land = latestOn(view, "land", code);
+  if (land?.verdict === "refused" && conflictOn(land, code)) {
+    return "conflict";
   }
-  return null;
+  return "review";
 }
 
 function spent(rounds: number): string {
@@ -156,14 +149,19 @@ function spent(rounds: number): string {
 }
 
 // What an action's recorded `cause` still wakes Fix for on head `code`, or
-// why it no longer does. A person's review is requalified by the op guard
-// and checked against GitHub by the op; only a result is judged here. The
-// view counts the action's own attempt among the rounds.
+// why it no longer does. A person's start answers what stands on the head;
+// a person's review is requalified by the op guard and checked against
+// GitHub by the op. Only an attempt an earlier result caused is judged
+// against that result. The view counts the action's own attempt among the
+// rounds.
 function standingCause(
   view: TaskView,
   cause: ActionCause,
   code: string,
 ): { cause: FixCause } | { reason: string } {
+  if (cause.signal.startsWith("github-label:")) {
+    return { cause: standingOn(view, code) };
+  }
   if (cause.signal !== `result:${String(cause.recordId)}`) {
     return { cause: "review" };
   }
@@ -180,6 +178,8 @@ function standingCause(
   return { cause: found };
 }
 
+// A start of Fix for the current head requests it. Any signal of the item
+// lets its own unsettled run recover.
 function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   const shared = sensed(signal, view, signal.kind);
   if (shared !== undefined) {
@@ -189,19 +189,11 @@ function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   if (open !== undefined) {
     return runReadiness(view, open.binding, true);
   }
-  const binding = currentBinding(view, "fix");
-  if (binding === null) {
-    return null;
+  const started = startedHead(signal, view, "fix");
+  if ("readiness" in started) {
+    return started.readiness;
   }
-  const cause = signalCause(signal, view, binding.revision.code);
-  if (cause === null) {
-    return null;
-  }
-  const rounds = verifyFixRounds(view);
-  if (cause === "verify" && rounds >= VERIFY_FIX_ROUNDS) {
-    return held(spent(rounds));
-  }
-  return runReadiness(view, binding, true);
+  return headStartReadiness(signal, view, started.binding);
 }
 
 function prerequisite(
@@ -330,7 +322,7 @@ const fix: TaskModule = {
     id: "fix",
     role: "developer",
     access: "writer",
-    sensors: ["result", "review", "stop"],
+    sensors: ["start", "result", "review", "stop"],
     resources: ["model-session", "test-slot"],
     match,
     act,

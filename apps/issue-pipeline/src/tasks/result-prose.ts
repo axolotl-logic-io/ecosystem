@@ -64,11 +64,11 @@ function passedLine(result: Result): string {
     case "author":
       return "I wrote the requirements for this issue as Gherkin and posted them in my earlier comment. To build them, add the `start:implement` label.";
     case "implement":
-      return `I implemented this issue and opened a pull request for it.${headOf(result)} Verify reviews it next.`;
+      return `I implemented this issue and opened a pull request for it.${headOf(result)} To review it, add the \`start:verify\` label.`;
     case "verify":
-      return "I reviewed the pull request and approved it. Land merges it next, once its checks pass.";
+      return "I reviewed the pull request and approved it. To merge it once its checks pass, add the `start:land` label.";
     case "fix":
-      return `I updated the pull request to answer the review.${headOf(result)} Verify reviews the new head next.`;
+      return `I updated the pull request to answer the review.${headOf(result)} To review the new head, add the \`start:verify\` label.`;
     case "land": {
       const land = LAND_EVIDENCE.safeParse(result.receipt.evidence);
       if (land.success && land.data.outcome === "merged") {
@@ -88,12 +88,12 @@ function refusedLine(result: Result): string {
     case "verify": {
       const verify = VERIFY_EVIDENCE.safeParse(result.receipt.evidence);
       if (verify.success) {
-        return `I reviewed pull request #${String(verify.data.review.pr)} and asked for changes. Fix answers the review next, unless the review loop has reached its limit.`;
+        return `I reviewed pull request #${String(verify.data.review.pr)} and asked for changes. To answer the review, add the \`start:fix\` label.`;
       }
-      return "I reviewed the pull request and asked for changes. Fix answers the review next, unless the review loop has reached its limit.";
+      return "I reviewed the pull request and asked for changes. To answer the review, add the `start:fix` label.";
     }
     case "land":
-      return "I didn't merge the pull request because it conflicts with its base branch. I marked it as a draft, and Fix resolves the conflict next.";
+      return "I didn't merge the pull request because it conflicts with its base branch. I marked it as a draft. To resolve the conflict, add the `start:fix` label.";
     default:
       return `${NAMES[result.binding.task]} stopped without making its change.`;
   }
@@ -113,7 +113,7 @@ function failedLines(result: Result): string[] {
       "I won't continue it on my own, because the issue's requirements changed or it has used all its attempts. A person can start Implement again when the issue is ready.";
     if (continues) {
       next =
-        "I'll continue from that branch after checking again that the requirements are current and the issue isn't stopped.";
+        "To continue from that branch, add the `start:implement` label again. I'll check first that the requirements are current and the issue isn't stopped.";
     }
     return [
       `An earlier ${name} run for this issue stopped before it finished.`,

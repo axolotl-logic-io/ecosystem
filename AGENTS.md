@@ -1,6 +1,6 @@
 # Agent rules
 
-- `apps/issue-pipeline/` is the issue pipeline. Read its [`README.md`](apps/issue-pipeline/README.md) before changing it: landing changes nothing that runs until it's installed. The operator installs today; Lawd will once it can.
+- `apps/issue-pipeline/` is the issue pipeline. Read its [`README.md`](apps/issue-pipeline/README.md) before changing it: landing changes nothing that runs until it's installed. After a change lands, install it and restart the buddies; Lawd will do this once it can.
 - Follow the [project practices](docs/project-practices.md) and, for docs, the [docs style guide](docs/docs-style-guide.md).
 - The pipeline's reference pages are listed in [`docs/README.md`](docs/README.md).
 

@@ -62,7 +62,7 @@ Readers parse only the hidden record. The prose is for people and never grants o
 | Fix | A new head that answers the blocking review and contains the base |
 | Land | The PR merged at exactly the bound head, and the issue closed |
 
-Two refusals are part of the normal loop. A refused Verify submitted a `REQUEST_CHANGES` review on exactly the bound head, and it wakes Fix. A refused Land found the approved PR conflicting with its base and marked it a draft, and it wakes Fix too. A Verify result that `failed` means Verify couldn't judge the head.
+Two refusals are part of the normal loop. A refused Verify submitted a `REQUEST_CHANGES` review on exactly the bound head; a person's `start:fix` answers it. A refused Land found the approved PR conflicting with its base and marked it a draft; a person's `start:fix` resolves it. A Verify result that `failed` means Verify couldn't judge the head.
 
 Implement remains current while its trusted requirements do; a base movement needs Fix, not another Implement. An authenticated Implement attempt spends its start regardless of verdict or target movement. Newly edited requirements need a newly accepted start.
 
@@ -92,7 +92,7 @@ A determined Land result's evidence is `LAND_EVIDENCE`, in one of two forms:
 {"outcome": "conflict", "pr": 42, "head": "HEAD", "base": {"branch": "main", "commit": "BASE"}, "reason": "the PR conflicts with main"}
 ```
 
-`HEAD` is the checked PR head, `MERGE` the merge commit and `BASE` the base commit Land observed. A `merged` Land is `passed`, and its `receipt.produced.code` is `MERGE`. A `conflict` Land is `refused` and wakes Fix.
+`HEAD` is the checked PR head, `MERGE` the merge commit and `BASE` the base commit Land observed. A `merged` Land is `passed`, and its `receipt.produced.code` is `MERGE`. A `conflict` Land is `refused`; a person's `start:fix` resolves it.
 
 ## Holds and replay prevention
 
@@ -100,7 +100,7 @@ A missing binding may become ready only with a supported qualified cause, task p
 
 Records retain a three-attempt ceiling per task and binding as an additional validation constraint. That ceiling is not a retry mechanism.
 
-The review loop has its own limit. An issue gets at most three Fix rounds that a refused Verify result caused (`VERIFY_FIX_ROUNDS`). After them, a further request-changes holds the issue for a person. Fix rounds that a person's review or Land's conflict caused don't count. See [the loop limit](review.md#loop-limit). Restarting a buddy, removing a label, ending a process, changing a target or linking `run.previous` grants no unsupported continuation.
+The review loop has no automatic rounds; see [the loop limit](review.md#loop-limit). Restarting a buddy, removing a label, ending a process, changing a target or linking `run.previous` grants no unsupported continuation.
 
 Readers hold when a record has the wrong work item, unknown version, bad authorship, malformed identity, reused run ID, invalid predecessor, unmatched attempt or conflicting determined verdict. Only a current pass can satisfy a prerequisite; even a pass grants no authority outside its exact scope.
 
@@ -114,9 +114,9 @@ When a buddy next reads the issue's start, it settles the lost run with `impleme
 - `head` is the branch's commit on GitHub now, or null when nothing was pushed.
 - `continues` is true when the run's requirements are still the issue's current requirements and they have attempts left under the three-attempt ceiling.
 
-When `continues` is true, that result is the cause of one continuation, `result:N` with `N` its record. The continuation is a new attempt linked to the lost run by `run.previous`. Its checkout starts from the pushed branch, and its writing session is told to finish that work rather than start again. It goes through the same prerequisite, stop and permission checks as any attempt, and the person's original start is checked again too; the start itself is never spent twice.
+When `continues` is true, a person's new `start:implement` continues the run. The result alone requests nothing. The continuation is a new attempt, caused by that new start and linked to the lost run by `run.previous`. Its checkout starts from the pushed branch, and its writing session is told to finish that work rather than start again. It goes through the same prerequisite, stop and permission checks as any attempt. The original start is never spent twice.
 
-When `continues` is false, nothing runs on its own. A person starts Implement again when the issue is ready.
+When `continues` is false, a new start for the same requirements isn't accepted. Edit the requirements to request new work.
 
 ## Guarded operations
 

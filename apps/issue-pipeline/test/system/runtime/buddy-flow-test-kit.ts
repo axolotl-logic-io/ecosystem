@@ -764,6 +764,30 @@ function machine(
   };
 }
 
+// A person applies start label `label` to the issue now. A start label is
+// the only thing that requests a task.
+function applyStart(box: Pick<Machine, "change">, label: string): void {
+  box.change((world) => {
+    const issue = world.issues.find((item) => item.number === ISSUE);
+    if (issue === undefined) {
+      throw new Error(`the world has no issue ${ISSUE}`);
+    }
+    issue.labels = [...issue.labels.filter((name) => name !== label), label];
+    issue.events = [
+      ...issue.events,
+      {
+        id: world.nextId,
+        event: "labeled",
+        label,
+        actor: HUMAN,
+        viaApp: false,
+        createdAt: "2026-10-26T10:00:00Z",
+      },
+    ];
+    world.nextId += 1;
+  });
+}
+
 export type {
   ActionRun,
   BuddyChoice,
@@ -772,4 +796,4 @@ export type {
   MachineSetup,
   PlannedSession,
 };
-export { DEVELOPER, HARDENING, HUMAN, ISSUE, machine, marked };
+export { applyStart, DEVELOPER, HARDENING, HUMAN, ISSUE, machine, marked };

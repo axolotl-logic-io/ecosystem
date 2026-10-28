@@ -7,6 +7,7 @@
 // completed call.
 import fs from "node:fs";
 import { z } from "zod";
+import { TASK_RESULT } from "../../../src/domain.ts";
 
 const MAX_EXIT_CODE = 255;
 const CHECK_REPLY = z.strictObject({
@@ -148,7 +149,7 @@ const TASK_ANSWERS = z.strictObject({
     revision: z.null(),
     target: TARGET,
     containsTarget: z.boolean(),
-    results: z.array(z.never()),
+    results: z.array(TASK_RESULT),
     hold: z.string().nullable(),
     permissions: z.strictObject({ land: z.boolean() }),
   }),

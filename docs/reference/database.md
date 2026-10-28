@@ -99,14 +99,14 @@ Omitting `coordination` selects `{ "backend": "github" }`. PostgreSQL selection 
 
 ## Cut over a repository
 
-A source change does not authorize database provisioning, installation, activation or live cutover. The backend is shared authority for every buddy and standalone operator working on the same repository/base, not an individual buddy preference.
+The backend is shared authority for every buddy and standalone operator working on the same repository/base, not an individual buddy preference.
 
 1. Stop new admissions on every participant using the old backend.
 2. Let in-flight actions, external effects and registered consumers settle cooperatively.
 3. Confirm that issue ownership, model-session reservations and integration turns have drained in GitHub, including retained work and uncertain-write journals.
 4. Preserve the old authority records, operator configs, run observations and recovery evidence.
-5. Apply the reviewed database migrations under separate operator authorization.
-6. Install and accept the reviewed distribution, including `database.mjs`, separately.
+5. Apply the database migrations.
+6. Install the distribution, including `database.mjs`.
 7. Point every participant for that repository/base at the same database and credential scope.
 8. Validate the private buddy configurations without activation.
 9. Authorize activation separately.

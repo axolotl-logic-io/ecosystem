@@ -19,7 +19,7 @@
 // One result covers the merge and the close: passed only once GitHub reads
 // the PR merged at exactly the checked head and the issue closed, with the
 // merge commit as its produced code. A draft PR at that head is a refused
-// result whose evidence says why, which wakes Fix. Anything that can't be
+// result whose evidence says why, for a started Fix. Anything that can't be
 // read back stays unknown and keeps the turn.
 
 import type { Config } from "../config.ts";

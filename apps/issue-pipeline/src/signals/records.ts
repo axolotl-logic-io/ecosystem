@@ -14,6 +14,7 @@ import { COMMENT, type IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { wire } from "../discovery/wire.ts";
 import {
+  HEAD_START_TASKS,
   PR_REVIEW,
   type QualifiedSignal,
   REQUIREMENTS,
@@ -54,10 +55,10 @@ const REQUEST = z.union([
     requirements: REQUIREMENTS,
     target: TARGET_STATE,
   }),
-  // Verify for the linked PR's head read at acceptance.
+  // Verify, Fix or Land for the linked PR's head read at acceptance.
   z.strictObject({
     kind: z.literal("start"),
-    task: z.literal("verify"),
+    task: z.enum(HEAD_START_TASKS),
     pr: POSITIVE,
     head: SHA,
     target: TARGET_STATE,
@@ -327,7 +328,7 @@ function signalOf(row: AcceptedRow): QualifiedSignal {
     const { review } = request;
     return { kind: "review", id, workItem, review, provenance, recordId };
   }
-  if (request.task === "verify") {
+  if ("head" in request) {
     const { task, pr, head, target } = request;
     return {
       kind: "start",

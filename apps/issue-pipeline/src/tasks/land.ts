@@ -1,5 +1,7 @@
 // Land: the Gatekeeper's merge of the item's PR at the exact head it checked.
-// It binds the current revision R, the PR's head, on target T, and needs all
+// Only a `start:land` naming exactly the PR's head requests it; neither
+// Verify's result nor an approval does. It binds the current revision R, the
+// PR's head, on target T, and needs all
 // of these on R: a passed Verify of R, whose Security review must pass before
 // any merge, an approval from the landing account (that Verify) or from a
 // qualified person, no request for changes from either, a PR GitHub reports
@@ -28,14 +30,9 @@ import { unapproved } from "../ops/land-approval.ts";
 import { historicalPrFor } from "../ops/prs.ts";
 import { requiredCiUnmet } from "../ops/required-ci.ts";
 import { pullRequest } from "../revision.ts";
-import {
-  currentBinding,
-  runReadiness,
-  sameRevision,
-  unsettledRun,
-  waiting,
-} from "./chain.ts";
+import { runReadiness, sameRevision, unsettledRun, waiting } from "./chain.ts";
 import { effectEnd, recoverEnd } from "./effect.ts";
+import { headStartReadiness, startedHead } from "./head-start.ts";
 import { messageOf } from "./message.ts";
 import type { TaskModule } from "./module.ts";
 import { notCurrent } from "./module.ts";
@@ -69,10 +66,10 @@ function verifyOn(view: TaskView, revision: Revision): TaskResult | undefined {
     .at(-1);
 }
 
-// Land wakes on the approval itself: a passed Verify's result of R, or a
-// person's approving review of R once Verify passed R. A person's approval
-// before Verify passed waits for Verify's result. Any signal of the item
-// lets its own unsettled run recover.
+// A start of Land for the current head requests it, once Verify, and so its
+// Security review, passed that head. Its ops check approvals, CI and
+// mergeability again. Any signal of the item lets its own unsettled run
+// recover.
 function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   const shared = sensed(signal, view, signal.kind);
   if (shared !== undefined) {
@@ -82,13 +79,14 @@ function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   if (open !== undefined) {
     return runReadiness(view, open.binding, true);
   }
+  const started = startedHead(signal, view, "land");
+  if ("readiness" in started) {
+    return started.readiness;
+  }
   if (!view.permissions.land) {
     return waiting("the repository configuration grants no Land permission");
   }
-  const binding = currentBinding(view, "land");
-  if (binding === null) {
-    return waiting("the item has no PR head to land");
-  }
+  const { binding } = started;
   const { code } = binding.revision;
   const verify = verifyOn(view, binding.revision);
   if (verify === undefined) {
@@ -99,21 +97,7 @@ function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
   if (verify.verdict === "refused") {
     return waiting(`Verify requested changes on ${code}`);
   }
-  if (signal.kind === "review") {
-    if (signal.review.commit !== code) {
-      return null;
-    }
-    if (signal.review.state === "CHANGES_REQUESTED") {
-      return waiting(
-        `@${signal.provenance.login} requested changes on ${code}`,
-      );
-    }
-    return runReadiness(view, binding, true);
-  }
-  if (signal.kind !== "result" || signal.recordId !== verify.recordId) {
-    return null;
-  }
-  return runReadiness(view, binding, true);
+  return headStartReadiness(signal, view, binding);
 }
 
 function checkPr(
@@ -227,7 +211,7 @@ const land: TaskModule = {
     id: "land",
     role: "gatekeeper",
     access: "lander",
-    sensors: ["result", "review", "stop"],
+    sensors: ["start", "result", "review", "stop"],
     resources: ["target-write"],
     match,
     act: (ctx: ActionContext): Promise<ActionEnd> =>
