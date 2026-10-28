@@ -124,7 +124,7 @@ A new Author or Implement start event for requirements that task already attempt
 
 The one exception is an interrupted Implement run that can continue, as [interrupted Implement runs](task-results.md#interrupted-implement-runs) describes. A new `start:implement` for its requirements is accepted and continues it.
 
-A `start:verify`, `start:fix` or `start:land` binds the head of the issue's linked PR when the start is accepted. The linked PR comes from the issue's branch. With no linked PR, or a PR that isn't open, the start holds and nothing is recorded. A later push doesn't rewrite the accepted head; the task decides whether that head is still current, and waits for a new start when it isn't. These starts have no retry gate in the component, because their tasks bind a revision that the component can't compute.
+A `start:verify`, `start:fix` or `start:land` records the head of the issue's linked PR when the start is accepted. The linked PR comes from the issue's branch. With no linked PR, or a PR that isn't open, the start holds and nothing is recorded. The recorded head is evidence of what the person saw, not a condition: a later push doesn't make the start stale, and the task runs on the PR's head as it is when the task runs. These starts have no retry gate in the component, because their tasks bind a revision that the component can't compute.
 
 ## Reviews
 

@@ -26,7 +26,7 @@ A failed or interrupted hardening session doesn't become a passed Implement. It 
 
 ## Verify
 
-Verify belongs to the Gatekeeper and uses the reader profile. It binds the item PR's current head, with its trusted inputs, policy and observed base. It runs only when a qualified person applies `start:verify` to the issue, for the head that is current then.
+Verify belongs to the Gatekeeper and uses the reader profile. It binds the item PR's current head, with its trusted inputs, policy and observed base. It runs only when a qualified person applies `start:verify` to the issue, and it reviews the head that is current when it runs, even if someone pushed after the label was applied.
 
 Verify runs three checks on that exact head:
 

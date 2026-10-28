@@ -1,9 +1,10 @@
-// How the tasks a start label requests for the head of the issue's linked
-// PR, Verify, Fix and Land, read their start: only a start of the task
-// itself, naming the head that is current now, requests work. A result or a
-// review never does. A new start retries a run of that head that failed,
-// within the binding's attempt budget, because a person asked for that head
-// again; a passed or refused run stands. Pure.
+// How the tasks a start label requests for the issue's linked PR, Verify,
+// Fix and Land, read their start: only a start of the task itself requests
+// work, and it requests the PR's head as it is when the task runs. A push
+// after the start was accepted doesn't make it stale; the head it recorded
+// at acceptance is evidence, not a condition. A result or a review never
+// requests work. A new start retries a run of the current head that failed,
+// within the binding's attempt budget; a passed or refused run stands. Pure.
 
 import type {
   HeadStartTask,
@@ -30,8 +31,9 @@ const NAMES: Readonly<Record<RevisionTask, string>> = {
   "refactor-safely": "Safe Refactor",
 };
 
-// The current binding a start of `task` requests, or the readiness that
-// answers `signal` instead: null for any signal that isn't such a start.
+// The current binding a start of `task` requests, whatever head it was
+// accepted for, or the readiness that answers `signal` instead: null for
+// any signal that isn't such a start.
 function startedHead(
   signal: QualifiedSignal,
   view: TaskView,
@@ -44,13 +46,6 @@ function startedHead(
   if (binding === null) {
     return {
       readiness: waiting(`the item has no PR head for ${NAMES[task]}`),
-    };
-  }
-  if (signal.head !== binding.revision.code) {
-    return {
-      readiness: waiting(
-        `start ${signal.id} names head ${signal.head}, which is no longer the PR's head; a new start is needed`,
-      ),
     };
   }
   return { binding };

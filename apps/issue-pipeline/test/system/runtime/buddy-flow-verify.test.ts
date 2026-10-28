@@ -17,8 +17,9 @@
 // - A Verify whose result post is lost settles its original run from the
 //   review it already submitted, and never submits a second one.
 // - No result requests Verify: Implement's result alone gets no review. A
-//   person's start:verify reviews the head it was accepted for, and a new
-//   one retries a Verify that failed to judge that head.
+//   person's start:verify reviews the PR's head as it is when Verify runs,
+//   even after a push that followed the start, and a new one retries a
+//   Verify that failed to judge that head.
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";
@@ -734,6 +735,46 @@ test("a person's start:verify reviews the head they pushed; Implement's result r
       [review?.author, review?.state, review?.commitId],
       [LANDING, "APPROVED", head],
     );
+    passed = true;
+  } finally {
+    finish(box, passed);
+  }
+});
+
+test("a start:verify applied before a push reviews the head that is current when Verify runs", async ({
+  signal,
+}) => {
+  const { box, head: before } = await implemented("pass", signal);
+  let passed = false;
+  try {
+    applyLabel(box, "start:verify");
+    // The start is accepted for the older head; a person pushes before any
+    // Gatekeeper runs.
+    const head = pushByHand(box);
+    assert.notEqual(head, before);
+    box.change((world) => {
+      world.checks = { [head]: [{ name: "ci", bucket: "pass" }] };
+    });
+    const gatekeeper = await box.runBuddy(
+      [reviewOf([])],
+      START_POLLS,
+      { role: "gatekeeper", tasks: ["verify"] },
+      signal,
+    );
+    signal.throwIfAborted();
+    assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
+    const verify = onlyVerify(gatekeeper);
+    assert.deepEqual(
+      [verify.mode, verify.verdict],
+      ["act", "passed"],
+      verify.reason ?? "",
+    );
+    assert.match(verify.cause.signal, START_SIGNAL);
+    assert.ok("revision" in verify.binding);
+    assert.equal(verify.binding.revision.code, head);
+    const [review, ...others] = pullOf(box.world()).reviews ?? [];
+    assert.deepEqual(others, []);
+    assert.equal(review?.commitId, head);
     passed = true;
   } finally {
     finish(box, passed);
