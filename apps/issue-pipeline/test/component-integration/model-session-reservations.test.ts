@@ -1,8 +1,8 @@
 // Model-session reservations (src/runtime/reservations.ts) through real
 // process boundaries: each invocation is its own driver process
 // (reservation-driver.ts) with a real config file, credential file and run
-// folder, and every GitHub call goes through the real transport to a fake
-// `gh` executable (fake-coordination-gh.ts) whose store all of them share.
+// folder. Every GitHub call goes through the real transport and shared curl
+// client to one fake-coordination-gh.ts service whose store they all share.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -10,14 +10,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { after, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 import { z } from "zod";
 import { committedPolicy } from "../support/project-policy-test-kit.ts";
+import type { FakeGhTransport } from "../support/signals/fake-github-test-kit.ts";
 import type { Store } from "./fake-coordination-gh.ts";
 import {
   newStore,
   readStore,
-  writeFakeGh,
+  startCoordinationGitHub,
   writeStore,
 } from "./fake-coordination-gh.ts";
 
@@ -72,8 +73,36 @@ const UNDECLARED_ISSUE = 87;
 const TRUSTED_ISSUE = 88;
 const TRUSTED_CAPACITY = /differs from the trusted repository capacity, 1$/u;
 
+const CLEANUP_MS = 30_000;
 const folders: string[] = [];
+const services: FakeGhTransport[] = [];
+const running: Promise<Outcome[]>[] = [];
+let failed = false;
+beforeEach(() => {
+  if (failed || running.length > 0) {
+    throw new Error(
+      "a previous reservation scenario has not settled successfully",
+    );
+  }
+});
+afterEach(
+  async () => {
+    await Promise.allSettled(running.splice(0));
+    const owned = services.splice(0);
+    for (const service of owned) {
+      service.stop();
+    }
+    await Promise.all(owned.map((service) => service.closed));
+  },
+  { timeout: CLEANUP_MS },
+);
 after(() => {
+  if (failed) {
+    process.stderr.write(
+      `Reservation evidence retained: ${folders.join(", ")}\n`,
+    );
+    return;
+  }
   for (const folder of folders) {
     fs.rmSync(folder, { recursive: true, force: true });
   }
@@ -85,6 +114,7 @@ interface World {
   config: string;
   store: string;
   env: NodeJS.ProcessEnv;
+  signal: AbortSignal;
 }
 
 // A repository config file whose committed `resources` setting is
@@ -122,11 +152,14 @@ function machine(at: World, resources: unknown): World {
 }
 
 // A fresh repository whose trusted model-session capacity is `modelSessions`.
-function world(modelSessions: number): World {
+function world(modelSessions: number, signal: AbortSignal): World {
+  if (signal.aborted) {
+    throw new Error("reservation scenario is cancelled");
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reservations-"));
   folders.push(dir);
   const bin = path.join(dir, "bin");
-  writeFakeGh(bin);
+  fs.mkdirSync(bin);
   const store = path.join(dir, "github.json");
   writeStore(store, newStore(REPO, LANDING, BASE));
   const credentials = path.join(dir, "credentials.env");
@@ -136,15 +169,15 @@ function world(modelSessions: number): World {
     { mode: PRIVATE_FILE },
   );
   const config = writeConfig({ dir, credentials }, { modelSessions });
-  // Every command runs in the pipeline root, as on an installed machine.
   const root = path.join(dir, "root");
   fs.mkdirSync(root);
   const { PATH: searched = "" } = process.env;
-  return {
+  const at: World = {
     dir,
     credentials,
     config,
     store,
+    signal,
     env: {
       ...process.env,
       ...Object.fromEntries([
@@ -154,6 +187,10 @@ function world(modelSessions: number): World {
       ]),
     },
   };
+  services.push(
+    startCoordinationGitHub({ root: dir, bin, store, env: at.env }),
+  );
+  return at;
 }
 
 type Step =
@@ -180,8 +217,12 @@ function invoke(
   invocation: { instance: string; issue: number },
   steps: readonly Step[],
 ): Promise<Outcome[]> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [DRIVER], { env: at.env });
+  const completion = new Promise<Outcome[]>((resolve, reject) => {
+    const child = spawn(process.execPath, [DRIVER], {
+      env: at.env,
+      signal: at.signal,
+    });
+    let failure: Error | undefined;
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk: Buffer) => {
@@ -190,9 +231,19 @@ function invoke(
     child.stderr.on("data", (chunk: Buffer) => {
       err += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      failure = error;
+    });
     child.on("close", (code) => {
+      if (failure !== undefined) {
+        failed = true;
+        reject(failure);
+        return;
+      }
       if (code !== 0) {
+        if (at.signal.aborted) {
+          failed = true;
+        }
         reject(new Error(`driver exited ${String(code)}: ${err}`));
         return;
       }
@@ -207,6 +258,8 @@ function invoke(
       JSON.stringify({ config: at.config, ...invocation, steps }),
     );
   });
+  running.push(completion);
+  return completion;
 }
 
 const RECORD = z.looseObject({
@@ -248,8 +301,10 @@ function newInvocation(issue: number): { instance: string; issue: number } {
   return { instance: crypto.randomUUID(), issue };
 }
 
-test("concurrent invocations in separate processes fill the cap once and leave no waiting request", async () => {
-  const at = world(CONTENDED_CAP);
+test("concurrent invocations in separate processes fill the cap once and leave no waiting request", async ({
+  signal,
+}) => {
+  const at = world(CONTENDED_CAP, signal);
   const outcomes = await Promise.all(
     CONTENDING_ISSUES.map((issue) =>
       invoke(at, newInvocation(issue), [{ do: "reserve", cap: CONTENDED_CAP }]),
@@ -296,8 +351,10 @@ test("concurrent invocations in separate processes fill the cap once and leave n
   assert.deepEqual(confirmed, holders, "only the holders confirmed a slot");
 });
 
-test("a reservation outlives its process and is released only once every registered consumer reports done", async () => {
-  const at = world(1);
+test("a reservation outlives its process and is released only once every registered consumer reports done", async ({
+  signal,
+}) => {
+  const at = world(1, signal);
   const holder = newInvocation(HOLDER_ISSUE);
   const other = newInvocation(WAITER_ISSUE);
 
@@ -368,8 +425,10 @@ test("a reservation outlives its process and is released only once every registe
   assert.equal(freed?.slot, 1);
 });
 
-test("a lost done report and malformed or untrusted records keep the slot held", async () => {
-  const at = world(1);
+test("a lost done report and malformed or untrusted records keep the slot held", async ({
+  signal,
+}) => {
+  const at = world(1, signal);
   const holder = newInvocation(LOST_ISSUE);
   const store = readStore(at.store);
   store.failPost = '"kind":"done"';
@@ -397,7 +456,7 @@ test("a lost done report and malformed or untrusted records keep the slot held",
   assert.equal(malformed?.state, "held");
   assert.match(malformed?.reason ?? "", UNREADABLE_RECORD);
 
-  const fresh = world(1);
+  const fresh = world(1, signal);
   seed(fresh, UNTRUSTED_ISSUE, "mallory", `${HEADER}{}${END}`);
   const [untrusted] = await invoke(fresh, contender, [
     { do: "reserve", cap: 1 },
@@ -406,8 +465,10 @@ test("a lost done report and malformed or untrusted records keep the slot held",
   assert.match(untrusted?.reason ?? "", UNTRUSTED_AUTHOR);
 });
 
-test("a record of another version, or a resource record without its version, holds and grants nothing", async () => {
-  const at = world(1);
+test("a record of another version, or a resource record without its version, holds and grants nothing", async ({
+  signal,
+}) => {
+  const at = world(1, signal);
   const old = newInvocation(OLD_ISSUE);
   const branch = `agent/issue-${old.issue}`;
   const scope = JSON.stringify([REPO, BASE, "issue", old.issue, branch]);
@@ -431,7 +492,7 @@ test("a record of another version, or a resource record without its version, hol
   assert.equal(other?.state, "held");
   assert.match(other?.reason ?? "", INVALID_RECORD);
 
-  const fresh = world(1);
+  const fresh = world(1, signal);
   seedRecord(fresh, UNVERSIONED_ISSUE, {
     version: 2,
     scope: JSON.stringify([REPO, BASE, "resource", "model-session", 1]),
@@ -454,8 +515,10 @@ test("a record of another version, or a resource record without its version, hol
   assert.match(unversioned?.reason ?? "", VERSION_MISMATCH);
 });
 
-test("unrelated edited state and discussion do not block a repository's model slots", async () => {
-  const at = world(1);
+test("unrelated edited state and discussion do not block a repository's model slots", async ({
+  signal,
+}) => {
+  const at = world(1, signal);
   seed(at, OLD_ISSUE, LANDING, "<!-- agent-pipeline:state -->\nLegacy receipt");
   seed(at, OLD_ISSUE, LANDING, "Ordinary discussion");
   const store = readStore(at.store);
@@ -488,8 +551,10 @@ for (const { label, listed, current } of [
     current: "Ordinary discussion",
   },
 ]) {
-  test(`an untrusted coordination edit that ${label} between listing and reread holds the pool`, async () => {
-    const at = world(1);
+  test(`an untrusted coordination edit that ${label} between listing and reread holds the pool`, async ({
+    signal,
+  }) => {
+    const at = world(1, signal);
     const id = seed(at, OLD_ISSUE, LANDING, listed);
     const store = readStore(at.store);
     const comment = store.comments.find((item) => item.id === id);
@@ -511,8 +576,10 @@ for (const { label, listed, current } of [
   });
 }
 
-test("a consumer record stripped of its marker before both reads still prevents release", async () => {
-  const at = world(1);
+test("a consumer record stripped of its marker before both reads still prevents release", async ({
+  signal,
+}) => {
+  const at = world(1, signal);
   const holder = newInvocation(HOLDER_ISSUE);
   const [reserved, registered] = await invoke(at, holder, [
     { do: "reserve", cap: 1 },
@@ -544,8 +611,10 @@ test("a consumer record stripped of its marker before both reads still prevents 
   );
 });
 
-test("a caller cap that differs from the trusted capacity holds and writes nothing", async () => {
-  const at = world(SMALL_CAP);
+test("a caller cap that differs from the trusted capacity holds and writes nothing", async ({
+  signal,
+}) => {
+  const at = world(SMALL_CAP, signal);
   const caller = newInvocation(TRUSTED_ISSUE);
   const [differs] = await invoke(at, caller, [
     { do: "reserve", cap: LARGE_CAP },
@@ -555,8 +624,10 @@ test("a caller cap that differs from the trusted capacity holds and writes nothi
   assert.deepEqual(slotRecords(readStore(at.store)), []);
 });
 
-test("concurrent machines whose trusted capacities differ share one pool and never hold slots under both caps", async () => {
-  const small = world(SMALL_CAP);
+test("concurrent machines whose trusted capacities differ share one pool and never hold slots under both caps", async ({
+  signal,
+}) => {
+  const small = world(SMALL_CAP, signal);
   const large = machine(small, { modelSessions: LARGE_CAP });
   const callers = [small, large, small, large].map((at, index) => ({
     cap: MIXED_CAPS[index] ?? SMALL_CAP,
@@ -621,8 +692,10 @@ test("concurrent machines whose trusted capacities differ share one pool and nev
   assert.ok(liveCaps.size <= 1, `live claims under one cap: ${shown}`);
 });
 
-test("after the trusted capacity changes, callers hold until the pool drains, and released history doesn't constrain it", async () => {
-  const wideAt = world(LARGE_CAP);
+test("after the trusted capacity changes, callers hold until the pool drains, and released history doesn't constrain it", async ({
+  signal,
+}) => {
+  const wideAt = world(LARGE_CAP, signal);
   const narrowAt = machine(wideAt, { modelSessions: SMALL_CAP });
   const wide = newInvocation(WIDE_HOLDER_ISSUE);
   const narrow = newInvocation(NARROW_ISSUE);
@@ -661,8 +734,10 @@ test("after the trusted capacity changes, callers hold until the pool drains, an
   assert.equal(changed?.state, "reserved", "a drained pool takes a new cap");
 });
 
-test("a live slot request without a declared cap grants nothing", async () => {
-  const at = world(SMALL_CAP);
+test("a live slot request without a declared cap grants nothing", async ({
+  signal,
+}) => {
+  const at = world(SMALL_CAP, signal);
   seedRecord(at, UNDECLARED_ISSUE, {
     version: RESOURCE_RECORD_VERSION,
     scope: JSON.stringify([REPO, BASE, "resource", "model-session", 1]),

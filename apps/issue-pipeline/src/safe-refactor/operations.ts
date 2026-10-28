@@ -1,16 +1,16 @@
 import ts from "typescript";
 import type { Project } from "./project.ts";
 import type { Operation } from "./protocol.ts";
+import {
+  applyEdits,
+  nodesIn,
+  qualifiedName,
+  targetOf,
+  targetsIn,
+  unusedName,
+} from "./syntax.ts";
+import { changeTypes } from "./type-operations.ts";
 
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/u;
-const RESERVED = new Set([
-  "eval",
-  "arguments",
-  "undefined",
-  "NaN",
-  "Infinity",
-  "globalThis",
-]);
 const PREFERENCES: ts.UserPreferences = {
   providePrefixAndSuffixTextForRename: true,
   allowTextChangesInNewFiles: false,
@@ -39,50 +39,6 @@ const BINARY_OPERATORS = new Set([
   ts.SyntaxKind.QuestionQuestionToken,
 ]);
 
-function nodesIn(node: ts.Node): ts.Node[] {
-  const nodes: ts.Node[] = [node];
-  node.forEachChild((child: ts.Node): void => {
-    nodes.push(...nodesIn(child));
-  });
-  return nodes;
-}
-
-function qualifiedName(node: ts.Node): string {
-  const names: string[] = [];
-  let current: ts.Node | undefined = node;
-  while (current !== undefined) {
-    if (
-      (ts.isVariableDeclaration(current) ||
-        ts.isParameter(current) ||
-        ts.isFunctionDeclaration(current) ||
-        ts.isClassDeclaration(current) ||
-        ts.isMethodDeclaration(current)) &&
-      current.name !== undefined &&
-      ts.isIdentifier(current.name)
-    ) {
-      names.unshift(current.name.text);
-    }
-    current = current.parent;
-  }
-  return names.join(".");
-}
-
-function targetOf(source: ts.SourceFile, symbol: string): ts.Node {
-  const found = nodesIn(source).filter(
-    (node: ts.Node): boolean =>
-      (ts.isVariableDeclaration(node) ||
-        ts.isParameter(node) ||
-        ts.isFunctionDeclaration(node)) &&
-      qualifiedName(node) === symbol,
-  );
-  if (found.length !== 1 || found[0] === undefined) {
-    throw new Error(
-      "target must identify exactly one declaration; inspect qualified names",
-    );
-  }
-  return found[0];
-}
-
 function primitive(type: ts.Type): boolean {
   if (type.isUnion()) {
     return type.types.every(primitive);
@@ -110,35 +66,6 @@ function rejectDynamicScope(source: ts.SourceFile): void {
     )
   ) {
     throw new Error("dynamic scope/eval is unsupported");
-  }
-}
-
-function unusedName(project: Project, name: string): void {
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
-    true,
-    ts.LanguageVariant.Standard,
-    name,
-  );
-  if (
-    !IDENTIFIER.test(name) ||
-    RESERVED.has(name) ||
-    scanner.scan() !== ts.SyntaxKind.Identifier ||
-    scanner.scan() !== ts.SyntaxKind.EndOfFileToken
-  ) {
-    throw new Error("expected a non-reserved identifier");
-  }
-  for (const source of project.service.getProgram()?.getSourceFiles() ?? []) {
-    if (
-      !source.isDeclarationFile &&
-      nodesIn(source).some(
-        (node: ts.Node): boolean => ts.isIdentifier(node) && node.text === name,
-      )
-    ) {
-      throw new Error(
-        "new name already occurs in the project; capture is unsupported",
-      );
-    }
   }
 }
 
@@ -175,32 +102,6 @@ function renameEdits(
     fileName,
     textChanges,
   }));
-}
-
-function applyEdits(
-  project: Project,
-  edits: readonly ts.FileTextChanges[],
-): void {
-  for (const edit of edits) {
-    const before = project.texts.get(edit.fileName);
-    if (before === undefined || edit.isNewFile === true) {
-      throw new Error("library edit escapes assigned existing source files");
-    }
-    let text = before;
-    let boundary = text.length;
-    const ordered = [...edit.textChanges].sort(
-      (a, b) => b.span.start - a.span.start,
-    );
-    for (const change of ordered) {
-      const { start, length } = change.span;
-      if (start < 0 || start + length > boundary) {
-        throw new Error("invalid or overlapping library edits");
-      }
-      text = text.slice(0, start) + change.newText + text.slice(start + length);
-      boundary = start;
-    }
-    project.replace(edit.fileName, text);
-  }
 }
 
 function rename(
@@ -443,17 +344,11 @@ function inspect(
     text: project.read(relative).slice(offset, offset + limit),
     offset,
     totalCharacters: project.read(relative).length,
-    targets: nodesIn(source)
+    targets: targetsIn(source)
       .filter(
         (node) =>
           node.getStart(source) >= offset &&
           node.getStart(source) < offset + limit,
-      )
-      .filter(
-        (node) =>
-          ts.isVariableDeclaration(node) ||
-          ts.isParameter(node) ||
-          ts.isFunctionDeclaration(node),
       )
       .map((node) => ({
         symbol: qualifiedName(node),
@@ -474,10 +369,18 @@ function inspect(
           { start: node.expression.getStart(source), end: node.expression.end },
         ];
       }),
-    operations: ["rename-symbol", "extract-function"],
+    operations: [
+      "rename-symbol",
+      "extract-function",
+      "introduce-type",
+      "modify-type",
+      "remove-type",
+      "set-type-annotation",
+      "remove-type-annotation",
+    ],
     backend: `typescript@${ts.version}`,
     limitations:
-      "Conservative local primitive rename and pure return-expression extraction only. Public API changes, arbitrary code, source/name/stack introspection and unsupported dynamic behavior are outside the preservation contract.",
+      "Conservative local primitive rename, pure return-expression extraction and checked type-only edits. Type operations require unchanged whole-project JavaScript emission and passing projected checks. Introduction creates a top-level alias/interface; named-type operations can update selected annotations atomically in that file. Unsupported or ambiguous syntax refuses. External TypeScript API compatibility is not proven.",
   };
 }
 
@@ -487,8 +390,10 @@ function transform(
 ): void {
   if (operation.operation === "rename-symbol") {
     rename(project, operation);
-  } else {
+  } else if (operation.operation === "extract-function") {
     extract(project, operation);
+  } else {
+    changeTypes(project, operation);
   }
 }
 

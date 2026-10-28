@@ -1,0 +1,7 @@
+{
+  "literal": "export type Label = `${\"https://\"}${string}` | \"/* literal */\";",
+  "annotationBlock": "`${never}` | /* @ts-ignore */ number",
+  "annotationLine": "`${never}` | // @ts-ignore\n number",
+  "declarationBlock": "export type Count = `${string}` | /* @ts-ignore */ \"counter\";",
+  "declarationLine": "export type Count = `${string}` | // biome-ignore lint/suspicious/noExplicitAny: bypass\n any;"
+}

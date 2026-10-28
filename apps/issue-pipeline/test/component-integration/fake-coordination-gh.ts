@@ -1,15 +1,26 @@
-// A fake `gh` for the coordination transport: the calls src/execution.ts,
-// src/comments.ts and src/comment-authority.ts make, answered from one JSON
-// store, `FAKE_GH_STORE`, that every process shares. A lock directory beside
-// the store serializes the calls of concurrent processes, as GitHub
-// serializes its writes. A comment POST whose body contains the store's
-// `failPost` text fails without landing, once: a lost write.
-//
-// The test's PATH runs it as `gh` through a shell wrapper (writeFakeGh).
+// Coordination GitHub answers served through the shared persistent fake-gh
+// protocol. Each request reads and commits the one store synchronously; the
+// service serializes requests without filesystem locks or per-call Node.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import {
+  answer,
+  exit,
+  fail,
+  print,
+  type Reply,
+  stdin,
+} from "../support/signals/fake-gh-call.ts";
+import {
+  type Request,
+  serveFakeGitHub,
+} from "../support/signals/fake-gh-service.ts";
+import {
+  type FakeGhTransport,
+  startFakeGhTransport,
+} from "../support/signals/fake-github-test-kit.ts";
 
 const SHA_WIDTH = 40;
 const HEX = 16;
@@ -18,7 +29,6 @@ const CREATED = "2026-10-25T00:00:00Z";
 const POSTED = /^issues\/(?<issue>\d+)\/comments$/u;
 const LISTED = /^issues\/(?<issue>\d+)\/comments\?per_page=100$/u;
 const BATCH_FIELD = /^c\d+$/u;
-const EXECUTABLE = 0o755;
 
 const COMMENT = z.object({
   issue: z.number(),
@@ -69,20 +79,9 @@ function writeStore(file: string, store: Store): void {
   fs.writeFileSync(file, JSON.stringify(store));
 }
 
-class Exit extends Error {
-  readonly code: number;
-  readonly out: string;
-  constructor(code: number, out: string) {
-    super(out);
-    this.code = code;
-    this.out = out;
-  }
-}
 function reply(value: unknown): never {
-  throw new Exit(0, `${JSON.stringify(value)}\n`);
-}
-function fail(message: string): never {
-  throw new Exit(1, message);
+  print(`${JSON.stringify(value)}\n`);
+  return exit(0);
 }
 
 function restComment(comment: Comment): unknown {
@@ -150,10 +149,10 @@ function graphql(store: Store, args: readonly string[]): never {
 }
 
 function listing(comments: readonly Comment[]): never {
-  throw new Exit(
-    0,
+  print(
     comments.map((item) => `${JSON.stringify(restComment(item))}\n`).join(""),
   );
+  exit(0);
 }
 
 function post(store: Store, route: string, args: readonly string[]): void {
@@ -173,7 +172,7 @@ function post(store: Store, route: string, args: readonly string[]): void {
     });
     reply({ id: store.seq });
   }
-  const input: unknown = JSON.parse(fs.readFileSync(0, "utf8"));
+  const input: unknown = JSON.parse(stdin());
   if (route === "git/commits") {
     const { tree } = z.object({ tree: z.string() }).parse(input);
     store.token += 1;
@@ -229,7 +228,8 @@ function serve(file: string, args: readonly string[]): void {
       fail(`fake gh: unexpected command ${args.join(" ")}`);
     }
     if (args[1] === "user") {
-      throw new Exit(0, `${store.login}\n`);
+      print(`${store.login}\n`);
+      exit(0);
     }
     if (args[1] === "graphql") {
       graphql(store, args);
@@ -249,62 +249,35 @@ function serve(file: string, args: readonly string[]): void {
   }
 }
 
-// Runs `work` holding the store's lock: a directory, which mkdir makes
-// atomically.
-function locked(file: string, work: () => void): void {
-  const lock = `${file}.lock`;
-  for (;;) {
-    try {
-      fs.mkdirSync(lock);
-      break;
-    } catch (error) {
-      if (
-        !(error instanceof Error && "code" in error) ||
-        error.code !== "EEXIST"
-      ) {
-        throw error;
-      }
-    }
-  }
-  try {
-    work();
-  } finally {
-    fs.rmdirSync(lock);
-  }
-}
-
 function main(): void {
-  const { FAKE_GH_STORE: file } = process.env;
-  if (file === undefined) {
-    process.stderr.write("fake gh: FAKE_GH_STORE is not set\n");
-    process.exit(1);
-  }
-  try {
-    locked(file, () => serve(file, process.argv.slice(2)));
-  } catch (error) {
-    if (!(error instanceof Exit)) {
-      throw error;
-    }
-    if (error.code === 0) {
-      process.stdout.write(error.out);
-    } else {
-      process.stderr.write(`${error.out}\n`);
-    }
-    process.exitCode = error.code;
-  }
+  const [socket = "", file = "", , ready = ""] = process.argv.slice(2);
+  readStore(file);
+  serveFakeGitHub({
+    socket,
+    ready,
+    call: (request: Request): Reply =>
+      answer(request, () => serve(file, request.args)),
+    read: (): string => JSON.stringify(readStore(file)),
+    write: (text: string): void =>
+      writeStore(file, STORE.parse(JSON.parse(text))),
+  });
 }
 
-// The fake's own path, which a shell wrapper named `gh` in `bin` runs with
-// this Node, caching its compiled code beside `bin`.
-function writeFakeGh(bin: string): void {
-  fs.mkdirSync(bin, { recursive: true });
-  const wrapper = path.join(bin, "gh");
-  const cache = path.join(path.dirname(bin), "compile-cache");
-  fs.writeFileSync(
-    wrapper,
-    `#!/bin/sh\nNODE_COMPILE_CACHE="${cache}" exec "${process.execPath}" "${import.meta.filename}" "$@"\n`,
-  );
-  fs.chmodSync(wrapper, EXECUTABLE);
+function startCoordinationGitHub(at: {
+  root: string;
+  bin: string;
+  store: string;
+  env: NodeJS.ProcessEnv;
+}): FakeGhTransport {
+  readStore(at.store);
+  return startFakeGhTransport({
+    root: at.root,
+    bin: at.bin,
+    world: at.store,
+    log: path.join(at.root, "gh.log"),
+    env: at.env,
+    server: import.meta.filename,
+  });
 }
 
 if (process.argv[1] === import.meta.filename) {
@@ -312,4 +285,4 @@ if (process.argv[1] === import.meta.filename) {
 }
 
 export type { Store };
-export { newStore, readStore, writeFakeGh, writeStore };
+export { newStore, readStore, startCoordinationGitHub, writeStore };

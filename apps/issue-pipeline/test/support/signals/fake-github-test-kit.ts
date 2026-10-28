@@ -18,12 +18,14 @@ const EXECUTABLE = 0o755;
 const START_MS = 30_000;
 const URL_BASE = "http://fake-gh";
 
-interface FakeGitHub {
-  // The server's Unix socket, for changeWorld.
+interface FakeGhTransport {
   socket: string;
+  stop: () => void;
+  closed: Promise<void>;
+}
+interface FakeGitHub extends FakeGhTransport {
   // Changes the world as GitHub or a person would, between calls.
   change: (edit: (world: World) => void) => void;
-  stop: () => void;
 }
 
 // A shell word holding `text` literally.
@@ -96,25 +98,28 @@ function changeWorld(socket: string, edit: (world: World) => void): void {
 // Starts the fake GitHub over `world` in `root`, logging calls to `log`,
 // and puts its `gh` in `bin`. `env` is the server's environment, as the
 // machine's processes have it.
-function startFakeGitHub(options: {
+function startFakeGhTransport(options: {
   root: string;
   bin: string;
   world: string;
   log: string;
   env: NodeJS.ProcessEnv;
-}): FakeGitHub {
-  const { root, bin, world, log, env } = options;
-  readWorld(world);
+  server: string;
+}): FakeGhTransport {
+  const { root, bin, world, log, env, server: program } = options;
   const socket = path.join(root, "gh.sock");
   const ready = path.join(root, "gh-ready");
   const made = spawnSync("mkfifo", [ready]);
   if (made.status !== 0) {
     throw new Error(`mkfifo failed: ${String(made.stderr)}`);
   }
-  const server = spawn(process.execPath, [SERVER, socket, world, log, ready], {
+  const server = spawn(process.execPath, [program, socket, world, log, ready], {
     env,
     stdio: ["pipe", "inherit", "inherit"],
   });
+  const closed = new Promise<void>((resolve) =>
+    server.once("close", () => resolve()),
+  );
   server.unref();
   // The open pipe keeps the server alive until this process exits.
   if (server.stdin instanceof Socket) {
@@ -135,12 +140,28 @@ function startFakeGitHub(options: {
   fs.chmodSync(gh, EXECUTABLE);
   return {
     socket,
-    change: (edit: (world: World) => void): void => changeWorld(socket, edit),
+    closed,
     stop: (): void => {
       server.kill("SIGKILL");
     },
   };
 }
 
-export type { FakeGitHub };
-export { changeWorld, startFakeGitHub };
+function startFakeGitHub(options: {
+  root: string;
+  bin: string;
+  world: string;
+  log: string;
+  env: NodeJS.ProcessEnv;
+}): FakeGitHub {
+  readWorld(options.world);
+  const transport = startFakeGhTransport({ ...options, server: SERVER });
+  return {
+    ...transport,
+    change: (edit: (world: World) => void): void =>
+      changeWorld(transport.socket, edit),
+  };
+}
+
+export type { FakeGhTransport, FakeGitHub };
+export { changeWorld, startFakeGhTransport, startFakeGitHub };
