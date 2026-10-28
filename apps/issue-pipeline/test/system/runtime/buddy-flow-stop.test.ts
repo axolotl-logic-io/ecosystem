@@ -4,8 +4,8 @@
 // only gh (fake-gh.ts) and pi (fake-pi.ts) faked. A stop or authority it
 // can't confirm interrupts only this action, the push guard refuses at the
 // push and keeps the local commit, and evidence still settles. A run left
-// unsettled is settled later by reading and continued from its branch,
-// never by spending the start again.
+// unsettled is settled later by reading, and a person's new start continues
+// it from its branch; its result alone never does.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -17,7 +17,7 @@ import type {
   Machine,
   PlannedSession,
 } from "./buddy-flow-test-kit.ts";
-import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import { applyStart, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 const COMMIT = {
   file: "counter.txt",
@@ -39,7 +39,7 @@ const TASK_ROW = z.looseObject({
 });
 const INTERRUPTED_PROSE =
   /\n\nAn earlier Implement run for this issue stopped before it finished\./u;
-const RESULT_CAUSE = /^result:\d+$/u;
+const START_CAUSE = /^github-label:/u;
 const BRANCH = `agent/issue-${ISSUE}`;
 const ISSUE_SCOPE = `["acme/widgets","main","issue",${ISSUE},"${BRANCH}"]`;
 const POOL_SCOPE = '["acme/widgets","main","resource","model-session",1]';
@@ -205,7 +205,7 @@ suite("buddy authority changes during an Implement session", {
     }
   });
 
-  test("unreadable stop evidence interrupts locally, and restored evidence settles and continues the run", async () => {
+  test("unreadable stop evidence interrupts locally; restored evidence settles the run, and a new start continues it", async () => {
     const box = machine();
     try {
       const first = await box.runBuddy(
@@ -270,21 +270,31 @@ suite("buddy authority changes during an Implement session", {
       assert.match(first.run.loops[0]?.reason ?? "", EVENTS);
       // Readable again, a new activation settles the unknown run by
       // reading alone, as interrupted with nothing on the branch. Its
-      // result, not the spent start, causes one continuation, which
-      // implements the issue.
+      // result requests nothing on its own.
       box.change((world) => {
         world.faults = [];
       });
-      const second = await box.runBuddy(
+      const second = await box.runBuddy([], STOP_AT_POLL);
+      assert.equal(second.status, 0);
+      const settledOnly = second.actions.filter(
+        (item) => item.id !== action.id,
+      );
+      const [recovery, ...others] = settledOnly;
+      assert.ok(recovery !== undefined);
+      assert.deepEqual(others, []);
+      assert.deepEqual(recovery.sessions, []);
+      assert.equal(box.launches().length, 1);
+      // A person's new start continues it from the branch.
+      applyStart(box, "start:implement");
+      const third = await box.runBuddy(
         [planned({ commit: COMMIT }), planned({})],
         STOP_AT_POLL,
       );
-      assert.equal(second.status, 0);
-      const added = second.actions.filter((item) => item.id !== action.id);
-      const recovery = added.find((item) => item.sessions.length === 0);
-      const continuation = added.find((item) => item.sessions.length > 0);
-      assert.ok(recovery !== undefined && continuation !== undefined);
-      assert.equal(added.length, 2);
+      assert.equal(third.status, 0, third.stderr);
+      const continuation = third.actions.find(
+        (item) => item.id !== action.id && item.sessions.length > 0,
+      );
+      assert.ok(continuation !== undefined, third.stderr);
       assert.deepEqual(
         recovery.operations.map((item) => [item.op, item.outcome]),
         [["implement-reconcile", "ok"]],
@@ -312,7 +322,7 @@ suite("buddy authority changes during an Implement session", {
         ?.comments.find((comment) => comment.body.includes('"failed"'));
       assert.match(interrupted?.body ?? "", INTERRUPTED_PROSE);
       assert.equal(records[3]?.run.previous, action.id);
-      assert.match(records[3]?.cause.signal ?? "", RESULT_CAUSE);
+      assert.match(records[3]?.cause.signal ?? "", START_CAUSE);
       assert.equal(
         box.git(["log", "-1", "--format=%s", BRANCH]),
         COMMIT.message,
@@ -341,6 +351,9 @@ suite("buddy authority changes during an Implement session", {
       box.change((world) => {
         world.faults = [];
       });
+      const settling = await box.runBuddy([], STOP_AT_POLL);
+      assert.equal(settling.status, 0, settling.stderr);
+      applyStart(box, "start:implement");
       const second = await box.runBuddy(
         [planned({ change: "stop-issue", awaitAbort: true, reply: null })],
         STOP_AT_POLL,

@@ -28,7 +28,7 @@ A safe login read can retry transient failures; the operation it guards is not r
 
 ## Human controls
 
-A qualified issue-label application event can request `start:author`, `start:implement`, `start:verify` or `agents:stop`. A qualified person's submitted review on the issue's linked PR is a signal too. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal don't supply equivalent authority.
+A qualified issue-label application event can request `start:author`, `start:implement`, `start:verify`, `start:fix`, `start:land` or `agents:stop`. A qualified person's submitted review on the issue's linked PR is a signal too. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal don't supply equivalent authority.
 
 An accepted Author or Implement start binds the work item's trusted requirements. A Verify start binds the linked PR's head. An authenticated Implement attempt spends its requirements regardless of its result or a later target change. Applying the start label again doesn't retry it. Unknown or conflicting evidence holds work. See [stops and labels](stops-and-labels.md).
 

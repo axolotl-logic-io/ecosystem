@@ -14,15 +14,17 @@ import { z } from "zod";
 import { rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { assertReconciled, confirmedWrite } from "../coordination-journal.ts";
-import type {
-  Binding,
-  EvidenceHold,
-  PrReview,
-  QualifiedSignal,
-  SignalInbox,
-  StartTask,
-  TargetState,
-  WorkItemRef,
+import {
+  type Binding,
+  type EvidenceHold,
+  type HeadStartTask,
+  isHeadStartTask,
+  type PrReview,
+  type QualifiedSignal,
+  type SignalInbox,
+  type StartTask,
+  type TargetState,
+  type WorkItemRef,
 } from "../domain.ts";
 import { readIssueExecution } from "../execution.ts";
 import { historicalPrFor } from "../ops/prs.ts";
@@ -35,6 +37,7 @@ import {
 import { pullRequest } from "../revision.ts";
 import {
   actionCauses,
+  continuesImplement,
   machineSignals,
   previousAction,
   readTaskView,
@@ -99,7 +102,7 @@ type TaskView = Awaited<ReturnType<typeof readTaskView>>;
 type StartRequest = Extract<AcceptedRecord["request"], { kind: "start" }>;
 type StartSignal = Extract<QualifiedSignal, { kind: "start" }>;
 type ReviewSignal = Extract<QualifiedSignal, { kind: "review" }>;
-type RequirementsTask = Exclude<StartTask, "verify">;
+type RequirementsTask = Exclude<StartTask, HeadStartTask>;
 
 // A value, or why it isn't available: `unreadable` when evidence couldn't be
 // read, rather than read and found wanting.
@@ -137,6 +140,8 @@ const TASK_NAMES: ReadonlyMap<StartTask, string> = new Map<StartTask, string>([
   ["author", "Author"],
   ["implement", "Implement"],
   ["verify", "Verify"],
+  ["fix", "Fix"],
+  ["land", "Land"],
 ]);
 const BUDDY_RUN = z.uuid();
 
@@ -321,8 +326,10 @@ async function requirementsRequest(
     return attempts;
   }
   const name = taskName(task);
+  // A person's new start continues an interrupted Implement run.
+  const continues = task === "implement" && continuesImplement(view);
   const prior = attemptedRequirements(attempts.value, task, view.requirements);
-  if (prior !== undefined) {
+  if (prior !== undefined && !continues) {
     return refused(
       `${name} already attempted these requirements under cause ${prior.cause.signal}; ${unsupportedRetry(task)}`,
     );
@@ -336,7 +343,7 @@ async function requirementsRequest(
   if (!previous.ok) {
     return previous;
   }
-  if (previous.value !== null) {
+  if (previous.value !== null && !continues) {
     return refused(
       `${name} action ${previous.value} already ran for this binding; ${unsupportedRetry(task)}`,
     );
@@ -349,20 +356,23 @@ async function requirementsRequest(
   });
 }
 
-// The Verify request for the current head of the issue's linked PR, or why
-// none may be recorded: the issue has no PR, or it is no longer open.
-function verifyRequest(
+// The Verify, Fix or Land request for the current head of the issue's linked
+// PR, or why none may be recorded: the issue has no PR, or it is no longer
+// open.
+function headRequest(
   cfg: Config,
   number: number,
+  task: HeadStartTask,
   target: TargetState,
 ): Checked<StartRequest> {
+  const verb = { verify: "verify", fix: "fix", land: "land" }[task];
   const linked = linkedPr(cfg, number);
   if (!linked.ok) {
     return linked;
   }
   const pr = linked.value;
   if (pr === null) {
-    return refused(`#${number} has no linked PR to verify`);
+    return refused(`#${number} has no linked PR to ${verb}`);
   }
   let pull: ReturnType<typeof pullRequest>;
   try {
@@ -371,11 +381,11 @@ function verifyRequest(
     return unread(`PR #${pr} unreadable: ${errorText(error)}`);
   }
   if (pull.state !== "OPEN") {
-    return refused(`PR #${pr} is ${pull.state}, so it has no head to verify`);
+    return refused(`PR #${pr} is ${pull.state}, so it has no head to ${verb}`);
   }
   return ok({
     kind: "start",
-    task: "verify",
+    task,
     pr,
     head: pull.headSha,
     target,
@@ -398,8 +408,8 @@ async function startRequest(
   if (view.hold !== null) {
     return refused(`its task view holds: ${view.hold}`);
   }
-  if (task === "verify") {
-    return verifyRequest(cfg, workItem.number, view.target);
+  if (isHeadStartTask(task)) {
+    return headRequest(cfg, workItem.number, task, view.target);
   }
   return await requirementsRequest(cfg, workItem, task, view);
 }
@@ -681,16 +691,17 @@ function deliverQualified(
   }
 }
 
-// Delivers `start` when no action ran its binding yet, or when it
-// `recovers` its requirements' lost Implement run.
+// Delivers `start` when no action ran its binding yet, when it `recovers`
+// its requirements' lost Implement run, or when it `continues` their
+// interrupted one.
 async function deliverStart(
   cfg: Config,
   scope: SignalScope,
   poll: IssuePoll,
-  start: { signal: StartSignal; recovers: boolean },
+  start: { signal: StartSignal; recovers: boolean; continues: boolean },
 ): Promise<void> {
-  const { signal, recovers } = start;
-  if (signal.task !== "verify" && !recovers) {
+  const { signal, recovers, continues } = start;
+  if ("requirements" in signal && !recovers && !continues) {
     const previous = await previousOf(cfg, {
       workItem: signal.workItem,
       task: signal.task,
@@ -730,11 +741,13 @@ function recovering(
 }
 
 // Whether `signal` still requests work: not spent by an attempt of its task
-// and, for Author or Implement, its requirements not attempted by its task;
-// or else an Implement start that recovers its requirements' lost run.
+// and, for Author or Implement, its requirements not attempted by its task
+// unless it `continues` an interrupted Implement run; or else an Implement
+// start that recovers its requirements' lost run.
 function pendingStart(
   attempts: readonly AttemptCause[],
   signal: StartSignal,
+  continues: boolean,
 ): boolean {
   if (recovering(attempts, signal)) {
     return true;
@@ -742,12 +755,40 @@ function pendingStart(
   if (spends(attempts, signal)) {
     return false;
   }
-  if (signal.task === "verify") {
+  if (!("requirements" in signal) || continues) {
     return true;
   }
   return (
     attemptedRequirements(attempts, signal.task, signal.requirements) ===
     undefined
+  );
+}
+
+// Whether `signal` is a start of Implement, for the current requirements,
+// that would continue their interrupted run. The task view is read only
+// for such a start.
+async function continuing(
+  cfg: Config,
+  poll: IssuePoll,
+  attempts: readonly AttemptCause[],
+  signal: StartSignal,
+): Promise<Checked<boolean>> {
+  if (
+    signal.task !== "implement" ||
+    spends(attempts, signal) ||
+    attemptedRequirements(attempts, "implement", signal.requirements) ===
+      undefined
+  ) {
+    return ok(false);
+  }
+  let view: TaskView;
+  try {
+    view = await readTaskView(cfg, poll.workItem.number);
+  } catch (error) {
+    return unread(`its task view is unreadable: ${errorText(error)}`);
+  }
+  return ok(
+    view.requirements === signal.requirements && continuesImplement(view),
   );
 }
 
@@ -770,15 +811,21 @@ async function deliverStarts(
     holdFor(poll, "accepted starts held", attempts);
     return;
   }
-  const pending = starts.filter((signal) =>
-    pendingStart(attempts.value, signal),
-  );
-  await inOrder(pending, (signal) =>
-    deliverStart(cfg, scope, poll, {
+  await inOrder(starts, async (signal) => {
+    const continues = await continuing(cfg, poll, attempts.value, signal);
+    if (!continues.ok) {
+      holdFor(poll, `accepted start ${signal.id} held`, continues);
+      return;
+    }
+    if (!pendingStart(attempts.value, signal, continues.value)) {
+      return;
+    }
+    await deliverStart(cfg, scope, poll, {
       signal,
       recovers: recovering(attempts.value, signal),
-    }),
-  );
+      continues: continues.value,
+    });
+  });
 }
 
 // Delivers each accepted review that still stands on its PR and whose

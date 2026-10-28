@@ -2,8 +2,9 @@
 // whose trusted repository configuration grants it: a Developer implements
 // the started issue into PR #8, its head is approved, and a Gatekeeper
 // responsible for Land merges the PR with a merge commit pinned to that
-// head and closes the issue, or, when the PR conflicts with its base or
-// doesn't contain it, marks the PR a draft and refuses for Fix. A person's
+// head and closes the issue once a person applies `start:land`, or, when the
+// PR conflicts with its base or doesn't contain it, marks the PR a draft and
+// refuses for Fix. A person's
 // standing request for changes holds it, and a person's approval waits for
 // Verify's pass of the head, so its Security review always runs before the
 // merge. A close that fails after the merge is made once by the Land's
@@ -27,13 +28,19 @@ import {
   verified,
 } from "./buddy-flow-land-test-kit.ts";
 import type { Machine } from "./buddy-flow-test-kit.ts";
-import { HUMAN, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import {
+  applyStart,
+  HUMAN,
+  ISSUE,
+  machine,
+  marked,
+} from "./buddy-flow-test-kit.ts";
 
 // The Land acts on the first poll; the second stops the run.
 const LAND_POLLS = 2;
 // The uncertain Land, its recovery, then stop.
 const RECOVERY_POLLS = 3;
-// The review's acceptance, the Land it wakes, then stop.
+// The start's acceptance, its Land, then stop.
 const REVIEW_POLLS = 3;
 
 // Required CI passes on `head`.
@@ -86,6 +93,7 @@ test("Land merges an approved PR at its checked head and closes the issue", asyn
       }
     });
 
+    applyStart(box, "start:land");
     const gatekeeper = await box.runBuddy([], LAND_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
     assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
@@ -161,6 +169,7 @@ test("an approved PR that conflicts with its base becomes a draft for Fix", asyn
     greenCi(box, head);
     const base = moveTarget(box, "counter.txt", "4 widgets\n");
 
+    applyStart(box, "start:land");
     const gatekeeper = await box.runBuddy([], LAND_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
     assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
@@ -206,6 +215,7 @@ test("an approved head that doesn't contain a moved base goes to Fix even when G
     greenCi(box, head);
     const base = moveTarget(box, "README.md", "widgets and gadgets\n");
 
+    applyStart(box, "start:land");
     const gatekeeper = await box.runBuddy([], LAND_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
     assert.equal(gatekeeper.status, 0, gatekeeper.stderr);
@@ -245,6 +255,7 @@ test("a person's standing request for changes holds an approved Land until they 
       review(world, HUMAN, "CHANGES_REQUESTED", head);
     });
 
+    applyStart(box, "start:land");
     const held = await box.runBuddy([], LAND_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
     assert.equal(held.status, 0, held.stderr);
@@ -289,6 +300,7 @@ test("a qualified person's approval waits for Verify's Security review of the he
     });
 
     // No Verify has passed the head, so the approval lands nothing.
+    applyStart(box, "start:land");
     const held = await box.runBuddy([], REVIEW_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
     assert.equal(held.status, 0, held.stderr);
@@ -300,7 +312,7 @@ test("a qualified person's approval waits for Verify's Security review of the he
     assert.deepEqual(callsOf(box, ["pr", "merge"]), []);
     assert.equal(box.git(["rev-parse", "main"]), target);
 
-    // Verify's pass of the same head wakes the Land.
+    // The pending start lands once Verify passes the same head.
     verified(box, head, "passed");
     const landed = await box.runBuddy([], LAND_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
@@ -337,6 +349,7 @@ test("a Land whose issue close fails closes the issue once when it recovers", as
       reported.failIssueCloses = 1;
     });
 
+    applyStart(box, "start:land");
     const gatekeeper = await box.runBuddy(
       [],
       RECOVERY_POLLS,

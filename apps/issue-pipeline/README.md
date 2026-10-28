@@ -24,7 +24,7 @@ Issue delivery has five tasks. The canonical task IDs are `author`, `implement`,
 | --- | --- | --- | --- |
 | Author | Developer, writer | Requirements | `start:author` |
 | Implement | Developer, writer | Requirements | `start:implement` |
-| Verify | Gatekeeper, reader | The PR head | A head with no Verify result, or `start:verify` |
+| Verify | Gatekeeper, reader | The PR head | `start:verify` for the current head |
 | Fix | Developer, writer | The PR head | A request for changes on the head, or Land finding a conflict |
 | Land | Gatekeeper, lander | The PR head | An approved head that is ready to merge |
 
@@ -32,7 +32,7 @@ Safe Refactor retains its explicit standalone entrypoint.
 
 **Note:** The installed release still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. This source's five tasks run only once it is installed.
 
-Qualified human events provide the human signals: the `start:author`, `start:implement`, `start:verify` and `agents:stop` labels on the issue, and a qualified person's review of the issue's linked PR. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
+Qualified human events provide the human signals: the `start:author`, `start:implement`, `start:verify`, `start:fix`, `start:land` and `agents:stop` labels on the issue, and a qualified person's review of the issue's linked PR. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
 
 An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. Unchanged requirements don't get an Implement retry from `start:implement`, and Implement doesn't wait for Author. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
 

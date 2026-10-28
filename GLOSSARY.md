@@ -170,7 +170,7 @@ A review finding that doesn't affect behavior, safety or maintainability, such a
 
 ### Fix
 
-The Developer task that answers a change that didn't pass review. A request-changes review on the current head, from Verify or a qualified person, wakes it, and so does Land finding a conflict. In one run, Fix merges the pull request's base branch into its head branch and answers every blocking comment with a code change and a thread reply. Its result is a new head, which Verify then checks.
+The Developer task that answers a change that didn't pass review. Only `start:fix` requests it. It answers a request-changes review on the current head, from Verify or a qualified person, or a conflict Land found. In one run, Fix merges the pull request's base branch into its head branch and answers every blocking comment with a code change and a thread reply. Its result is a new head, which a new `start:verify` checks.
 
 Fix replaces going back to Implement. It is not a rebase: commits that were already reviewed keep their identity.
 
@@ -204,7 +204,7 @@ The workflow that develops and delivers an issue's intended change. Its tasks ar
 | --- | --- | --- |
 | Author | `start:author` | Gherkin requirements |
 | Implement | `start:implement` | A hardened pull request head |
-| Verify | A head with no Verify result, or `start:verify` | A submitted review on that exact head |
+| Verify | `start:verify` for the current head | A submitted review on that exact head |
 | Fix | A blocking review on the current head, or Land finding a conflict | A new head that answers the review and contains the base |
 | Land | An approved head that is ready to merge | The pull request merged and the issue closed |
 
@@ -260,7 +260,7 @@ A message representing a condition or occurrence detected by a sensor, carrying 
 
 A human-produced signal qualifies only when its producer is a current member of the configured organization. A machine-produced signal qualifies through the applicable authentication, provenance and binding rules. Signals encapsulate this distinction so tasks do not each invent producer-specific authority checks. Verify the applicable authority at run start and before privileged effects that rely on it. Unknown evidence grants no permission.
 
-An issue having `start:author`, `start:implement` or `start:verify` can supply a signal matched to starting that task. A qualified person's review of the issue's pull request is a signal too, bound to the head it reviewed. `agents:stop` supplies a signal matched to preventing new task runs and gracefully stopping active runs at the next safe boundary, preserving work and recording checkpoints. For a label-based signal, verify the application event and its producer; label presence alone does not establish authority.
+An issue having `start:author`, `start:implement`, `start:verify`, `start:fix` or `start:land` can supply a signal matched to starting that task. A start label is the only signal that starts a task. A qualified person's review of the issue's pull request is a signal too, bound to the head it reviewed. `agents:stop` supplies a signal matched to preventing new task runs and gracefully stopping active runs at the next safe boundary, preserving work and recording checkpoints. For a label-based signal, verify the application event and its producer; label presence alone does not establish authority.
 
 Removing a label is never a signal. Removing a start label does not cancel accepted work. Removing `agents:stop` does not authorize continuation. The signal for continuation remains undefined.
 

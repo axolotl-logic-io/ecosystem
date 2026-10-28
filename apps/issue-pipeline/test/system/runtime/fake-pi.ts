@@ -261,13 +261,16 @@ function edit(world: World, change: NonNullable<Session["change"]>): void {
     }
     if (change === "reapply-author-start") {
       label = "start:author";
+    }
+    // A person who reapplies a present label removes it first.
+    if (issue.labels.includes(label)) {
       issue.events.push({
         id: world.nextId,
         event: "unlabeled",
         label,
         actor: HUMAN,
         viaApp: false,
-        createdAt: "2026-10-25T13:00:00Z",
+        createdAt: "2026-10-26T13:00:00Z",
       });
       world.nextId += 1;
     } else {
@@ -279,7 +282,7 @@ function edit(world: World, change: NonNullable<Session["change"]>): void {
       label,
       actor: HUMAN,
       viaApp: false,
-      createdAt: "2026-10-25T13:00:00Z",
+      createdAt: "2026-10-26T13:00:00Z",
     });
     world.nextId += 1;
   }

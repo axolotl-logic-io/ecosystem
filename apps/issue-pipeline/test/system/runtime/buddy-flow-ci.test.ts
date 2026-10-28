@@ -13,7 +13,7 @@ import {
   retainOnFailure,
   verified,
 } from "./buddy-flow-land-test-kit.ts";
-import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
+import { applyStart, ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 const PASS = JSON.stringify([
   { name: "required", state: "SUCCESS", bucket: "pass", link: null },
@@ -58,6 +58,7 @@ test("Land rejects passing CI JSON from a failed transport at its actual effect"
         afterComment: ['"kind":"attempt"', '"task":"land"'],
       };
     });
+    applyStart(box, "start:land");
     const run = await box.runBuddy([], GATEKEEPER_POLLS, GATEKEEPER, signal);
     signal.throwIfAborted();
     assert.equal(run.status, 0, run.stderr);

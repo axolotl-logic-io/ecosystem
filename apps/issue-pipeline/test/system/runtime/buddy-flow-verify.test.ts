@@ -1,6 +1,7 @@
 // Verify through the supported buddy entrypoint, end to end on a disposable
 // machine: a Developer implements a human-started issue and opens its PR;
-// a Gatekeeper's Verify, woken by that result, runs the project's check on
+// a person's start:verify requests a Gatekeeper's Verify, which runs the
+// project's check on
 // exactly the PR head, reads its required CI, reviews it in one read-only
 // Reviewer session and submits one GitHub review of that head through the
 // landing account.
@@ -15,9 +16,9 @@
 //   submits no review.
 // - A Verify whose result post is lost settles its original run from the
 //   review it already submitted, and never submits a second one.
-// - A person's push gets no Verify from Implement's result, which names the
-//   older head; a person's start:verify reviews the head it was accepted
-//   for, and retries a Verify that failed to judge that head.
+// - No result requests Verify: Implement's result alone gets no review. A
+//   person's start:verify reviews the head it was accepted for, and a new
+//   one retries a Verify that failed to judge that head.
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";
@@ -189,18 +190,6 @@ function resultsOf(world: World, action: ActionRun): z.infer<typeof RESULT>[] {
     .filter((record) => record.run.id === action.id);
 }
 
-// The comment ids of the item's v2 records, by the run they record.
-function recordIdsOf(world: World, task: string): number[] {
-  const issue = world.issues.find((item) => item.number === ISSUE);
-  return (issue?.comments ?? [])
-    .filter(
-      (comment) =>
-        comment.body.includes('"kind":"result"') &&
-        comment.body.includes(`"task":"${task}"`),
-    )
-    .map((comment) => comment.id);
-}
-
 function reviewPosts(box: Machine): string[] {
   return box
     .calls()
@@ -230,6 +219,7 @@ test("Verify approves a head with only nits through the landing account, bound t
   const { box, head } = await implemented("pass", signal);
   let passed = false;
   try {
+    applyLabel(box, "start:verify");
     const gatekeeper = await box.runBuddy(
       [
         reviewOf([
@@ -274,10 +264,9 @@ test("Verify approves a head with only nits through the landing account, bound t
       [["issue-pipeline-reviewer", "security-review", false, "ok"]],
     );
     assert.equal(verify.ownership.state, "released");
-    // Implement's passed result woke it, and it bound exactly that head.
+    // The person's start caused it, and it bound exactly that head.
     const world = box.world();
-    const [implementResult] = recordIdsOf(world, "implement");
-    assert.equal(verify.cause.signal, `result:${String(implementResult)}`);
+    assert.match(verify.cause.signal, START_SIGNAL);
     assert.ok("revision" in verify.binding);
     assert.equal(verify.binding.revision.code, head);
     // The project's check ran once, on the head.
@@ -349,10 +338,10 @@ test("Verify approves a head with only nits through the landing account, bound t
         ],
       ],
     );
-    // The idle poll leaves the passed binding waiting; nothing ran again.
+    // The spent start requests nothing more; nothing ran again.
     assert.deepEqual(
       gatekeeper.run.loops.map((loop) => [loop.task, loop.action, loop.reason]),
-      [["verify", verify.id, "verify passed this binding"]],
+      [["verify", verify.id, null]],
     );
     passed = true;
   } finally {
@@ -370,6 +359,7 @@ test("Verify requests changes for blocking, Security, failed-check and failed-CI
   });
   let passed = false;
   try {
+    applyLabel(box, "start:verify");
     const gatekeeper = await box.runBuddy(
       [
         reviewOf([
@@ -474,11 +464,11 @@ test("Verify requests changes for blocking, Security, failed-check and failed-CI
         ],
       ],
     );
-    // A refused binding is never retried automatically: the idle poll
-    // holds it rather than reviewing again.
+    // A refused binding is never retried: with its start spent, the loop
+    // stays idle until the buddy stops rather than reviewing again.
     assert.deepEqual(
       gatekeeper.run.loops.map((loop) => [loop.task, loop.action, loop.state]),
-      [["verify", verify.id, "held"]],
+      [["verify", verify.id, "stopped"]],
     );
     assert.deepEqual(reviewPosts(box), [LANDING]);
     passed = true;
@@ -497,6 +487,7 @@ test("Verify records no pass and submits no review when its read-only session wr
       ...reviewOf([]),
       strayWrite: { file: "counter.txt", content: "0 widgets\n" },
     };
+    applyLabel(box, "start:verify");
     const gatekeeper = await box.runBuddy(
       [strays],
       GATEKEEPER_POLLS,
@@ -632,6 +623,7 @@ test("Verify recovery leaves a new start pending until its own requested attempt
     box.change((world) => {
       world.failPostOnceContaining = '"verdict":"failed"';
     });
+    applyLabel(box, "start:verify");
     const first = await box.runBuddy(
       [
         {
@@ -656,7 +648,9 @@ test("Verify recovery leaves a new start pending until its own requested attempt
     assert.ok(reconciler !== undefined, first.stderr);
     assert.equal(reconciler.previous, original.id);
     assert.equal(reconciler.verdict, "failed");
-    assert.match(reconciler.cause.signal, START_SIGNAL);
+    // Read-only recovery of the original run may follow any signal; it
+    // requests no new attempt.
+    assert.match(original.cause.signal, START_SIGNAL);
     assert.deepEqual(
       box.world().issues.find((item) => item.number === ISSUE)?.labels,
       ["start:verify"],
@@ -673,7 +667,9 @@ test("Verify recovery leaves a new start pending until its own requested attempt
       (action) => action.mode === "act" && action.id !== original.id,
     );
     assert.ok(retried !== undefined);
-    assert.equal(retried.cause.signal, reconciler.cause.signal);
+    // The start applied during the run requests the new attempt.
+    assert.match(retried.cause.signal, START_SIGNAL);
+    assert.notEqual(retried.cause.signal, original.cause.signal);
     assert.equal(retried.verdict, "passed");
     assert.deepEqual(
       box.world().issues.find((item) => item.number === ISSUE)?.labels,
@@ -686,7 +682,7 @@ test("Verify recovery leaves a new start pending until its own requested attempt
   }
 });
 
-test("a person's start:verify reviews the head they pushed, which Implement's result doesn't wake Verify for", async ({
+test("a person's start:verify reviews the head they pushed; Implement's result requests no Verify", async ({
   signal,
 }) => {
   const { box } = await implemented("pass", signal);
@@ -696,7 +692,7 @@ test("a person's start:verify reviews the head they pushed, which Implement's re
     box.change((world) => {
       world.checks = { [head]: [{ name: "ci", bucket: "pass" }] };
     });
-    // Implement's result names the older head, so nothing wakes Verify.
+    // No start: Implement's result requests nothing.
     const idle = await box.runBuddy(
       [],
       GATEKEEPER_POLLS,
@@ -754,6 +750,7 @@ test("a person's start:verify retries a Verify that failed to judge the head", a
       ...reviewOf([]),
       strayWrite: { file: "counter.txt", content: "0 widgets\n" },
     };
+    applyLabel(box, "start:verify");
     const failing = await box.runBuddy(
       [strays],
       GATEKEEPER_POLLS,

@@ -15,6 +15,8 @@ const CONTROL_LABELS = [
   "start:implement",
   "start:author",
   "start:verify",
+  "start:fix",
+  "start:land",
   "agents:stop",
 ] as const;
 type ControlLabel = (typeof CONTROL_LABELS)[number];
@@ -27,6 +29,8 @@ const START_LABELS: ReadonlyMap<ControlLabel, StartTask> = new Map<
   ["start:author", "author"],
   ["start:implement", "implement"],
   ["start:verify", "verify"],
+  ["start:fix", "fix"],
+  ["start:land", "land"],
 ]);
 
 // The event that explains a present label.

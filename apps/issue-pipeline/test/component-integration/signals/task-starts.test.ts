@@ -1,8 +1,10 @@
-// Author and Verify starts through the real inbox, fake gh and a local bare
-// origin: start:author requests Author for the issue's current requirements
-// and never re-requests requirements Author attempted; start:verify requests
-// Verify for the current head of the issue's linked PR. Each start is spent
-// only by an attempt of its own task, and Implement never waits for Author.
+// Starts through the real inbox, fake gh and a local bare origin:
+// start:author requests Author for the issue's current requirements and never
+// re-requests requirements Author attempted; start:verify, start:fix and
+// start:land request their task for the current head of the issue's linked
+// PR; a new start:implement continues only an interrupted Implement run. Each
+// start is spent only by an attempt of its own task, and Implement never
+// waits for Author.
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
@@ -32,6 +34,7 @@ const SECOND_EVENT = 8002;
 const REMOVED_EVENT = 8003;
 const REAPPLIED_EVENT = 8004;
 const RECORD = 500;
+const EARLIER = `github-label:${REPO}#${ISSUE}:1`;
 const SHA256_HEX = 64;
 const WORK_ITEM: WorkItemRef = { repo: REPO, number: ISSUE };
 const TARGET: TargetState = {
@@ -69,7 +72,10 @@ function requirementsAttempt(
 }
 
 // An attempt of revision task `task` on ISSUE, caused by `signal`.
-function revisionAttempt(task: "verify" | "fix", signal: string): Cause {
+function revisionAttempt(
+  task: "verify" | "fix" | "land",
+  signal: string,
+): Cause {
   return {
     binding: { workItem: WORK_ITEM, task, target: TARGET, revision: REVISION },
     cause: { signal, recordId: RECORD },
@@ -259,6 +265,104 @@ test("start:verify requests Verify for the linked PR's head when accepted", () =
   assert.deepEqual(kit.poll().signals, [start]);
   setCauses(kit, [revisionAttempt("verify", id)]);
   assert.deepEqual(kit.poll().signals, []);
+  assert.equal(kit.posts(), 1);
+});
+
+for (const task of ["fix", "land"] as const) {
+  test(`start:${task} requests ${task} for the linked PR's head and only ${task}'s attempt spends it`, () => {
+    const kit = harness((world) => {
+      world.issues.push(labelledIssue(ISSUE, `start:${task}`, "autumn", EVENT));
+      world.tasks.push(taskAnswers(ISSUE));
+      world.pulls = [openPull(ISSUE, PR)];
+    });
+    const head = kit.push(ISSUE);
+    const id = `github-label:${REPO}#${ISSUE}:${EVENT}`;
+    const first = kit.poll();
+    assert.deepEqual(first.holds, []);
+    const start = {
+      kind: "start",
+      id,
+      workItem: WORK_ITEM,
+      task,
+      pr: PR,
+      head,
+      target: TARGET,
+      provenance: AUTUMN,
+      recordId: RECORD,
+    };
+    assert.deepEqual(first.signals, [start]);
+    assert.partialDeepStrictEqual(records(kit.world(), ISSUE)[0], {
+      request: { kind: "start", task, pr: PR, head, target: TARGET },
+    });
+    setCauses(kit, [revisionAttempt("verify", id)]);
+    assert.deepEqual(kit.poll().signals, [start]);
+    setCauses(kit, [revisionAttempt(task, id)]);
+    assert.deepEqual(kit.poll().signals, []);
+    assert.equal(kit.posts(), 1);
+  });
+}
+
+// ISSUE's interrupted Implement run of its current requirements, caused by
+// an earlier start, which `continues` or not.
+function interrupted(continues: boolean): TaskAnswers["view"]["results"] {
+  return [
+    {
+      binding: {
+        workItem: WORK_ITEM,
+        task: "implement",
+        target: TARGET,
+        requirements: REQUIREMENTS,
+      },
+      run: { id: "0b6d7c4e-1c1a-4f7e-9f61-5d0f2b7a9c31", previous: null },
+      buddyRun: "6f1c3c1e-8a63-4d47-9a37-0d6c8a0c5b11",
+      cause: { signal: EARLIER, recordId: 1 },
+      verdict: "failed",
+      receipt: {
+        summary: "interrupted",
+        evidence: {
+          interrupted: {
+            branch: `agent/issue-${ISSUE}`,
+            head: null,
+            continues,
+          },
+        },
+      },
+      recordId: 2,
+    },
+  ];
+}
+
+test("a new start:implement is accepted for attempted requirements only to continue an interrupted run", () => {
+  const kit = harness((world) => {
+    world.issues.push(labelledIssue(ISSUE, "start:implement", "autumn", EVENT));
+    const answers = taskAnswers(ISSUE);
+    answers.causes = [requirementsAttempt("implement", EARLIER)];
+    answers.previous = "0b6d7c4e-1c1a-4f7e-9f61-5d0f2b7a9c31";
+    answers.view.results = interrupted(false);
+    world.tasks.push(answers);
+  });
+  // An interrupted run that doesn't continue: the start is a retry, and
+  // retries stay unsupported.
+  const refused = kit.poll();
+  assert.deepEqual(refused.signals, []);
+  assert.match(
+    refused.holds[0]?.reason ?? "",
+    mentions(
+      "retrying requirements Implement already attempted is unsupported",
+    ),
+  );
+  assert.equal(kit.posts(), 0);
+  // One that continues: the new start is accepted and delivered.
+  kit.change((world) => {
+    const [answers] = world.tasks;
+    if (answers !== undefined) {
+      answers.view.results = interrupted(true);
+    }
+  });
+  const id = `github-label:${REPO}#${ISSUE}:${EVENT}`;
+  const accepted = kit.poll();
+  assert.deepEqual(accepted.holds, []);
+  assert.partialDeepStrictEqual(accepted.signals, [{ id, task: "implement" }]);
   assert.equal(kit.posts(), 1);
 });
 

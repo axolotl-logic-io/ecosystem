@@ -29,6 +29,7 @@ import {
   isResult,
   readRecords,
 } from "./records.ts";
+import { continuable } from "./requirements-start.ts";
 import { taskEvidence } from "./view.ts";
 
 const ADMISSION = z.union([
@@ -158,10 +159,17 @@ function machineSignals(
   );
 }
 
+// Whether a person's new start of Implement would continue the view's
+// interrupted Implement run.
+function continuesImplement(view: TaskView): boolean {
+  return continuable(view) !== undefined;
+}
+
 export {
   ActionNotAdmitted,
   actionCauses,
   beginAction,
+  continuesImplement,
   finishAction,
   machineSignals,
   previousAction,

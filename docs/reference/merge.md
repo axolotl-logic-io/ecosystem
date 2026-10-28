@@ -14,7 +14,7 @@ Land binds the item PR's current head as its revision, together with the trusted
 4. Green required CI on exactly that head.
 5. The trusted repository's explicit `permissions.land` grant.
 
-A qualified person is an active member of the configured organization, as the [signals reference](signals.md#who-may-apply-a-control-label) defines it. A review stands on a head only when it was submitted against that head's commit. A review of an earlier head never counts. A person's approval of a head that Verify hasn't passed yet waits, and Verify's pass then wakes Land.
+A qualified person is an active member of the configured organization, as the [signals reference](signals.md#who-may-apply-a-control-label) defines it. A review stands on a head only when it was submitted against that head's commit. A review of an earlier head never counts. Land runs only when a qualified person applies `start:land` for the current head. A start applied before Verify passes the head waits, and Land runs once Verify passes it.
 
 A pass is evidence, not permission. The Gatekeeper buddy must also have the right scope, responsibility, account and lander profile. Ownership, the action's cause, stop evidence and write fences are checked again at the merge itself. Absent, pending, failed or unreadable required CI can't authorize Land.
 
@@ -50,9 +50,9 @@ An approved PR can still conflict with its base. Land then doesn't merge. It mar
 
 Land treats a head that doesn't contain the current base as a conflict too, even when GitHub reports it mergeable. It checks for a conflict before it reads CI, so an approved, conflicting PR goes to Fix whatever its CI says. A merge that GitHub refuses at the same head, because the base moved and now conflicts or is missing from the head, is handled the same way.
 
-That result wakes [Fix](review.md#fix). Fix merges the base into the head, pushes and marks the PR ready for review again. A refused Land leaves code writable for Fix; only an unsettled or passed Land fences code writes. See [write authority](authority.md#controlled-writes).
+To resolve it, apply `start:fix`; see [Fix](review.md#fix). Fix merges the base into the head, pushes and marks the PR ready for review again. A refused Land leaves code writable for Fix; only an unsettled or passed Land fences code writes. See [write authority](authority.md#controlled-writes).
 
-A conflict doesn't spend Verify's loop limit. Fix rounds that Land caused don't count toward it.
+A conflict doesn't spend Verify's loop limit.
 
 ## Uncertain effects
 

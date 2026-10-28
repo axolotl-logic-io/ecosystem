@@ -5,8 +5,9 @@
 // (docs/reference/stops-and-labels.md). Implement has one exception: a run
 // lost before it settled. Its start then recovers it by reading alone,
 // even if the requirements changed since. While the requirements are still
-// current, the interrupted result that recovery records causes one
-// continuation from the branch. The start is never spent twice. Pure.
+// current, a new `start:implement` continues the interrupted run from the
+// branch; the interrupted result alone requests nothing. The start is never
+// spent twice. Pure.
 
 import type {
   ActionCause,
@@ -68,26 +69,6 @@ function currentRequirements(view: TaskView, task: RequirementsTask): Binding {
   };
 }
 
-// Implement's readiness for a result signal: ready to continue only for
-// the interrupted result that is continuable now.
-function continuationReadiness(
-  signal: QualifiedSignal,
-  view: TaskView,
-): Readiness | null {
-  const shared = sensed(signal, view, "result");
-  if (shared !== undefined) {
-    return shared;
-  }
-  if (signal.kind !== "result" || signal.binding.task !== "implement") {
-    return null;
-  }
-  const followed = continuable(view);
-  if (followed === undefined || followed.recordId !== signal.recordId) {
-    return null;
-  }
-  return { state: "ready", binding: currentRequirements(view, "implement") };
-}
-
 // The readiness of `task` for `signal`: null unless it is a start of
 // `task` on this item.
 function startReadiness(
@@ -125,9 +106,7 @@ function startReadiness(
     return waiting(`${NAMES[task]} passed these requirements`);
   }
   if (task === "implement" && continuable(view) !== undefined) {
-    return waiting(
-      `Implement run ${latest.run.id} was interrupted; its result continues it`,
-    );
+    return { state: "ready", binding: currentRequirements(view, task) };
   }
   return held(
     `${NAMES[task]} run ${latest.run.id} of these requirements is ${latest.verdict}; a start never retries it`,
@@ -136,7 +115,7 @@ function startReadiness(
 
 // Why a new attempt of `task` for `binding` may not be recorded on `view`,
 // or null. Only a continuation of a continuable interrupted Implement run,
-// caused by that run's result, may follow an attempt of the same
+// caused by a person's new start, may follow an attempt of the same
 // requirements.
 function startUnmet(
   view: TaskView,
@@ -162,12 +141,12 @@ function startUnmet(
   }
   if (
     followed !== undefined &&
-    cause?.recordId === followed.recordId &&
-    cause.signal === `result:${String(followed.recordId)}`
+    cause?.signal.startsWith("github-label:") === true &&
+    cause.signal !== followed.cause.signal
   ) {
     return null;
   }
   return `${NAMES[task]} was already attempted for these requirements`;
 }
 
-export { continuationReadiness, startReadiness, startUnmet };
+export { continuable, startReadiness, startUnmet };

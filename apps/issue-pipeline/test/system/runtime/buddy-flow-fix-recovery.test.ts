@@ -24,7 +24,13 @@ import type {
   Machine,
   PlannedSession,
 } from "./buddy-flow-test-kit.ts";
-import { DEVELOPER, HUMAN, ISSUE, machine } from "./buddy-flow-test-kit.ts";
+import {
+  applyStart,
+  DEVELOPER,
+  HUMAN,
+  ISSUE,
+  machine,
+} from "./buddy-flow-test-kit.ts";
 
 const FIXER: BuddyChoice = { role: "developer", tasks: ["fix"] };
 // The Fix acts on one poll and its recovery on the next.
@@ -41,7 +47,6 @@ const FIX_ASSIGNED = 3;
 // refuses that post after the real push and replies, and nothing else.
 const PASSED_EVIDENCE = '"replies":[';
 const UNRESOLVED_REASON = /was left unresolved: counter\.txt/u;
-const NEVER_RETRIED = /never retried automatically/u;
 const RECONCILED_BY_PERSON = /a person reconciles it$/u;
 // A GitHub user who is no member of the organization (baseWorld()).
 const OUTSIDER = "mallory";
@@ -124,6 +129,7 @@ test("Fix reconciles its own pushed head and replies without another attempt, se
         replies: [{ comment: thread, reply: "The count is a number now." }],
       },
     };
+    applyStart(box, "start:fix");
     const running = box.runBuddy([fixes], RECOVERY_POLLS, FIXER, signal);
     // A person takes the issue while the original Fix runs. Its recovery
     // only settles the pipeline's own run by reading, so it doesn't back off.
@@ -228,6 +234,7 @@ test("a Fix with no thread to answer reconciles its pushed head from its own pus
       awaitAbort: false,
       reply: { outcome: "done", summary: "Kept both counts.", replies: [] },
     };
+    applyStart(box, "start:fix");
     const run = await box.runBuddy([resolves], RECOVERY_POLLS, FIXER, signal);
     assert.equal(run.status, 0, run.stderr);
     const fix = run.actions.filter((action) => action.task === "fix");
@@ -299,6 +306,7 @@ test("a reply that forges a Fix run's mark doesn't settle that run", async ({
         replies: [{ comment: thread, reply: "The count is a number now." }],
       },
     };
+    applyStart(box, "start:fix");
     const first = await box.runBuddy([fixes], FIX_POLLS, FIXER, signal);
     assert.equal(first.status, 0, first.stderr);
     const original = first.actions.find((action) => action.task === "fix");
@@ -353,6 +361,7 @@ test("a Fix session that leaves a real merge conflict keeps its evidence, pushes
     const item = await implemented(box, signal);
     const target = advanceTarget(box, "counter.txt", "four widgets\n");
     landFindsConflict(box, item, { target, cause: item.result });
+    applyStart(box, "start:fix");
     const run = await box.runBuddy([UNRESOLVED], FIX_POLLS, FIXER, signal);
     assert.equal(run.status, 0, run.stderr);
     const fix = run.actions.filter((action) => action.task === "fix");
@@ -368,7 +377,8 @@ test("a Fix session that leaves a real merge conflict keeps its evidence, pushes
     assert.deepEqual(recovered(box), [
       ["commits.bundle", "conflict-stages.json"],
     ]);
-    // The failed binding is never retried: a new activation holds it.
+    // The failed binding is never retried: with its start spent, a new
+    // activation stays idle until it stops.
     const again = await box.runBuddy([], FIX_POLLS, FIXER, signal);
     assert.equal(again.status, 0);
     assert.equal(
@@ -376,8 +386,7 @@ test("a Fix session that leaves a real merge conflict keeps its evidence, pushes
       1,
     );
     const loop = again.run.loops.find((entry) => entry.task === "fix");
-    assert.equal(loop?.state, "held");
-    assert.match(loop?.reason ?? "", NEVER_RETRIED);
+    assert.equal(loop?.state, "stopped");
     assert.equal(
       fixRecords(box).filter((record) => record.kind === "attempt").length,
       1,

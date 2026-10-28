@@ -16,7 +16,7 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import type { Machine, PlannedSession } from "./buddy-flow-test-kit.ts";
-import { ISSUE, machine } from "./buddy-flow-test-kit.ts";
+import { applyStart, ISSUE, machine } from "./buddy-flow-test-kit.ts";
 
 const SLUG = "acme__widgets";
 const COUNTS: PlannedSession = {
@@ -241,6 +241,7 @@ test("Implement, Verify's checks and Verify's review session each use the issue'
       tasks: ["implement"],
     });
     assert.equal(developer.status, 0, developer.stderr);
+    applyStart(box, "start:verify");
     const gatekeeper = await box.runBuddy([REVIEWS], GATEKEEPER_POLLS, {
       role: "gatekeeper",
       tasks: ["verify"],

@@ -21,14 +21,16 @@ The synchronous forms run the same code as the asynchronous ones. There is one s
 
 ## Control labels
 
-The component reads four issue labels as control labels:
+The component reads six issue labels as control labels:
 
 - `start:author` requests Author for the issue's current requirements.
 - `start:implement` requests Implement for the issue's current requirements.
 - `start:verify` requests Verify for the current head of the issue's linked PR.
+- `start:fix` requests Fix for the current head of the issue's linked PR.
+- `start:land` requests Land for the current head of the issue's linked PR.
 - `agents:stop` stops all work on the issue.
 
-A label on a pull request grants nothing. No label requests Safe Refactor, Fix or Land.
+A start label is the only thing that requests a task. No task result or PR review requests one. A label on a pull request grants nothing. Safe Refactor has no pipeline action and no label.
 
 To accept a label for the first time, the component needs both of these:
 
@@ -97,7 +99,7 @@ The record holds these fields:
 | Source | Request |
 |---|---|
 | `start:author` or `start:implement` | `start` with the task, the requirements digest and the target, read at acceptance |
-| `start:verify` | `start` with `task: "verify"`, the linked PR, its `head` commit and the target, read at acceptance |
+| `start:verify`, `start:fix` or `start:land` | `start` with the task, the linked PR, its `head` commit and the target, read at acceptance |
 | A PR review | `review` with GitHub's review id, the PR, the `commit` it was submitted against and its `state` |
 | `agents:stop` | `stop` |
 
@@ -118,9 +120,11 @@ A poll delivers an accepted start only when all of these hold:
 - For Author and Implement, no attempt of that task exists for the same requirements, and `previousAction` reports no action for the exact binding. Otherwise the start is inert.
 - The producer still qualifies, by retained user id.
 
-A new Author or Implement start event for requirements that task already attempted isn't accepted. It holds with "retrying requirements Implement already attempted is unsupported", naming the task. No label or operation continues or retries work. Implement doesn't wait for Author.
+A new Author or Implement start event for requirements that task already attempted isn't accepted. It holds with "retrying requirements Implement already attempted is unsupported", naming the task. Implement doesn't wait for Author.
 
-A `start:verify` binds the head of the issue's linked PR when the start is accepted. The linked PR comes from the issue's branch. With no linked PR, or a PR that isn't open, the start holds and nothing is recorded. A later push doesn't rewrite the accepted head; Verify's task decides whether that head is still current, and waits for a new start when it isn't. Verify starts have no retry gate in the component, because Verify binds a revision that the component can't compute.
+The one exception is an interrupted Implement run that can continue, as [interrupted Implement runs](task-results.md#interrupted-implement-runs) describes. A new `start:implement` for its requirements is accepted and continues it.
+
+A `start:verify`, `start:fix` or `start:land` binds the head of the issue's linked PR when the start is accepted. The linked PR comes from the issue's branch. With no linked PR, or a PR that isn't open, the start holds and nothing is recorded. A later push doesn't rewrite the accepted head; the task decides whether that head is still current, and waits for a new start when it isn't. These starts have no retry gate in the component, because their tasks bind a revision that the component can't compute.
 
 ## Reviews
 
@@ -130,7 +134,7 @@ The reviewer must qualify the same way a label's producer does. A machine accoun
 
 A poll delivers an accepted review only while it still stands, checked against a fresh listing, and while its reviewer still qualifies. A stop revokes reviews as it revokes starts, and the component doesn't deliver them while the issue's execution is owned.
 
-A review grants nothing on its own. A `CHANGES_REQUESTED` review on the current head wakes Fix, and an `APPROVED` one counts toward Land, as the [stops and labels reference](stops-and-labels.md#human-reviews) describes. Whether a review binds the current head is the task's decision, not the component's.
+A review grants nothing on its own and requests no task. A `CHANGES_REQUESTED` review on the current head is something a started Fix answers, and an `APPROVED` one counts toward Land, as the [stops and labels reference](stops-and-labels.md#human-reviews) describes. Whether a review binds the current head is the task's decision, not the component's.
 
 Reviews are found only on issues that the component already polls: issues with a control label or an accepted record. Every issue the pipeline delivers gets a record when its start is accepted.
 
