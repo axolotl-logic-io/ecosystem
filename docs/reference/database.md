@@ -2,7 +2,7 @@
 
 Ecosystem owns one PostgreSQL service and the `@ecosystem/db` workspace in `packages/db/`. Apps share its connection, Drizzle schema and migrations. This database is independent of Project Buddy's databases. It uses native PostgreSQL connections through `pg`, not Project Buddy's Neon HTTP proxy.
 
-The issue pipeline can explicitly select PostgreSQL for issue execution, model-session reservations, consumer completion and Land integration turns. GitHub remains the default backend. Requirements, accepted human signals, attempts and results, questions, checkpoints and reviews still use GitHub. The workflow dashboard continues to read run observations; this change does not give it database credentials or add a database view.
+The issue pipeline can explicitly select PostgreSQL for issue execution, model-session reservations, consumer completion and Land integration turns. GitHub remains the default backend. Requirements, accepted human signals, attempts and results, questions, checkpoints and reviews still use GitHub. The workflow dashboard reads separate monitoring tables; see [monitoring schema](#monitoring-schema).
 
 The database is short-term operational storage. It keeps buddies from starting the same work twice, and it records who held what and when. It is not the only record of the work, and two instances of it may disagree. A reset or a second database can let two buddies work on the same issue. That costs duplicate effort but never loses or overwrites work; see [disagreement and reset](#disagreement-and-reset).
 
@@ -53,6 +53,18 @@ A committed claim is ownership. There is no pending-request queue, confirmation 
 Foreign keys, check constraints and integrity triggers protect scope relationships and lifecycle transitions within one database. Resource claims require the matching live issue claim. An issue cannot release while its resource claims remain live. A reservation cannot release while a registered consumer remains unfinished. Capacity cannot change until the pool drains. Claim identity and history are immutable; release and completion cannot be reversed. These rules apply to direct SQL writes as well as the shared client. Database administrators remain trusted and must not disable these protections to resume work.
 
 The transaction stores the claim and its audit event together. Typed relational rows grant ownership; audit JSON never grants it. Per-repository/base row locks serialize coordination changes. Lost responses, process exit, elapsed time and closed issues release nothing. Reconcile the original invocation after an unknown outcome; do not substitute a new action UUID or retry a GitHub effect.
+
+## Monitoring schema
+
+The [workflow dashboard](../../apps/workflow-dash/README.md) reads three monitoring tables. Its collector writes them from runtime records, session transcripts and GitHub issues.
+
+| Table | Purpose |
+| --- | --- |
+| `monitor_entities` | The latest snapshot of each issue, action, session, buddy and health record. An older observation never overwrites a newer one. |
+| `monitor_events` | Redacted transcript events with per-turn usage, context and compaction. `(source, position)` is unique, so a replay never duplicates an event. |
+| `monitor_cursors` | Each transcript source's byte offset, advanced in the same transaction as its events. |
+
+Monitoring tables have no foreign keys to coordination tables, and coordination never reads them. They describe work; they never grant ownership. Monitoring data has no automatic expiry. Clearing the `monitor_*` tables is safe while buddies run; emptying the coordination tables is not.
 
 ## Disagreement and reset
 

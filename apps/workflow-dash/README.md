@@ -1,6 +1,6 @@
 # Workflow dashboard
 
-An opt-in, read-only Pi extension. `/dash` shows the buddy runtime's buddy-run and action-run observations, GitHub items and generic subagent runs. It composes editable requests to the caller, not direct control operations. It is not a scheduler.
+An opt-in, read-only Pi extension. `/dash` shows current work, elapsed time, finished and remaining work, problems, context growth and token usage across Ecosystem and Project Buddy. It reads these values from the shared database. It is not a scheduler and grants no authority.
 
 The [shared glossary](../../GLOSSARY.md) defines the language. A buddy pairs a role with an identity. A buddy run is one activation of the action loops of all the buddy's tasks; it is not one task execution or one model session. Each action that a buddy run admits for one task and work item is an action run. A model session has its own id and names its action run as its parent; session, run and checkpoint identities are not interchangeable.
 
@@ -16,67 +16,68 @@ To try a reviewed checkout without discovering the older extension, start a sepa
 pi --no-extensions --extension ./apps/workflow-dash/index.ts --workflow-dash
 ```
 
-This command disables other discovered extensions for that invocation. It is an operator acceptance step, not an automated test. It starts bounded local reads and GitHub reads, but sends no model prompt. Omit `--workflow-dash` to leave collection inactive until `/dash` or Ctrl+Shift+J. `/dash off` closes watchers and timers; `/reload` resets activation. Non-TUI modes remain inactive.
+This command disables other discovered extensions for that invocation. It is an operator acceptance step, not an automated test. It starts bounded, read-only database queries, but sends no model prompt. Omit `--workflow-dash` to leave the view inactive until `/dash` or Ctrl+Shift+J. `/dash off` closes the database connection; `/reload` resets activation. Non-TUI modes remain inactive.
 
 For persistent cutover, first review the exact source and finish its gates. Preserve the old symlink and configuration, then replace the one existing extension entry with a link to this app in the chosen durable checkout. Do not add a second discovered copy. Reload only the sessions that should use it. To roll back, restore that preserved entry and reload those sessions. A source merge alone does not install or activate dash.
 
-## Views
+## Work view
 
-The panes are **Buddy runs**, **Action runs**, **Issues** and **Subagent runs**. Narrow terminals keep the active tab's full name. Tab and Shift+Tab switch panes; Up/Down select; PageUp/PageDown scroll details; Enter opens the whole recorded observation; Escape closes.
+`/dash` opens one combined view of Ecosystem and Project Buddy work. Every value comes from the shared database's monitoring tables; the view reads no runtime files and calls no GitHub API. `f` cycles the repository filter.
 
-### Buddy runs and action runs
+Work appears in these groups:
 
-These panes read the observations that the buddy runtime writes under the `runs` folder, as described in the [runtime runs reference](../../docs/reference/runtime-runs.md):
+| Group | Meaning |
+| --- | --- |
+| **ACTIVE** | A task action is running or waiting, with its current step. |
+| **NEEDS YOU** | A task action failed or is blocked, with the first line of its reason. |
+| **PENDING** | Open issues with no running action. A finished task is not a landed issue, and a start label alone is not an authorized queued task. |
+| **SUBAGENTS** | Generic subagent sessions that name no pipeline action. |
+| **FINISHED** | Issues that closed or landed today. |
 
-- A buddy run is `runs/buddy-runs/ID/run.json`.
-- An action run is `runs/SLUG/issue-N/actions/ID/run.json`, where `SLUG` is the repository with `/` replaced by `__`.
-- A session's log is `sessions/KEY.jsonl` beside its action run's `run.json`, where `KEY` is the session's recorded `key`.
+Each row shows the buddy, the task step, elapsed time, the session's latest context and the action's total tokens. An active session also shows the age of its last recorded activity. Elapsed time stops when the action ends. Long duration or inactivity alone is not a failure. A dash (`—`) means no measurement, never zero.
 
-The dashboard reads action runs for the configured `repos` and for every repository a readable buddy run names in its scope. It keeps its own reader copy of the published schemas in `runtime-run-schema.ts`, because the pipeline module that exports them also reads the pipeline's environment and configuration. A test runs the pipeline in a subprocess and fails if the two copies differ.
+The header shows when the collector last wrote. It says **Status delayed** when that is more than 30 seconds ago, and **partial data** when collection skipped something. `n` lists notices, such as unreadable records, collection bounds and buddy loops that are held or waiting.
 
-Runs link only through the fields they record. A buddy run names its `previous` buddy run and each task loop's current `action`. An action run names its `buddyRun` and `previous` action run, and each session names its `parent` action run. Details show each link with whether its target was observed. The dashboard never links runs by name, time, PID or shared issue, and it never infers an account, identity, parent or authority.
+## Task and session details
 
-A buddy run's condition is one of these:
+Enter on a work row lists its task attempts and their sessions. Enter on a session opens its transcript.
 
-- **Process observed**: it records `running` or `waiting`, its lease is unexpired, its process observation is no older than its lease, it was recorded on this host, and its PID runs Node with `buddy.mjs` or `buddy.ts` as the main script, started with the run. This is a matching process, not proof of the run's identity or of its health.
-- **Stale**: an expired lease, an old process observation, an absent process, another program at that PID, or a process that started at another time.
-- **Unknown**: another host's record, a denied process inspection, or an observation from the future.
-- **Stopped** or **Ended**: the run's own recorded state.
+The session header separates two measures:
 
-An action run's condition is its own recorded state. A stopped or ended action run stays stopped or ended. A running or waiting action run is **Unconfirmed**, because it has no process observation of its own. Its buddy run's condition is shown separately and never makes the action run live.
+- **Context** is the session's latest input context: input, cache reads and cache writes from its newest measured turn. It also shows the starting value, the peak, the context window and compaction target from the recorded runtime policy, and the number of compactions. Context can fall after a compaction.
+- **Tokens** is cumulative processing over all turns, split into input, output, cache read and cache write. It includes nested model calls and compaction summaries. The view never sums context across sessions.
 
-Details also warn about an unknown outcome, an uncertain checkpoint, a retained issue execution, a reservation recorded as held, an execution instance or session parent that differs from the action run, a missing session log and a loop action that wasn't observed. An unknown outcome needs reconciliation by reading its effects, never repetition.
+The transcript follows new events. Moving up pauses it; End resumes. Tab filters to messages, reasoning or tools; Enter expands an event; `[` loads earlier events, 100 at a time. Reasoning appears only when the provider exposed it in the record. Transcript text is untrusted data; the view never sends it to a model.
 
-### Coverage
+## Collector
 
-Each run pane ends with a **Coverage** row. Coverage is partial when any observation is unreadable, the read bounds omit runs or the runs folder can't be listed. Its details list each unreadable file and why.
+A separate collector process writes the monitoring tables. The view only reads them. Start the collector from the repository root:
 
-A file becomes an unreadable problem, never a run, when it's missing, a symlink, larger than 1 MiB, not JSON, of another kind or version, or doesn't match the schema. A run whose recorded id, repository or issue differs from its folder is a problem too. The dashboard reads the newest 200 buddy runs and the newest 500 action runs by folder time.
+```bash
+npm run collect --workspace @ecosystem/workflow-dash
+```
 
-### Subagent runs
+It polls local records every 5 seconds and GitHub issues every 2 minutes. `--once` collects once and exits. `--config PATH` and `--credentials PATH` override the defaults.
 
-The **Subagent runs** pane reads generic pi-subagents harness records (`status.json`, `events.jsonl` and output logs). A subagent run is not a buddy run: it names no buddy, task, action run or parent, and none is inferred from its launch name, model, mission or path. An account appears only when the record has a validated `account` string or `{provider, login}`; it is unverified metadata, never an authenticated identity. Records default to runs started today. Pending questions come from bounded contact events, not an authoritative mailbox.
+The collector imports:
 
-### Observation limits
+- buddy runs, action runs and their sessions from the runtime records described in the [runtime runs reference](../../docs/reference/runtime-runs.md);
+- each session's transcript, appending only complete new lines;
+- generic subagent run statuses and events;
+- open and closed issues for each configured repository.
 
-- A hold that wasn't found is only **not observed**.
-- `pb-web` activity is a positive observation, not a resource reservation. Its absence means **not observed**, not free.
-- GitHub lists stop at 100 open items per repository and kind, exclude ecosystem titles beginning `ops: migrate`, and wait at least two minutes between attempts. Errors appear in issue details. Cached main is not live target evidence.
+Sessions link to actions only through recorded parent identifiers, never by name, time or shared issue. Each transcript file has a cursor, so a restart or replay never duplicates messages or tokens. A truncated or replaced file is refused, not reread. Older observations never overwrite newer outcomes. A failed GitHub read keeps the previous issues and records a notice.
 
-## Requests and tools
+Before storage, the collector removes credentials in assignments, authorization headers and connection URLs, and terminal control sequences. It withholds tool output that reads credential files and clips very large bodies. Monitoring data has no automatic expiry. To clear it, delete rows from the `monitor_*` tables only; never empty the coordination tables while buddies run.
 
-`a` opens selected-item templates; `g` opens global templates; `t` opens a free-text caller editor. Templates ask the caller to investigate a run, to assess a scoped stop, or to reconcile an unknown outcome by reading its effects. They state that a dashboard condition is an observation, not proof.
+## Read tools
 
-Every request is editable. Cancelled, blank or invalidated dialogs send nothing. Only submitted text reaches `sendUserMessage`, normally when idle or as a steer when busy, with prompt-template expansion disabled. Requests do not grant authorization. Issue titles, missions, output and thread content never enter templates automatically.
+The extension keeps two read-only tools for agents. They read the runtime records directly, on demand, and do not use the database:
 
-The read-only tools are:
+- `buddy_runs {}`: every readable buddy run and action run, with links, unreadable files and coverage.
+- `action_run {id}`: one action run's whole record with its buddy run, previous action run and session links.
 
-- `buddy_runs {}`: every observed buddy run and action run with its condition and links, the unreadable observations and coverage.
-- `action_run {id}`: one action run's whole observation with its buddy run, previous action run and session links, including each session log's path and state.
-
-Tools activate only with collection, declare read-only annotations and cap text output at 12 KB.
-
-Enter on an issue runs only `gh-thread NUMBER -R REPOSITORY`. The filtered text stays UI-local data and is never automatically sent to a model. PR entries are read-only. `r` refreshes local data and requests a cache refresh; `p` opens the plan pager.
+Tools register when the dashboard activates, declare read-only annotations and cap output at 12 KB.
 
 ## Configuration
 
@@ -94,13 +95,24 @@ Edit `workflow-dash.json` beside `index.ts`, then reload the intended session. M
 
 `UID` is the current Unix user ID. Override `subagentRuns` if the external runtime uses another layout. No private runtime configuration is read to discover it.
 
-The dashboard no longer reads the former names `buddyRuns`, `agentRuns` and `operators`; set `subagentRuns` instead. `--workflow-dash` is the only activation flag. The widget key keeps the old technical name `pipeline-dash`.
+The dashboard no longer reads the former names `buddyRuns`, `agentRuns` and `operators`; set `subagentRuns` instead. `--workflow-dash` is the only activation flag. The collector uses the same configuration file; the view uses only `repos`.
+
+### Database access
+
+The view and the collector each read a private credential file holding one `DATABASE_URL` line:
+
+| Process | Default file | Grants it needs |
+| --- | --- | --- |
+| View | `~/.config/issue-pipeline/monitoring-reader.env` | `SELECT` on `monitor_entities` and `monitor_events` |
+| Collector | `~/.config/issue-pipeline/monitoring-writer.env` | `SELECT`, `INSERT` and `UPDATE` on the three `monitor_*` tables, and their sequence |
+
+Each file must be a regular, owner-only file, not a symlink. Neither process falls back to `DATABASE_URL` or to the pipeline's coordination credentials. Give neither role access to the coordination tables. The view also runs each read in a read-only transaction.
 
 ## Safety
 
-No workflow state, hold, lease, credential, resource or GitHub writes. No run launches, termination, subagent control or model calls. Signal-0 process probes check existence and permission; they do not terminate a process. Subprocesses have bounded timeouts and buffers.
+The view makes no writes. The collector writes only the `monitor_*` tables; it never touches coordination claims, holds, leases, resources or GitHub. Neither launches or stops runs, controls subagents or calls a model. Subprocesses have bounded timeouts and buffers.
 
-The data layer refuses `.env*` paths and the known credential-store paths, including resolved symlink targets. Directory enumeration does not traverse symlinked entries. GitHub reads use the existing `gh` environment without obtaining or changing authentication.
+The data layer refuses `.env*` paths and the known credential-store paths, including resolved symlink targets. Directory enumeration does not traverse symlinked entries. Transcript files must stay inside their configured runs folder. GitHub reads use the existing `gh` environment without obtaining or changing authentication.
 
 ## Check
 
@@ -113,6 +125,12 @@ npm test --workspace @ecosystem/workflow-dash
 npm run lint --workspace @ecosystem/workflow-dash
 ```
 
+The database tests need the disposable test service from `compose.test.yml`. Set `TEST_DATABASE_URL` to it, then run:
+
+```bash
+npm run test:database --workspace @ecosystem/workflow-dash
+```
+
 The equivalent mise tasks are `//apps/workflow-dash:typecheck`, `:test`, `:lint` and `:check`. `check` includes all three gates. The root design and type rules apply, with the same narrow Node process-boundary and Pi default-export exceptions used by the pipeline. The full app gate passes without suppressing inherited lint debt.
 
-Tests go through a real dependency: temporary files, the runtime's configuration file and watchers, or the extension entrypoint with a fake Pi host. They never activate a live extension or call a real model. The [preserved pre-import report](docs/history/local-dash-report.md) is historical, not current acceptance evidence. Its terminal captures remain in the original directory and are not imported. The [import validation report](REPORT.md) records the 2026-10-22 import's checks; it predates the buddy-run and action-run views.
+Tests go through a real dependency: temporary files, a disposable PostgreSQL database, the runtime's configuration file and watchers, or the extension entrypoint with a fake Pi host. They never activate a live extension or call a real model. The [preserved pre-import report](docs/history/local-dash-report.md) is historical, not current acceptance evidence. Its terminal captures remain in the original directory and are not imported. The [import validation report](REPORT.md) records the 2026-10-22 import's checks; it predates the buddy-run and action-run views.

@@ -16,6 +16,9 @@
         "session-source.ts",
         "subagent-runs.ts",
         "runtime.ts",
+        "monitor/collect.ts",
+        "monitor/collector.ts",
+        "monitor/connection.ts",
         "test/**"
       ],
       "linter": {

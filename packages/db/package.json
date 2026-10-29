@@ -5,6 +5,8 @@
   "exports": {
     ".": "./src/client.ts",
     "./coordination": "./src/coordination.ts",
+    "./monitoring": "./src/monitoring.ts",
+    "./monitoring-protocol": "./src/monitoring-protocol.ts",
     "./schema": "./src/tables/coordination.ts",
     "./protocol": "./src/protocol.ts",
     "./testing": "./test/support/test-database.ts"
