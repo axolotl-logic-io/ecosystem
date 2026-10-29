@@ -1,7 +1,8 @@
 // Start signals through the real inbox, gh subprocesses and journal: a
 // member's start:implement label is accepted once as an append-only record,
-// rediscovered without its label, spent by an Implement attempt, inert once
-// Implement attempted its requirements, and never re-requested as a retry.
+// rediscovered without its label, and spent only by an Implement attempt that
+// names it. A fresh start after another cause's attempt requests a retry; the
+// task decides whether that retry may run.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -168,7 +169,7 @@ test("an Implement attempt naming the start spends it, whatever its binding", ()
   assert.deepEqual(spent.holds, []);
 });
 
-test("a start is inert once Implement attempted its requirements under another cause", () => {
+test("an accepted start stays pending after an attempt under another cause", () => {
   const kit = startWorld();
   kit.poll();
   kit.change((world) => {
@@ -187,10 +188,10 @@ test("a start is inert once Implement attempted its requirements under another c
       ];
     }
   });
-  assert.deepEqual(kit.poll().signals, []);
+  assert.partialDeepStrictEqual(kit.poll().signals, [{ id: SIGNAL }]);
 });
 
-test("reapplying start to attempted requirements holds as an unsupported retry", () => {
+test("reapplying start to attempted requirements is accepted as a retry request", () => {
   const kit = harness((world) => {
     world.issues.push(labelledIssue(ISSUE, "start:implement", "autumn", EVENT));
     const answers = taskAnswers(ISSUE);
@@ -205,35 +206,15 @@ test("reapplying start to attempted requirements holds as an unsupported retry",
         cause: { signal: "github-label:acme/widgets#7:1", recordId: 3 },
       },
     ];
-    world.tasks.push(answers);
-  });
-  const inbox = kit.poll();
-  assert.deepEqual(inbox.signals, []);
-  assert.equal(inbox.holds.length, 1);
-  assert.match(
-    inbox.holds[0]?.reason ?? "",
-    mentions(
-      `start:implement event ${EVENT} not accepted: Implement already attempted these requirements`,
-      "retrying requirements Implement already attempted is unsupported",
-    ),
-  );
-  assert.equal(kit.posts(), 0);
-});
-
-test("a previous Implement action for the exact binding holds a new start", () => {
-  const kit = harness((world) => {
-    world.issues.push(labelledIssue(ISSUE, "start:implement", "autumn", EVENT));
-    const answers = taskAnswers(ISSUE);
     answers.previous = "0b6c0b5e-6e1f-4a43-8d38-55b3c84a8f01";
     world.tasks.push(answers);
   });
   const inbox = kit.poll();
-  assert.deepEqual(inbox.signals, []);
-  assert.match(
-    inbox.holds[0]?.reason ?? "",
-    mentions("already ran for this binding; retrying"),
-  );
-  assert.equal(kit.posts(), 0);
+  assert.deepEqual(inbox.holds, []);
+  assert.partialDeepStrictEqual(inbox.signals, [
+    { id: SIGNAL, task: "implement" },
+  ]);
+  assert.equal(kit.posts(), 1);
 });
 
 test("an unreadable task view holds the start and marks the poll incomplete", () => {

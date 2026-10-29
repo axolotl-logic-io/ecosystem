@@ -112,11 +112,13 @@ When a buddy next reads the issue's start, it settles the lost run with `impleme
 
 - `branch` is the issue's branch.
 - `head` is the branch's commit on GitHub now, or null when nothing was pushed.
-- `continues` is true when the run's requirements are still the issue's current requirements and they have attempts left under the three-attempt ceiling.
+- `continues` is true when the run's requirements are still the issue's current requirements.
 
-When `continues` is true, a person's new `start:implement` continues the run. The result alone requests nothing. The continuation is a new attempt, caused by that new start and linked to the lost run by `run.previous`. Its checkout starts from the pushed branch, and its writing session is told to finish that work rather than start again. It goes through the same prerequisite, stop and permission checks as any attempt. The original start is never spent twice.
+When `continues` is true, a person's new `start:implement` continues the run. The result alone requests nothing. The continuation is a new attempt, caused by that new start and linked to the lost run by `run.previous`. Its checkout starts from the pushed branch, it reuses the issue's draft PR, and its writing session is told to finish that work rather than start again. It goes through the same prerequisite, stop and permission checks as any attempt. The original start is never spent twice.
 
-When `continues` is false, a new start for the same requirements isn't accepted. Edit the requirements to request new work.
+When `continues` is false, the requirements changed. A new start for the current requirements requests new work.
+
+Author has the same read-only settlement, `author-reconcile`. It checks whether the lost run posted its Gherkin or its questions, and records `passed`, `refused` or `failed` to match.
 
 ## Guarded operations
 

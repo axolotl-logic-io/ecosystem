@@ -137,7 +137,7 @@ test("Implement hardens its change in a fresh session before it opens the PR", a
   }
 });
 
-test("a hardening that can't finish fails Implement before any PR, and a start never retries it", async ({
+test("a hardening that can't finish fails Implement with its PR still a draft, and its spent start never retries it", async ({
   signal,
 }) => {
   const box = machine();
@@ -155,7 +155,10 @@ test("a hardening that can't finish fails Implement before any PR, and a start n
     assert.equal(first.actions.length, 1);
     assert.equal(action.verdict, "failed");
     assert.match(action.reason ?? "", UNANSWERED);
-    assert.deepEqual(box.world().pulls, []);
+    assert.deepEqual(
+      (box.world().pulls ?? []).map((pull) => [pull.state, pull.isDraft]),
+      [["OPEN", true]],
+    );
     assert.deepEqual(
       marked(box.world(), "task-result").map((item) => [
         item.kind,

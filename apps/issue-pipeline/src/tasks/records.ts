@@ -27,8 +27,8 @@ const MARK = "<!-- agent-pipeline:task-result\n";
 const END = "\n-->";
 const MARK_END_PATTERN = /-->/gu;
 const ESCAPED_MARK_END = "--\\u003e";
-// Each task's attempts per binding. At the limit the task stops for a
-// person; a new binding starts a new budget.
+// Legacy machine-caused attempts retain their ceiling. Explicit human
+// starts have no attempt limit, but each start can cause only one attempt.
 const TASK_ATTEMPTS = 3;
 const VERSION = 2;
 
@@ -176,6 +176,18 @@ function checkFirstAttempt(earlier: readonly Row[], row: Row<Attempt>): void {
 // run settled failed, and only within the binding's budget.
 function checkAttempt(rows: readonly Row[], row: Row<Attempt>): void {
   const earlier = rows.filter((item) => item.id < row.id);
+  if (
+    row.cause.signal.startsWith("github-label:") &&
+    earlier
+      .filter(isAttempt)
+      .some(
+        (item) =>
+          item.binding.task === row.binding.task &&
+          item.cause.signal === row.cause.signal,
+      )
+  ) {
+    hold(`run ${row.run.id} reused a spent start or cause`);
+  }
   const same = earlier
     .filter(isAttempt)
     .filter((item) => sameBinding(item.binding, row.binding));
@@ -194,7 +206,10 @@ function checkAttempt(rows: readonly Row[], row: Row<Attempt>): void {
   if (settled.verdict !== "failed") {
     hold(`run ${row.run.id} reran a ${settled.verdict} binding`);
   }
-  if (same.length >= TASK_ATTEMPTS) {
+  if (
+    same.length >= TASK_ATTEMPTS &&
+    !row.cause.signal.startsWith("github-label:")
+  ) {
     hold(`run ${row.run.id} exceeds the binding's ${TASK_ATTEMPTS} attempts`);
   }
 }

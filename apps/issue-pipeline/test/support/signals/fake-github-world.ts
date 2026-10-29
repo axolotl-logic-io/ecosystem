@@ -196,9 +196,9 @@ const WORLD = z.strictObject({
   // poll's first open-issue listing is its `atPoll`th, and a concurrent
   // writer's comment that GitHub shows right after the first POST whose
   // body contains every one of `after`, and a text whose every comment
-  // POST fails before it applies.
+  // POST or edit fails before it applies.
   collaborators: z.array(z.string()).optional(),
-  failPostsContaining: z.string().optional(),
+  failWritesContaining: z.string().optional(),
   failPostOnceContaining: z.string().min(1).optional(),
   race: z
     .strictObject({

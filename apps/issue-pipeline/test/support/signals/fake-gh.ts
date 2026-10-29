@@ -475,7 +475,7 @@ function post(
     commit(world);
     fail("gh: HTTP 502: Bad Gateway");
   }
-  const marked = world.failPostsContaining;
+  const marked = world.failWritesContaining;
   if (
     world.post === "lost-before-apply" ||
     (marked !== undefined && body.includes(marked))

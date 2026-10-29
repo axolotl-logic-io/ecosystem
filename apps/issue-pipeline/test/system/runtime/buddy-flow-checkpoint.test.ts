@@ -125,10 +125,13 @@ test("a rival push keeps both workers' commits and the action's work goes to its
       box.git(["log", "-1", "--format=%s", recovery]),
       COMMIT.message,
     );
-    // The run failed without opening a PR for the branch.
+    // The run failed and left its early PR a draft.
     assert.equal(action.verdict, "failed");
     assert.ok(action.reason?.includes(recovery));
-    assert.deepEqual(box.world().pulls ?? [], []);
+    assert.deepEqual(
+      (box.world().pulls ?? []).map((pull) => [pull.state, pull.isDraft]),
+      [["OPEN", true]],
+    );
     // The result comment starts with its hidden record and then speaks
     // plainly to the reader, with no machine record in its prose.
     const comment = box

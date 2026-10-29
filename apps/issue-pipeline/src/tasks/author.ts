@@ -10,6 +10,7 @@
 
 import type { Config } from "../config.ts";
 import type {
+  ActionCause,
   ActionContext,
   ActionEnd,
   Binding,
@@ -17,7 +18,7 @@ import type {
   Readiness,
   TaskView,
 } from "../domain.ts";
-import { effectEnd } from "./effect.ts";
+import { effectEnd, recoverEnd } from "./effect.ts";
 import type { TaskModule } from "./module.ts";
 import { ended } from "./module.ts";
 import { AUTHOR_REPLY } from "./replies.ts";
@@ -47,8 +48,9 @@ function prerequisite(
   _cfg: Config,
   evidence: TaskEvidence,
   binding: Binding,
+  cause?: ActionCause,
 ): string | null {
-  return startUnmet(evidence.view, binding, "author");
+  return startUnmet(evidence.view, binding, "author", cause);
 }
 
 async function act(ctx: ActionContext): Promise<ActionEnd> {
@@ -77,6 +79,8 @@ const author: TaskModule = {
     resources: ["model-session"],
     match,
     act,
+    recover: (ctx: ActionContext): Promise<ActionEnd> =>
+      recoverEnd(ctx, "author-reconcile"),
   },
   prerequisite,
   ownsResult: false,

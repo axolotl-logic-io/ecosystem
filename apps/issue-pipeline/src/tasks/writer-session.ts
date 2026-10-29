@@ -98,24 +98,6 @@ function hardeningFacts(ctx: ActionContext): string[] {
   ];
 }
 
-// A continuation's own facts: the cause is the interrupted result it
-// follows, and the checkout starts from the branch that run pushed.
-function continuationFacts(ctx: ActionContext): string[] {
-  if (!ctx.cause.signal.startsWith("result:")) {
-    return [];
-  }
-  return [
-    "## Continuation",
-    "",
-    "An earlier Implement run for this issue stopped before it finished. This checkout starts from the commits it pushed to the branch, if any.",
-    "",
-    `Read them before you write anything: \`git -C ${ctx.checkout.repo} log origin/${ctx.cfg.baseBranch}..HEAD\``,
-    "",
-    "Keep the work that is right, finish what is missing, and fix what is wrong. Don't start again from the base.",
-    "",
-  ];
-}
-
 // Pushes the branch and opens its PR. When another worker moved the branch
 // first, both sets of commits stay on GitHub and the run fails for a person
 // to compare them; nothing chooses between them.
@@ -137,9 +119,16 @@ async function pushed(ctx: ActionContext, summary: string): Promise<ActionEnd> {
 // then the branch push and the development account's ready PR. A
 // continuation's writing session is told what the branch already holds.
 async function implementAction(ctx: ActionContext): Promise<ActionEnd> {
+  await ctx.boundary("draft-pr");
+  OPENED.parse(
+    await ctx.op("open-task-pr", {
+      number: ctx.workItem.number,
+      draft: true,
+    }),
+  );
   await ctx.prepare();
   await ctx.boundary("session");
-  const writing = await written(ctx, "development", continuationFacts(ctx));
+  const writing = await written(ctx, "development", []);
   if (!writing.ok) {
     return ended("failed", writing.reason);
   }

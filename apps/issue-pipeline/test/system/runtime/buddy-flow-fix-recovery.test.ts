@@ -112,7 +112,7 @@ test("Fix reconciles its own pushed head and replies without another attempt, se
     const [thread] = verify.threads;
     assert.ok(thread !== undefined);
     box.change((world) => {
-      world.failPostsContaining = PASSED_EVIDENCE;
+      world.failWritesContaining = PASSED_EVIDENCE;
     });
     const fixes: PlannedSession = {
       commit: {
@@ -224,7 +224,7 @@ test("a Fix with no thread to answer reconciles its pushed head from its own pus
     const target = advanceTarget(box, "counter.txt", "four widgets\n");
     landFindsConflict(box, item, { target, cause: item.result });
     box.change((world) => {
-      world.failPostsContaining = PASSED_EVIDENCE;
+      world.failWritesContaining = PASSED_EVIDENCE;
     });
     const resolves: PlannedSession = {
       commit: null,

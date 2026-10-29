@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Explicit operator settlement of an interrupted, pre-effect Implement.
-// It resumes no task and replays no effect. Observations supply exit and
+// The only effect it accepts is the draft PR Implement opens before its
+// session, while that PR's branch still changes no files. It resumes no task
+// and replays no effect. Observations supply exit and
 // preservation evidence; the operator's --apply and the authenticated
 // original attempt and ownership authorize this bounded cleanup.
 import fs from "node:fs";
@@ -47,11 +49,24 @@ const REQUEST = z.strictObject({
   apply: z.boolean().default(false),
 });
 const NO_PROCESS = z.looseObject({ code: z.literal("ESRCH") });
-const PRE_EFFECT_OPS = new Set(["task-attempt", "prepare-checkout"]);
+const PRE_EFFECT_OPS = new Set([
+  "task-attempt",
+  "open-task-pr",
+  "prepare-checkout",
+]);
 const NOT_FOUND = /HTTP 404/u;
 const WRITE_JOURNAL =
   /^coordination-(?:uncertain(?:-\d+)?|inflight-\d+)\.json$/u;
-const PULLS = z.array(z.strictObject({ number: z.int().positive() }));
+const PULLS = z.array(
+  z.looseObject({
+    number: z.int().positive(),
+    state: z.string(),
+    isDraft: z.boolean(),
+  }),
+);
+const COMPARISON = z.looseObject({
+  files: z.array(z.looseObject({ filename: z.string() })),
+});
 
 function refuse(reason: string): never {
   throw new Error(`Implement recovery refused: ${reason}`);
@@ -142,17 +157,30 @@ function assertNoJournals(cfg: Config, issue: number): void {
   }
 }
 
+// The branch and PR may exist only as Implement's draft placeholder: an
+// open draft whose branch changes no files from the base.
 function assertUnpublished(cfg: Config, run: ActionRunObservation): void {
+  const { branch } = run.execution;
   const ref = gh(
     cfg,
     "landing",
-    ["api", `repos/${cfg.repo}/git/ref/heads/${run.execution.branch}`],
+    ["api", `repos/${cfg.repo}/git/ref/heads/${branch}`],
     { allowFail: true },
   );
-  if (ref.code === 0 || !NOT_FOUND.test(ref.stderr)) {
-    refuse(
-      "the work branch exists or cannot be read; use task-owned reconciliation",
+  if (ref.code === 0) {
+    const { files } = COMPARISON.parse(
+      ghJson(cfg, "landing", [
+        "api",
+        `repos/${cfg.repo}/compare/${cfg.baseBranch}...${branch}`,
+      ]),
     );
+    if (files.length > 0) {
+      refuse(
+        "the work branch has published changes; use task-owned reconciliation",
+      );
+    }
+  } else if (!NOT_FOUND.test(ref.stderr)) {
+    refuse("the work branch cannot be read; use task-owned reconciliation");
   }
   const pulls = PULLS.parse(
     ghJson(cfg, "landing", [
@@ -163,12 +191,12 @@ function assertUnpublished(cfg: Config, run: ActionRunObservation): void {
       "--state",
       "all",
       "--head",
-      run.execution.branch,
+      branch,
       "--json",
-      "number",
+      "number,state,isDraft",
     ]),
   );
-  if (pulls.length > 0) {
+  if (pulls.some((pull) => pull.state !== "OPEN" || !pull.isDraft)) {
     refuse("published PR work requires task-owned reconciliation");
   }
 }

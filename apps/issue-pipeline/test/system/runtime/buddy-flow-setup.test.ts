@@ -126,6 +126,7 @@ test("configured setup, the writing session and its fresh hardening use the issu
         ownership: { state: "released", reason: null },
         operations: [
           ["task-attempt", "ok"],
+          ["open-task-pr", "ok"],
           ["prepare-checkout", "ok"],
           ["checkpoint-action", "ok"],
           ["checkpoint-action", "ok"],
@@ -185,6 +186,7 @@ test("a failed setup starts no session and retains the checkout, its untracked w
       action.operations.map((item) => [item.op, item.outcome]),
       [
         ["task-attempt", "ok"],
+        ["open-task-pr", "ok"],
         ["prepare-checkout", "failed"],
         ["task-result", "ok"],
       ],

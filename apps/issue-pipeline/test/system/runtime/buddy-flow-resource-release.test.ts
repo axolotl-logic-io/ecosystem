@@ -199,6 +199,7 @@ test("without laneSlots a failed setup starts no session, is not replayed and re
       action.operations.map((item) => [item.op, item.outcome]),
       [
         ["task-attempt", "ok"],
+        ["open-task-pr", "ok"],
         ["prepare-checkout", "failed"],
         ["task-result", "ok"],
       ],
@@ -300,6 +301,7 @@ test("a person's agents:stop during setup starts no session and replays no setup
       action.operations.map((item) => [item.op, item.outcome]),
       [
         ["task-attempt", "ok"],
+        ["open-task-pr", "ok"],
         ["prepare-checkout", "ok"],
         ["task-result", "ok"],
       ],

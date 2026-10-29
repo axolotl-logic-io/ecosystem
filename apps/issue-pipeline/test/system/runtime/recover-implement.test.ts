@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
@@ -26,6 +27,13 @@ const RELEASED = z.strictObject({
 });
 const POLLS = 2;
 const SETTLEMENT_TRANSITIONS = 3;
+
+function workGit(work: string, args: string[]): void {
+  const result = spawnSync("git", ["-C", work, ...args], { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+  }
+}
 
 // A real model process exits, then the GitHub read before reporting that
 // exit fails. Neither the done record nor the result was ever sent. This
@@ -90,13 +98,22 @@ test("an operator settles the original interrupted Implement and drains its cons
       }
       fs.unlinkSync(journal);
     }
-    // A published work branch makes this narrow operator path ineligible.
+    // Implement's empty draft is allowed; a work branch that changes files
+    // makes this narrow operator path ineligible.
     const branch = `refs/heads/agent/issue-${ISSUE}`;
-    box.git(["update-ref", branch, "refs/heads/main"]);
+    const draft = box.git(["rev-parse", branch]);
+    workGit(box.work, ["fetch", "--quiet", "origin", branch]);
+    workGit(box.work, ["checkout", "--quiet", "--detach", "FETCH_HEAD"]);
+    fs.writeFileSync(path.join(box.work, "published.txt"), "Published.\n");
+    workGit(box.work, ["add", "published.txt"]);
+    workGit(box.work, ["commit", "--quiet", "-m", "Publish work"]);
+    workGit(box.work, ["push", "--quiet", "origin", `HEAD:${branch}`]);
     const published = box.recoverImplement(action.id, true);
     assert.equal(published.status, 1);
-    assert.ok(published.stderr.includes("the work branch exists"));
-    box.git(["update-ref", "-d", branch]);
+    assert.ok(
+      published.stderr.includes("the work branch has published changes"),
+    );
+    box.git(["update-ref", branch, draft]);
     box.change((world) => {
       world.post = "lost-after-apply";
     });
@@ -146,7 +163,10 @@ test("an operator settles the original interrupted Implement and drains its cons
     const next = await box.runBuddy([], POLLS, undefined, signal);
     assert.equal(next.status, 0, next.stderr);
     assert.equal(box.launches().length, 1);
-    assert.deepEqual(box.world().pulls ?? [], []);
+    assert.deepEqual(
+      (box.world().pulls ?? []).map((pull) => [pull.state, pull.isDraft]),
+      [["OPEN", true]],
+    );
   } finally {
     box.cleanup();
   }
@@ -203,7 +223,7 @@ for (const failure of [
       const preserved = fs.readFileSync(patchFile);
       box.change((world) => {
         world.faults = [];
-        world.failPostsContaining = failure.needle;
+        world.failWritesContaining = failure.needle;
       });
       const failed = box.recoverImplement(action.id, true);
       assert.equal(failed.status, 1);

@@ -117,12 +117,9 @@ A poll delivers an accepted start only when all of these hold:
 
 - No accepted stop exists on the issue.
 - No attempt of the start's task names the start's id as its cause. Any such attempt spends the start, whatever its verdict and even if the target moved.
-- For Author and Implement, no attempt of that task exists for the same requirements, and `previousAction` reports no action for the exact binding. Otherwise the start is inert.
 - The producer still qualifies, by retained user id.
 
-A new Author or Implement start event for requirements that task already attempted isn't accepted. It holds with "retrying requirements Implement already attempted is unsupported", naming the task. Implement doesn't wait for Author.
-
-The one exception is an interrupted Implement run that can continue, as [interrupted Implement runs](task-results.md#interrupted-implement-runs) describes. A new `start:implement` for its requirements is accepted and continues it.
+A new Author or Implement start event for requirements that task already attempted is accepted as a retry request. The task decides whether it may run: only after the latest run settled `failed`, as [stops and labels](stops-and-labels.md#spent-starts-and-retries) describes. Implement doesn't wait for Author.
 
 A `start:verify`, `start:fix` or `start:land` records the head of the issue's linked PR when the start is accepted. The linked PR comes from the issue's branch. With no linked PR, or a PR that isn't open, the start holds and nothing is recorded. The recorded head is evidence of what the person saw, not a condition: a later push doesn't make the start stale, and the task runs on the PR's head as it is when the task runs. These starts have no retry gate in the component, because their tasks bind a revision that the component can't compute.
 

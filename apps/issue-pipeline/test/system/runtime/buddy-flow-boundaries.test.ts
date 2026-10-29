@@ -164,7 +164,11 @@ test("an issue-scoped interruption leaves another issue able to implement", asyn
       box.git(["show", `agent/issue-${OTHER}:counter.txt`]),
       "another counter",
     );
-    assert.equal(box.git(["branch", "--list", `agent/issue-${ISSUE}`]), "");
+    // The interrupted issue's draft branch holds no work.
+    assert.equal(
+      box.git(["diff", "--name-only", `main...agent/issue-${ISSUE}`]),
+      "",
+    );
     const stops = marked(box.world(), "signal").filter((record) =>
       JSON.stringify(record).includes('"label":"agents:stop"'),
     );

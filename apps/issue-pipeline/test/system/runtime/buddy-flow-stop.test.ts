@@ -136,8 +136,18 @@ function bundledHead(box: Machine, action: ActionRun): string {
   return sha;
 }
 
-function originBranch(box: Machine): string {
-  return box.git(["branch", "--list", BRANCH]);
+// The files the origin's work branch changes from main: Implement's early
+// draft branch publishes none until a session pushes work.
+function publishedWork(box: Machine): string {
+  if (box.git(["branch", "--list", BRANCH]) === "") {
+    return "";
+  }
+  return box.git(["diff", "--name-only", `main...${BRANCH}`]);
+}
+
+// The PRs on GitHub, as [state, isDraft] pairs.
+function pulls(box: Machine): [string, boolean][] {
+  return (box.world().pulls ?? []).map((pull) => [pull.state, pull.isDraft]);
 }
 
 // The world's accepted agents:stop signal records.
@@ -187,6 +197,7 @@ suite("buddy authority changes during an Implement session", {
         sessions: ["failed"],
         operations: [
           ["task-attempt", "ok"],
+          ["open-task-pr", "ok"],
           ["task-result", "ok"],
         ],
       });
@@ -199,7 +210,7 @@ suite("buddy authority changes during an Implement session", {
       assert.equal(acceptedStops(box).length, 1);
       assert.match(run.loops[0]?.reason ?? "", STOP_ACCEPTED);
       assert.equal(box.launches().length, 1);
-      assert.equal(originBranch(box), "");
+      assert.equal(publishedWork(box), "");
     } finally {
       box.cleanup();
     }
@@ -234,7 +245,7 @@ suite("buddy authority changes during an Implement session", {
       assert.equal(push?.isError, false);
       assert.equal(push.pushed, "none");
       assert.match(push.pushError ?? "", STOP_UNKNOWN_PUSH);
-      assert.equal(originBranch(box), "");
+      assert.equal(publishedWork(box), "");
       // Unknown is no stop: an interruption of this action alone, no stop
       // recorded or fabricated, and its evidence still settled.
       assert.deepEqual(settled(action), {
@@ -248,6 +259,7 @@ suite("buddy authority changes during an Implement session", {
         sessions: ["failed"],
         operations: [
           ["task-attempt", "ok"],
+          ["open-task-pr", "ok"],
           ["task-result", "ok"],
         ],
       });
@@ -284,6 +296,7 @@ suite("buddy authority changes during an Implement session", {
       assert.deepEqual(others, []);
       assert.deepEqual(recovery.sessions, []);
       assert.equal(box.launches().length, 1);
+      const draft = box.git(["rev-parse", BRANCH]);
       // A person's new start continues it from the branch.
       applyStart(box, "start:implement");
       const third = await box.runBuddy(
@@ -314,7 +327,7 @@ suite("buddy authority changes during an Implement session", {
         ],
       );
       assert.deepEqual(records[2]?.receipt?.evidence, {
-        interrupted: { branch: BRANCH, head: null, continues: true },
+        interrupted: { branch: BRANCH, head: draft, continues: true },
       });
       const interrupted = box
         .world()
@@ -366,8 +379,8 @@ suite("buddy authority changes during an Implement session", {
       assert.equal(continuation.previous, original.id);
       assert.equal(continuation.verdict, "unknown");
       assert.equal(continuation.ownership.state, "released");
-      assert.equal(originBranch(box), "");
-      assert.deepEqual(box.world().pulls ?? [], []);
+      assert.equal(publishedWork(box), "");
+      assert.deepEqual(pulls(box), [["OPEN", true]]);
       assert.equal(acceptedStops(box).length, 1);
       assert.equal(box.launches().length, 2);
       const third = await box.runBuddy([], STOP_AT_POLL);
@@ -377,7 +390,7 @@ suite("buddy authority changes during an Implement session", {
         new Set(third.actions.map((item) => item.id)),
         new Set(second.actions.map((item) => item.id)),
       );
-      assert.equal(originBranch(box), "");
+      assert.equal(publishedWork(box), "");
     } finally {
       box.cleanup();
     }
@@ -421,9 +434,13 @@ suite("buddy authority changes during an Implement session", {
       ]);
       const settledRow = TASK_ROW.parse(marked(box.world(), "task-result")[2]);
       assert.deepEqual(settledRow.receipt?.evidence, {
-        interrupted: { branch: BRANCH, head: null, continues: false },
+        interrupted: {
+          branch: BRANCH,
+          head: box.git(["rev-parse", BRANCH]),
+          continues: false,
+        },
       });
-      assert.equal(originBranch(box), "");
+      assert.equal(publishedWork(box), "");
     } finally {
       box.cleanup();
     }
@@ -451,7 +468,7 @@ suite("buddy authority changes during an Implement session", {
       assert.equal(push?.isError, false);
       assert.equal(push.pushed, "none");
       assert.match(push.pushError ?? "", START_REVOKED_PUSH);
-      assert.equal(originBranch(box), "");
+      assert.equal(publishedWork(box), "");
       // The checkpoint still settled; the hardening session's boundary
       // refused, so it, the push and the PR ops never ran.
       assert.deepEqual(settled(action), {
@@ -465,6 +482,7 @@ suite("buddy authority changes during an Implement session", {
         sessions: ["ok"],
         operations: [
           ["task-attempt", "ok"],
+          ["open-task-pr", "ok"],
           ["checkpoint-action", "ok"],
           ["task-result", "ok"],
         ],
@@ -476,7 +494,7 @@ suite("buddy authority changes during an Implement session", {
       ]);
       // The local commit is preserved for the operator, not pushed.
       assert.match(bundledHead(box, action), FULL_SHA);
-      assert.equal(box.world().pulls?.length, 0);
+      assert.deepEqual(pulls(box), [["OPEN", true]]);
     } finally {
       box.cleanup();
     }
@@ -505,8 +523,9 @@ suite("buddy authority changes during an Implement session", {
       );
       // No substantive op after the uncertain checkpoint.
       const ops = action.operations.map((item) => item.op);
-      assert.equal(ops.includes("push"), false);
-      assert.equal(ops.includes("open-task-pr"), false);
+      const after = ops.slice(ops.indexOf("checkpoint-action") + 1);
+      assert.equal(after.includes("push"), false);
+      assert.equal(after.includes("open-task-pr"), false);
       // The checkout stays whole, with the session's commit in it.
       const { checkout } = action.preserved;
       assert.ok(checkout !== null);

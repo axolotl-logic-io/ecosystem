@@ -34,7 +34,7 @@ Qualified human events on the issue and its pull request (PR) provide human sign
 
 The event must name a qualified human producer in the configured organization. Complete event reads, membership checks and authenticated acceptance records remain necessary. A bot, App, PR label, present label alone or assignment supplies no human authority. Removing a label creates no continuation signal. See [stops and labels](stops-and-labels.md).
 
-A start is spent by its authenticated action attempt, even if the attempt fails or the target later moves. The same unchanged requirements don't receive an automatic Implement retry. Implement doesn't wait for an unsettled Author.
+A start is spent by its authenticated action attempt, even if the attempt fails or the target later moves. Nothing retries a failed run automatically; a person's new start of the same task does. Implement doesn't wait for an unsettled Author.
 
 A start label is the only thing that requests a task. Results and reviews are evidence: a refused Verify, a person's request-changes review or Land's conflict is what a started Fix answers, and approvals count toward Land. Land still checks its own prerequisites.
 
@@ -74,6 +74,6 @@ A stop prevents new substantive work in its scope. A credentialed write, rebase 
 
 A failed or uncertain checkpoint keeps the work and required ownership/resources. Retain binary-safe staged and working patches, verified Git bundles, stopped-rebase state, journals and consumer records. Do not reset a checkout, clear evidence or release resources merely to permit another action.
 
-Read-only recovery settles the original action; it does not begin a replacement attempt. A review loop at its limit or an uncertain effect remains a hold. There is no label-removal restart or automatic retry. The one continuation is an interrupted Implement run, which a person's new `start:implement` continues from the pushed branch; see [interrupted Implement runs](task-results.md#interrupted-implement-runs).
+Read-only recovery settles the original action; it does not begin a replacement attempt. A review loop at its limit or an uncertain effect remains a hold. There is no label-removal restart or automatic retry. A person's new start of a failed task continues its existing work; see [spent starts and retries](stops-and-labels.md#spent-starts-and-retries).
 
 Writers push each commit as they make it, so the issue's branch keeps their work if the run is lost. Every push only fast-forwards the branch. If another worker pushed to the branch first, the push goes to a recovery branch named `BRANCH-recovery-ACTION`, where `BRANCH` is the issue's branch and `ACTION` is the first 12 characters of the action's UUID. The run then fails and says where its commits are; Implement opens no PR and Fix posts no replies. Nothing picks a winner by time, and a person compares the two branches.

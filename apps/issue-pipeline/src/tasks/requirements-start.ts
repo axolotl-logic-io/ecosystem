@@ -1,65 +1,23 @@
-// How the tasks a start label requests for the issue's trusted requirements,
-// Author and Implement, read their start: only a start of the task itself,
-// for the requirements current now, is ready; and any attempt of those
-// requirements prevents another, whatever the target or a later start
-// (docs/reference/stops-and-labels.md). Implement has one exception: a run
-// lost before it settled. Its start then recovers it by reading alone,
-// even if the requirements changed since. While the requirements are still
-// current, a new `start:implement` continues the interrupted run from the
-// branch; the interrupted result alone requests nothing. The start is never
-// spent twice. Pure.
+// Author and Implement run for current trusted requirements after a fresh
+// start of their own task. A new start continues a failed run; the old
+// start is spent. Unsettled work is reconciled before a replacement runs.
 
 import type {
   ActionCause,
   Binding,
   QualifiedSignal,
   Readiness,
-  TaskResult,
   TaskView,
 } from "../domain.ts";
-import { INTERRUPTED_EVIDENCE } from "../domain.ts";
-import { held, sameTarget, waiting } from "./chain.ts";
-import { TASK_ATTEMPTS } from "./records.ts";
+import { held, sameTarget, unsettledRun, waiting } from "./chain.ts";
 import { sensed } from "./sensing.ts";
 
 type RequirementsTask = "author" | "implement";
-
 const NAMES: Readonly<Record<RequirementsTask, string>> = {
   author: "Author",
   implement: "Implement",
 };
 
-function attemptsOf(
-  results: readonly TaskResult[],
-  task: RequirementsTask,
-  requirements: string,
-): TaskResult[] {
-  return results.filter(
-    (result) =>
-      result.binding.task === task &&
-      "requirements" in result.binding &&
-      result.binding.requirements === requirements,
-  );
-}
-
-// The interrupted Implement result a continuation may follow: the latest
-// Implement run of the view's requirements, failed by its read-only
-// recovery, with attempts left for these requirements. Being the latest
-// run, nothing has followed it yet.
-function continuable(view: TaskView): TaskResult | undefined {
-  const runs = attemptsOf(view.results, "implement", view.requirements);
-  const latest = runs.at(-1);
-  if (latest?.verdict !== "failed" || runs.length >= TASK_ATTEMPTS) {
-    return undefined;
-  }
-  const interrupted = INTERRUPTED_EVIDENCE.safeParse(latest.receipt.evidence);
-  if (!(interrupted.success && interrupted.data.interrupted.continues)) {
-    return undefined;
-  }
-  return latest;
-}
-
-// The binding of `task` for the view's current requirements and target.
 function currentRequirements(view: TaskView, task: RequirementsTask): Binding {
   return {
     workItem: view.workItem,
@@ -69,8 +27,6 @@ function currentRequirements(view: TaskView, task: RequirementsTask): Binding {
   };
 }
 
-// The readiness of `task` for `signal`: null unless it is a start of
-// `task` on this item.
 function startReadiness(
   signal: QualifiedSignal,
   view: TaskView,
@@ -80,43 +36,34 @@ function startReadiness(
   if (shared !== undefined) {
     return shared;
   }
-  if (signal.kind !== "start" || signal.task !== task) {
-    return null;
-  }
-  // A lost run is settled whatever the requirements are now; only a
-  // continuation needs them current.
-  const own = attemptsOf(view.results, task, signal.requirements).at(-1);
-  if (task === "implement" && own?.verdict === "unknown") {
+  const open = unsettledRun(view, task);
+  if (open !== undefined) {
     return {
       state: "recover",
-      binding: own.binding,
-      reason: `Implement run ${own.run.id} is unsettled; settle it from GitHub by reading`,
+      binding: open.binding,
+      reason: `${NAMES[task]} run ${open.run.id} is unsettled; settle it by reading`,
     };
+  }
+  if (signal.kind !== "start" || signal.task !== task) {
+    return null;
   }
   if (signal.requirements !== view.requirements) {
     return waiting(
       `start ${signal.id} binds requirements that are no longer current; a new start is needed`,
     );
   }
-  const latest = attemptsOf(view.results, task, view.requirements).at(-1);
-  if (latest === undefined) {
-    return { state: "ready", binding: currentRequirements(view, task) };
+  const binding = currentRequirements(view, task);
+  const unmet = startUnmet(view, binding, task, {
+    signal: signal.id,
+    recordId: signal.recordId,
+  });
+  if (unmet !== null) {
+    return held(unmet);
   }
-  if (latest.verdict === "passed") {
-    return waiting(`${NAMES[task]} passed these requirements`);
-  }
-  if (task === "implement" && continuable(view) !== undefined) {
-    return { state: "ready", binding: currentRequirements(view, task) };
-  }
-  return held(
-    `${NAMES[task]} run ${latest.run.id} of these requirements is ${latest.verdict}; a start never retries it`,
-  );
+  return { state: "ready", binding };
 }
 
-// Why a new attempt of `task` for `binding` may not be recorded on `view`,
-// or null. Only a continuation of a continuable interrupted Implement run,
-// caused by a person's new start, may follow an attempt of the same
-// requirements.
+/** A failed run may be followed only by a fresh human start of this task. */
 function startUnmet(
   view: TaskView,
   binding: Binding,
@@ -132,21 +79,25 @@ function startUnmet(
   if (!sameTarget(binding.target, view.target)) {
     return "the binding's target is not the current target";
   }
-  if (attemptsOf(view.results, task, binding.requirements).length === 0) {
+  const latest = view.results
+    .filter(
+      (result) =>
+        result.binding.task === task &&
+        "requirements" in result.binding &&
+        result.binding.requirements === binding.requirements,
+    )
+    .at(-1);
+  if (latest === undefined) {
     return null;
   }
-  let followed: TaskResult | undefined;
-  if (task === "implement") {
-    followed = continuable(view);
-  }
   if (
-    followed !== undefined &&
+    latest.verdict === "failed" &&
     cause?.signal.startsWith("github-label:") === true &&
-    cause.signal !== followed.cause.signal
+    cause.signal !== latest.cause.signal
   ) {
     return null;
   }
-  return `${NAMES[task]} was already attempted for these requirements`;
+  return `${NAMES[task]} run ${latest.run.id} of these requirements is ${latest.verdict}; a failed run needs a fresh start`;
 }
 
-export { continuable, startReadiness, startUnmet };
+export { startReadiness, startUnmet };

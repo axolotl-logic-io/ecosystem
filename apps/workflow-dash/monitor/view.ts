@@ -1,6 +1,7 @@
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey } from "@earendil-works/pi-tui";
 import type { MonitorEntity } from "@ecosystem/db/monitoring-protocol";
+import { errorMessage } from "../errors.ts";
 import type { ViewHost } from "../selection.ts";
 import { type Badge, chip, pill } from "../ui-format.ts";
 import {
@@ -14,6 +15,7 @@ import {
   workRows,
 } from "./model.ts";
 import { safeBody } from "./records.ts";
+import { type RetryTarget, retryTarget } from "./retry.ts";
 import type { MonitorRuntime } from "./runtime.ts";
 import {
   frame,
@@ -103,6 +105,7 @@ interface MonitorViewOptions {
   theme: MonitorTheme;
   done: () => void;
   repositories: string[];
+  retry?: (target: RetryTarget) => Promise<string>;
 }
 /** The first line of a reason, clipped; details show the full text. */
 function summary(text: string): string {
@@ -139,6 +142,9 @@ class MonitorView implements Component {
   private followSequence = 0;
   private panel: "work" | "notices" = "work";
   private homeSelection: string | null = null;
+  private retryPending: RetryTarget | null = null;
+  private retrying: Promise<void> | null = null;
+  private retryMessage: string | null = null;
   constructor(host: ViewHost, options: MonitorViewOptions) {
     this.host = host;
     this.options = options;
@@ -223,10 +229,64 @@ class MonitorView implements Component {
     runtime.page = { rows: [], more: false };
     runtime.loadPage(session.id).catch(() => null);
   }
+  private selectedRetry(): RetryTarget | null {
+    const { snapshot } = this.options.runtime;
+    if (snapshot === null || this.panel !== "work") {
+      return null;
+    }
+    let action = this.rows.at(this.selected)?.action;
+    if (this.trace !== null || this.work !== null) {
+      const session = this.trace ?? this.sessions.at(this.selected);
+      action = snapshot.entities.find(
+        (entry): boolean => entry.id === session?.parent,
+      );
+      action ??= this.work?.action;
+    }
+    return retryTarget(action);
+  }
+  private async requestRetry(target: RetryTarget): Promise<void> {
+    this.retryPending = null;
+    this.retryMessage = "Requesting retry on GitHub…";
+    this.changed();
+    try {
+      this.retryMessage =
+        (await this.options.retry?.(target)) ??
+        "Retry is unavailable in this view.";
+    } catch (error) {
+      this.retryMessage = safeBody(errorMessage(error));
+    } finally {
+      this.retrying = null;
+      this.changed();
+    }
+  }
   handleInput(data: string): void {
     const { runtime } = this.options;
     if (matchesKey(data, Key.ctrl("c"))) {
       this.options.done();
+      return;
+    }
+    if (this.retrying !== null) {
+      return;
+    }
+    if (this.retryPending !== null) {
+      if (matchesKey(data, "y")) {
+        this.retrying = this.requestRetry(this.retryPending);
+      } else if (matchesKey(data, "n") || matchesKey(data, Key.escape)) {
+        this.retryPending = null;
+        this.changed();
+      }
+      return;
+    }
+    if (matchesKey(data, "shift+r")) {
+      const target = this.selectedRetry();
+      if (target === null || this.options.retry === undefined) {
+        this.retryMessage =
+          "Select a failed task to retry. Running tasks, completed tasks and generic subagents cannot be retried here.";
+      } else {
+        this.retryPending = target;
+        this.retryMessage = null;
+      }
+      this.changed();
       return;
     }
     if (matchesKey(data, Key.escape)) {
@@ -340,7 +400,7 @@ class MonitorView implements Component {
     if (this.repo !== null) {
       scope = this.repo;
     }
-    const title = `${pill(theme, { icon: "\u{f06a9}", text: "WORK" })}  ${theme.fg("muted", `${safeBody(scope)} · read-only`)}`;
+    const title = `${pill(theme, { icon: "\u{f06a9}", text: "WORK" })}  ${theme.fg("muted", `${safeBody(scope)} · live monitoring`)}`;
     const status: string[] = [];
     const health = snapshot?.entities.find(
       (item): boolean => item.id === "collector",
@@ -777,9 +837,48 @@ class MonitorView implements Component {
     ) {
       offset = this.detailOffset;
     }
+    if (this.options.retry !== undefined && this.selectedRetry() !== null) {
+      keys = [...keys, { icon: "R", text: "retry" }];
+    }
+    if (this.retryPending !== null) {
+      const target = this.retryPending;
+      title = "Retry task";
+      body = [
+        line(
+          span(
+            `Continue ${target.task} for ${target.repo} #${target.issue}?`,
+            "accent",
+            true,
+          ),
+        ),
+        line(),
+        line(
+          span(
+            `Apply start:${target.task} using your GitHub account. The replacement continues the existing work; it does not reset the branch.`,
+          ),
+        ),
+        line(
+          span(
+            "The buddy still checks prerequisites and reconciles any uncertain earlier effects.",
+            "muted",
+          ),
+        ),
+      ];
+      offset = 0;
+      keys = [
+        { icon: "y", text: "retry" },
+        { icon: "n/Esc", text: "cancel" },
+      ];
+    }
+    const heading = this.heading(rows);
+    if (this.retryMessage !== null) {
+      heading.push(
+        this.options.theme.fg("warning", safeBody(this.retryMessage)),
+      );
+    }
     return frame(
       this.options.theme,
-      { heading: this.heading(rows), title, body, offset, keys },
+      { heading, title, body, offset, keys },
       { width, height },
     );
   }

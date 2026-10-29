@@ -3,6 +3,7 @@ import { type Config, configure, defaults } from "./config.ts";
 import { empty, type Snapshot } from "./data.ts";
 import { type DashboardApi, type DashboardContext, enabled } from "./host.ts";
 import { readWhole } from "./local-files.ts";
+import { RetryRequests, type RetryTarget } from "./monitor/retry.ts";
 import { MonitorRuntime } from "./monitor/runtime.ts";
 import { MonitorView } from "./monitor/view.ts";
 import { loadRuntimeRuns } from "./runtime-runs.ts";
@@ -22,6 +23,7 @@ class DashboardExtension {
   private toolSnapshot: Snapshot = empty;
   private generation = 0;
   private repositories = defaults.repos;
+  private retries = new RetryRequests(defaults.repos);
   private opened: Promise<void> | null = null;
   constructor(pi: DashboardApi, configPath: string) {
     this.pi = pi;
@@ -35,7 +37,7 @@ class DashboardExtension {
       type: "boolean",
       default: false,
       description:
-        "Opt in to the read-only database workflow dashboard (TUI only)",
+        "Opt in to database monitoring with explicit task retry (TUI only)",
     });
     this.pi.on("session_start", async (_event, ctx): Promise<void> => {
       await this.stop(ctx);
@@ -65,6 +67,7 @@ class DashboardExtension {
     this.active = true;
     this.config = config;
     this.repositories = config.repos;
+    this.retries = new RetryRequests(config.repos);
     this.registerTools();
     await this.runtime.start(config);
     if (generation !== this.generation) {
@@ -105,6 +108,8 @@ class DashboardExtension {
             theme,
             done,
             repositories: this.repositories,
+            retry: (target: RetryTarget): Promise<string> =>
+              this.retries.request(target),
           });
           function changed(): void {
             host.requestRender();
