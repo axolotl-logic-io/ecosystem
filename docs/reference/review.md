@@ -20,7 +20,7 @@ Hardening is part of Implement, not a task of its own. After the writing session
 
 The hardening session tries to break the change. It adds regression and edge-case tests, and it fixes design and correctness defects, including documentation. It must not weaken requirements, assertions, coverage, checking commands, lint or types to get a pass.
 
-The session commits through [pipeline_commit](sessions.md#pipeline_commit). Implement then pushes the branch and opens the PR through the development account. Its passed result names the hardened head as the code it produced. A model's statement that checks passed isn't verification; Verify supplies that.
+The session commits through [pipeline_commit](sessions.md#pipeline_commit). Implement opened the issue's PR as a draft, through the development account, before its writing session; it reuses an open PR from an earlier attempt. After hardening, Implement pushes the branch and marks the PR ready. Its passed result names the hardened head as the code it produced. A model's statement that checks passed isn't verification; Verify supplies that.
 
 A failed or interrupted hardening session doesn't become a passed Implement. It grants no automatic check-fix loop. Preserve uncommitted work, local commits and checkpoints for authorized recovery rather than starting another session from a reset.
 
@@ -64,7 +64,7 @@ A Security finding always blocks. A failing check or red required CI is a blocki
 
 The result's evidence records the submitted review, the counts of blocking findings and nits, and whether a Security finding was among them. See [Verify and Land evidence](task-results.md#verify-and-land-evidence).
 
-A Verify result binds one head. A new head, from Fix or from a person's push, needs a new `start:verify`. A passed or refused Verify doesn't rerun for the same head. A Verify that failed to judge the head, for example because CI turned pending, isn't retried automatically. A new `start:verify` for that head retries it, up to the binding's three attempts.
+A Verify result binds one head. A new head, from Fix or from a person's push, needs a new `start:verify`. A passed or refused Verify doesn't rerun for the same head. A Verify that failed to judge the head, for example because CI turned pending, isn't retried automatically. A new `start:verify` for that head retries it.
 
 ## Fix
 
@@ -111,7 +111,7 @@ Two things show that this run pushed the head. The finish step records the head 
 
 ## Loop limit
 
-The loop has no automatic rounds: a person applies `start:fix` for each one. `VERIFY_FIX_ROUNDS` still limits Fix attempts that a refused Verify result caused before start labels were required, so those older attempts settle as before. Each task still has at most three attempts for one binding.
+The loop has no automatic rounds: a person applies `start:fix` for each one. `VERIFY_FIX_ROUNDS` still limits Fix attempts that a refused Verify result caused before start labels were required, so those older attempts settle as before. Those older machine-caused attempts still have at most three attempts for one binding; a person's starts have no attempt limit.
 
 ## Failure and recovery
 

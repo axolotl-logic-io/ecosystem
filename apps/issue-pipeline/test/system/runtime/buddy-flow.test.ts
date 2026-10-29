@@ -73,6 +73,7 @@ test("a buddy implements a started issue through its real ops and releases it", 
         ],
         operations: [
           ["task-attempt", "ok"],
+          ["open-task-pr", "ok"],
           ["checkpoint-action", "ok"],
           ["checkpoint-action", "ok"],
           ["push", "ok"],
@@ -92,12 +93,18 @@ test("a buddy implements a started issue through its real ops and releases it", 
       launch.args.includes(path.join(box.pipeline, "pipeline-commit.mjs")),
     );
     assert.equal(fs.existsSync(launch.cwd), false);
-    // The commit reached the origin's work branch on top of the target.
+    // The commit reached the origin's work branch on top of the empty
+    // commit that published the draft PR, itself on top of the target.
     const head = box.git(["rev-parse", `agent/issue-${ISSUE}`]);
     assert.equal(box.git(["log", "-1", "--format=%s", head]), COMMIT.message);
     assert.equal(box.git(["show", `${head}:${COMMIT.file}`]), "3 widgets");
     assert.equal(
-      box.git(["rev-parse", `${head}^`]),
+      box.git(["log", "-1", "--format=%s", `${head}^`]),
+      `Start work on #${ISSUE}`,
+    );
+    assert.equal(box.git(["diff", "--name-only", `${head}^^`, `${head}^`]), "");
+    assert.equal(
+      box.git(["rev-parse", `${head}^^`]),
       box.git(["rev-parse", "main"]),
     );
     const world = box.world();
@@ -107,8 +114,9 @@ test("a buddy implements a started issue through its real ops and releases it", 
         pull.base,
         pull.author,
         pull.body,
+        pull.isDraft,
       ]),
-      [[`agent/issue-${ISSUE}`, "main", DEVELOPER, `Closes #${ISSUE}`]],
+      [[`agent/issue-${ISSUE}`, "main", DEVELOPER, `Closes #${ISSUE}`, false]],
     );
     // The ledger: one attempt and its passed result for this action,
     // producing that commit.

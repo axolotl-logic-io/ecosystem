@@ -11,7 +11,6 @@
 
 import type { Config } from "../config.ts";
 import type { InterruptedEvidence } from "../domain.ts";
-import { TASK_ATTEMPTS } from "../tasks/records.ts";
 import { exactRemote } from "../tasks/view.ts";
 import type { EffectOutcome } from "./task-run.ts";
 import { openReconciliation, settled } from "./task-run.ts";
@@ -26,16 +25,9 @@ function implementReconcile(cfg: Config, request: unknown): EffectOutcome {
   const { evidence, binding, attempt } = open;
   const { branch, clone, view } = evidence;
   const head = exactRemote(cfg, clone, `refs/heads/${branch}`);
-  const runs = view.results.filter(
-    (result) =>
-      result.binding.task === "implement" &&
-      "requirements" in result.binding &&
-      "requirements" in binding &&
-      result.binding.requirements === binding.requirements,
-  );
   const current =
     "requirements" in binding && binding.requirements === view.requirements;
-  const continues = current && runs.length < TASK_ATTEMPTS;
+  const continues = current;
   const interrupted: InterruptedEvidence = {
     interrupted: { branch, head, continues },
   };

@@ -38,9 +38,11 @@ A comment-only or dismissed review binds nothing. A review of an earlier head do
 
 An accepted stop is durable after label removal. Removing or reapplying a label doesn't lift it.
 
-An authenticated attempt spends its start whatever its verdict. Target movement or a new activation doesn't replenish it. `start:implement` doesn't request a new attempt after a failed Implement for the same requirements; that event holds with "retrying requirements Implement already attempted is unsupported". `start:author` holds the same way for Author. Newly edited requirements need a newly accepted start. A `start:verify`, `start:fix` or `start:land` requests its task on the PR's head as it is when the task runs, whether or not someone pushed after the label was applied. The start is spent by that one attempt. A new start for a head whose run of that task failed requests a new attempt, up to the binding's three attempts. A passed or refused run of the head stands.
+An authenticated attempt spends its start whatever its verdict. Target movement or a new activation doesn't replenish it. Newly edited requirements need a newly accepted start. A `start:verify`, `start:fix` or `start:land` requests its task on the PR's head as it is when the task runs, whether or not someone pushed after the label was applied.
 
-`start:implement` doesn't retry a failed Implement, and Implement doesn't wait for an unsettled Author. It does continue an [interrupted Implement run](task-results.md#interrupted-implement-runs) that can continue.
+To retry a task whose latest run failed, apply its start label again. Each new start event requests one new attempt, for any of the five tasks, with no attempt limit. The new attempt continues the existing work rather than starting over: it reads the earlier result, the issue's branch and PR, and the saved progress, and finishes what is unfinished. A run that is still unsettled is first settled by reading. A passed or refused run stands, and a new start for it holds.
+
+Implement doesn't wait for an unsettled Author. See [interrupted Implement runs](task-results.md#interrupted-implement-runs).
 
 ## Completed starts
 

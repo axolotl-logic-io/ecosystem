@@ -233,7 +233,7 @@ function edit(world: World, change: NonNullable<Session["change"]>): void {
   if (change === "posts-fail") {
     world.post = "lost-before-apply";
   } else if (change === "checkpoint-posts-fail") {
-    world.failPostsContaining = "<!-- agent-pipeline:state\n";
+    world.failWritesContaining = "<!-- agent-pipeline:state\n";
   } else if (change === "comments-unreadable") {
     world.faults.push({
       path: `repos/${world.repo}/issues/${ISSUE}/comments`,

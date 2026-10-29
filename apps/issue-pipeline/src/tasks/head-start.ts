@@ -3,8 +3,8 @@
 // work, and it requests the PR's head as it is when the task runs. A push
 // after the start was accepted doesn't make it stale; the head it recorded
 // at acceptance is evidence, not a condition. A result or a review never
-// requests work. A new start retries a run of the current head that failed,
-// within the binding's attempt budget; a passed or refused run stands. Pure.
+// requests work. A fresh start retries a failed run without an attempt
+// limit; a passed or refused run stands. Pure.
 
 import type {
   HeadStartTask,
@@ -13,16 +13,13 @@ import type {
   RevisionBinding,
   TaskView,
 } from "../domain.ts";
-import { sameBinding } from "../domain.ts";
 import {
   currentBinding,
-  held,
   latestRun,
   type RevisionTask,
   runReadiness,
   waiting,
 } from "./chain.ts";
-import { TASK_ATTEMPTS } from "./records.ts";
 
 const NAMES: Readonly<Record<RevisionTask, string>> = {
   verify: "Verify",
@@ -51,9 +48,7 @@ function startedHead(
   return { binding };
 }
 
-// The readiness a person's start gives `binding`: a new attempt after a run
-// that failed, within the binding's attempt budget; otherwise the binding's
-// own readiness.
+// A fresh start continues a failed run; otherwise use the binding's readiness.
 function headStartReadiness(
   signal: QualifiedSignal,
   view: TaskView,
@@ -62,16 +57,6 @@ function headStartReadiness(
   const latest = latestRun(view, binding);
   if (latest?.verdict !== "failed" || latest.cause.signal === signal.id) {
     return runReadiness(view, binding, true);
-  }
-  const runs = new Set(
-    view.results
-      .filter((result) => sameBinding(result.binding, binding))
-      .map((result) => result.run.id),
-  );
-  if (runs.size >= TASK_ATTEMPTS) {
-    return held(
-      `${NAMES[binding.task]} ran ${binding.revision.code} ${String(runs.size)} times, its binding's ${String(TASK_ATTEMPTS)} attempts`,
-    );
   }
   return { state: "ready", binding };
 }

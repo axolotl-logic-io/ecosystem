@@ -1,10 +1,9 @@
 // Starts through the real inbox, fake gh and a local bare origin:
-// start:author requests Author for the issue's current requirements and never
-// re-requests requirements Author attempted; start:verify, start:fix and
-// start:land request their task for the current head of the issue's linked
-// PR; a new start:implement continues only an interrupted Implement run. Each
-// start is spent only by an attempt of its own task, and Implement never
-// waits for Author.
+// start:author requests Author for the issue's current requirements;
+// start:verify, start:fix and start:land request their task for the current
+// head of the issue's linked PR; a fresh start after an earlier attempt
+// requests a retry that continues it. Each start is spent only by an attempt
+// of its own task, and Implement never waits for Author.
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
@@ -155,7 +154,7 @@ test("a member's start:author is accepted for the current requirements", () => {
   assert.equal(kit.posts(), 1);
 });
 
-test("start:author never re-requests requirements Author attempted", () => {
+test("a fresh start:author after an earlier attempt is accepted as a retry request", () => {
   const kit = harness((world) => {
     world.issues.push(labelledIssue(ISSUE, "start:author", "autumn", EVENT));
     const answers = taskAnswers(ISSUE);
@@ -165,15 +164,11 @@ test("start:author never re-requests requirements Author attempted", () => {
     world.tasks.push(answers);
   });
   const inbox = kit.poll();
-  assert.deepEqual(inbox.signals, []);
-  assert.match(
-    inbox.holds[0]?.reason ?? "",
-    mentions(
-      `start:author event ${EVENT} not accepted: Author already attempted these requirements`,
-      "retrying requirements Author already attempted is unsupported",
-    ),
-  );
-  assert.equal(kit.posts(), 0);
+  assert.deepEqual(inbox.holds, []);
+  assert.partialDeepStrictEqual(inbox.signals, [
+    { id: `github-label:${REPO}#${ISSUE}:${EVENT}`, task: "author" },
+  ]);
+  assert.equal(kit.posts(), 1);
 });
 
 test("Author and Implement starts are independent: Implement never waits for Author", () => {
@@ -303,8 +298,8 @@ for (const task of ["fix", "land"] as const) {
 }
 
 // ISSUE's interrupted Implement run of its current requirements, caused by
-// an earlier start, which `continues` or not.
-function interrupted(continues: boolean): TaskAnswers["view"]["results"] {
+// an earlier start.
+function interrupted(): TaskAnswers["view"]["results"] {
   return [
     {
       binding: {
@@ -323,7 +318,7 @@ function interrupted(continues: boolean): TaskAnswers["view"]["results"] {
           interrupted: {
             branch: `agent/issue-${ISSUE}`,
             head: null,
-            continues,
+            continues: false,
           },
         },
       },
@@ -332,32 +327,14 @@ function interrupted(continues: boolean): TaskAnswers["view"]["results"] {
   ];
 }
 
-test("a new start:implement is accepted for attempted requirements only to continue an interrupted run", () => {
+test("a fresh start:implement after an interrupted run is accepted to continue it", () => {
   const kit = harness((world) => {
     world.issues.push(labelledIssue(ISSUE, "start:implement", "autumn", EVENT));
     const answers = taskAnswers(ISSUE);
     answers.causes = [requirementsAttempt("implement", EARLIER)];
     answers.previous = "0b6d7c4e-1c1a-4f7e-9f61-5d0f2b7a9c31";
-    answers.view.results = interrupted(false);
+    answers.view.results = interrupted();
     world.tasks.push(answers);
-  });
-  // An interrupted run that doesn't continue: the start is a retry, and
-  // retries stay unsupported.
-  const refused = kit.poll();
-  assert.deepEqual(refused.signals, []);
-  assert.match(
-    refused.holds[0]?.reason ?? "",
-    mentions(
-      "retrying requirements Implement already attempted is unsupported",
-    ),
-  );
-  assert.equal(kit.posts(), 0);
-  // One that continues: the new start is accepted and delivered.
-  kit.change((world) => {
-    const [answers] = world.tasks;
-    if (answers !== undefined) {
-      answers.view.results = interrupted(true);
-    }
   });
   const id = `github-label:${REPO}#${ISSUE}:${EVENT}`;
   const accepted = kit.poll();

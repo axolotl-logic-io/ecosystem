@@ -34,7 +34,7 @@ Safe Refactor retains its explicit standalone entrypoint.
 
 Qualified human events provide the human signals: the `start:author`, `start:implement`, `start:verify`, `start:fix`, `start:land` and `agents:stop` labels on the issue, and a qualified person's review of the issue's linked PR. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
 
-An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. Unchanged requirements don't get an Implement retry from `start:implement`, and Implement doesn't wait for Author. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
+An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. A person's new start of a failed task retries it, continuing the existing work, and Implement doesn't wait for Author. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
 
 After a confirmed passed, refused or failed result, a task removes the start label whose application caused it. It preserves all accepted signals and task records, other labels and any newer application observed during cleanup. Uncertain results retain their label. Cleanup failures warn without changing the result. See [completed starts](../../docs/reference/stops-and-labels.md#completed-starts).
 

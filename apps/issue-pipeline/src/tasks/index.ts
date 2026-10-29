@@ -29,7 +29,6 @@ import {
   isResult,
   readRecords,
 } from "./records.ts";
-import { continuable } from "./requirements-start.ts";
 import { taskEvidence } from "./view.ts";
 
 const ADMISSION = z.union([
@@ -114,7 +113,15 @@ function previousAction(cfg: Config, binding: Binding): Promise<string | null> {
   return read(() => {
     const { number } = binding.workItem;
     const { rows } = readRecords(cfg, number, listComments(cfg, number));
-    return attemptsOf(rows, binding).at(-1)?.run.id ?? null;
+    return (
+      (
+        attemptsOf(rows, binding).at(-1) ??
+        rows
+          .filter(isAttempt)
+          .filter((row) => row.binding.task === binding.task)
+          .at(-1)
+      )?.run.id ?? null
+    );
   });
 }
 
@@ -159,17 +166,10 @@ function machineSignals(
   );
 }
 
-// Whether a person's new start of Implement would continue the view's
-// interrupted Implement run.
-function continuesImplement(view: TaskView): boolean {
-  return continuable(view) !== undefined;
-}
-
 export {
   ActionNotAdmitted,
   actionCauses,
   beginAction,
-  continuesImplement,
   finishAction,
   machineSignals,
   previousAction,

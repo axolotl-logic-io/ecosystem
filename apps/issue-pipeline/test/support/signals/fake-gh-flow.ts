@@ -33,6 +33,7 @@ const REF = /^repos\/[^/]+\/[^/]+\/git\/ref\/(?<ref>.+)$/u;
 const GIT_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits\/(?<sha>[0-9a-f]{40})$/u;
 const NEW_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits$/u;
 const NEW_REF = /^repos\/[^/]+\/[^/]+\/git\/refs$/u;
+const COMPARE = /^repos\/[^/]+\/[^/]+\/compare\/(?<base>.+?)\.{3}(?<head>.+)$/u;
 const BODY = /^body=(?<body>[\s\S]*)$/u;
 const PULL_REVIEWS = /^repos\/[^/]+\/[^/]+\/pulls\/(?<number>\d+)\/reviews$/u;
 const PULL_REPLY =
@@ -264,6 +265,20 @@ function gitGet(endpoint: string): boolean {
     print({ sha, tree: { sha: tree.out } });
     return true;
   }
+  const { base, head } = COMPARE.exec(endpoint)?.groups ?? {};
+  if (base !== undefined && head !== undefined) {
+    const diff = git([
+      "diff",
+      "--name-only",
+      `refs/heads/${base}...refs/heads/${head}`,
+    ]);
+    if (!diff.ok) {
+      return fail("gh: Not Found (HTTP 404)");
+    }
+    const names = diff.out.split("\n").filter((name) => name !== "");
+    print({ files: names.map((filename) => ({ filename })) });
+    return true;
+  }
   return false;
 }
 
@@ -426,6 +441,10 @@ function commentEdit(world: World, args: readonly string[]): boolean {
     .find((comment) => String(comment.id) === id);
   if (item === undefined) {
     return fail("gh: Not Found (HTTP 404)");
+  }
+  const marked = world.failWritesContaining;
+  if (marked !== undefined && body.includes(marked)) {
+    return fail("gh: HTTP 502: Bad Gateway");
   }
   item.body = body;
   return true;
@@ -864,7 +883,7 @@ function pr(world: World, args: readonly string[], login: string): boolean {
       body: flagValue(args, "--body") ?? "",
       author: login,
       state: "OPEN",
-      isDraft: false,
+      isDraft: args.includes("--draft"),
     });
     return true;
   }

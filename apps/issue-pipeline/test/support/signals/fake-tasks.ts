@@ -12,7 +12,6 @@ import type {
   QualifiedSignal,
   TaskView,
 } from "../../../src/domain.ts";
-import { continuable } from "../../../src/tasks/requirements-start.ts";
 import { readWorld, type TaskAnswers } from "./fake-github-world.ts";
 
 function answersFor(number: number): TaskAnswers {
@@ -52,15 +51,4 @@ function machineSignals(
   return Promise.resolve(answersFor(number).machine);
 }
 
-// The real, pure rule, applied to the canned view.
-function continuesImplement(view: TaskView): boolean {
-  return continuable(view) !== undefined;
-}
-
-export {
-  actionCauses,
-  continuesImplement,
-  machineSignals,
-  previousAction,
-  readTaskView,
-};
+export { actionCauses, machineSignals, previousAction, readTaskView };

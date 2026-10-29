@@ -5,13 +5,14 @@
 // after its session and its read-only reconciliation.
 // ops/task-ops.ts serves every op listed here.
 
-import { authorPost } from "./author-post.ts";
+import { authorPost, authorReconcile } from "./author-post.ts";
 import { FIX_OPS } from "./fix-task.ts";
 import { implementReconcile } from "./implement-task.ts";
 import type { TaskOpSpec } from "./task-guard.ts";
 
 const WRITER_OPS: readonly TaskOpSpec[] = [
   { name: "author-post", kind: "substantive", op: authorPost },
+  { name: "author-reconcile", kind: "finalization", op: authorReconcile },
   {
     name: "implement-reconcile",
     kind: "finalization",

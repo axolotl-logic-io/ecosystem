@@ -10,12 +10,17 @@
 
 import { z } from "zod";
 import type { Author } from "../comments.ts";
-import { commentByKey } from "../comments.ts";
+import {
+  commentByKey,
+  keyMark,
+  listComments,
+  pipelineRole,
+} from "../comments.ts";
 import type { Config } from "../config.ts";
 import { parseRequest } from "../process.ts";
 import { AUTHOR_REPLY } from "../tasks/replies.ts";
 import type { EffectOutcome } from "./task-run.ts";
-import { openRun } from "./task-run.ts";
+import { openReconciliation, openRun, settled } from "./task-run.ts";
 
 const REQUEST = z.looseObject({ reply: AUTHOR_REPLY });
 const GHERKIN_KEY = "gherkin";
@@ -104,4 +109,39 @@ function authorPost(cfg: Config, request: unknown): EffectOutcome {
   };
 }
 
-export { authorPost };
+/** Settle the original Author attempt without posting its output again. */
+function authorReconcile(cfg: Config, request: unknown): EffectOutcome {
+  const open = openReconciliation(cfg, request, "author", "author-reconcile");
+  const own = listComments(cfg, open.number).filter(
+    (comment) =>
+      pipelineRole(cfg, comment) === "author" &&
+      comment.body?.includes(`run \`${open.attempt.run.id}\``) === true,
+  );
+  if (
+    own.some((comment) =>
+      comment.body?.includes(keyMark(open.number, GHERKIN_KEY)),
+    )
+  ) {
+    return settled(open, {
+      verdict: "passed",
+      reason: "reconciled: this Author run posted its Gherkin",
+    });
+  }
+  if (
+    own.some((comment) =>
+      comment.body?.includes(keyMark(open.number, QUESTIONS_KEY)),
+    )
+  ) {
+    return settled(open, {
+      verdict: "refused",
+      reason: "reconciled: this Author run posted its questions",
+    });
+  }
+  return settled(open, {
+    verdict: "failed",
+    reason:
+      "reconciled: this Author run ended without publishing a reply; apply start:author to continue",
+  });
+}
+
+export { authorPost, authorReconcile };

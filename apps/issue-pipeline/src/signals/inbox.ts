@@ -15,7 +15,6 @@ import { rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { assertReconciled, confirmedWrite } from "../coordination-journal.ts";
 import {
-  type Binding,
   type EvidenceHold,
   type HeadStartTask,
   isHeadStartTask,
@@ -35,13 +34,7 @@ import {
   standingOn,
 } from "../pr-reviews.ts";
 import { pullRequest } from "../revision.ts";
-import {
-  actionCauses,
-  continuesImplement,
-  machineSignals,
-  previousAction,
-  readTaskView,
-} from "../tasks/index.ts";
+import { actionCauses, machineSignals, readTaskView } from "../tasks/index.ts";
 import { errorText, unreadable } from "./github-source.ts";
 import {
   CONTROL_LABELS,
@@ -136,13 +129,6 @@ const ACCEPTANCE_ORDER: readonly ControlLabel[] = [
   STOP_LABEL,
   ...CONTROL_LABELS.filter((label) => label !== STOP_LABEL),
 ];
-const TASK_NAMES: ReadonlyMap<StartTask, string> = new Map<StartTask, string>([
-  ["author", "Author"],
-  ["implement", "Implement"],
-  ["verify", "Verify"],
-  ["fix", "Fix"],
-  ["land", "Land"],
-]);
 const BUDDY_RUN = z.uuid();
 
 // Runs `step` on each of `items` in order, each after the one before it
@@ -168,16 +154,6 @@ function refused<T>(reason: string): Checked<T> {
 
 function unread<T>(reason: string): Checked<T> {
   return { ok: false, reason, unreadable: true };
-}
-
-function taskName(task: StartTask): string {
-  return TASK_NAMES.get(task) ?? task;
-}
-
-// Why a start may not request what `task` already attempted: retry
-// coverage is undecided, so that is a hold, not permission.
-function unsupportedRetry(task: RequirementsTask): string {
-  return `retrying requirements ${taskName(task)} already attempted is unsupported; change the requirements to request new work`;
 }
 
 function scopeProblem(scope: SignalScope): string | null {
@@ -252,21 +228,6 @@ function stopNames(rows: readonly AcceptedRow[]): string {
     .join(", ");
 }
 
-// The attempt of `task` that already tried `requirements`, if any. The work
-// item and requirements are the retry boundary, whatever the target.
-function attemptedRequirements(
-  attempts: readonly AttemptCause[],
-  task: RequirementsTask,
-  requirements: string,
-): AttemptCause | undefined {
-  return attempts.find(
-    ({ binding }) =>
-      binding.task === task &&
-      "requirements" in binding &&
-      binding.requirements === requirements,
-  );
-}
-
 // Whether an attempt of the start's own task names it as its cause,
 // whatever its binding or verdict.
 function spends(
@@ -290,19 +251,6 @@ async function causesOf(
   }
 }
 
-async function previousOf(
-  cfg: Config,
-  binding: Binding,
-): Promise<Checked<string | null>> {
-  try {
-    return ok(await previousAction(cfg, binding));
-  } catch (error) {
-    return unread(
-      `previous ${binding.task} action unreadable: ${errorText(error)}`,
-    );
-  }
-}
-
 // The issue's linked PR: its own branch's PR, or null when it has none.
 function linkedPr(cfg: Config, number: number): Checked<number | null> {
   try {
@@ -312,42 +260,12 @@ function linkedPr(cfg: Config, number: number): Checked<number | null> {
   }
 }
 
-// The Author or Implement binding a new start would request, or why none
-// may be recorded. A start never re-requests requirements its task has
-// attempted.
-async function requirementsRequest(
-  cfg: Config,
-  workItem: WorkItemRef,
+// A fresh requirements start may request a retry; the task admits it only
+// after the preceding attempt has settled failed.
+function requirementsRequest(
   task: RequirementsTask,
   view: TaskView,
-): Promise<Checked<StartRequest>> {
-  const attempts = await causesOf(cfg, workItem.number);
-  if (!attempts.ok) {
-    return attempts;
-  }
-  const name = taskName(task);
-  // A person's new start continues an interrupted Implement run.
-  const continues = task === "implement" && continuesImplement(view);
-  const prior = attemptedRequirements(attempts.value, task, view.requirements);
-  if (prior !== undefined && !continues) {
-    return refused(
-      `${name} already attempted these requirements under cause ${prior.cause.signal}; ${unsupportedRetry(task)}`,
-    );
-  }
-  const previous = await previousOf(cfg, {
-    workItem,
-    task,
-    target: view.target,
-    requirements: view.requirements,
-  });
-  if (!previous.ok) {
-    return previous;
-  }
-  if (previous.value !== null && !continues) {
-    return refused(
-      `${name} action ${previous.value} already ran for this binding; ${unsupportedRetry(task)}`,
-    );
-  }
+): Checked<StartRequest> {
   return ok({
     kind: "start",
     task,
@@ -411,7 +329,7 @@ async function startRequest(
   if (isHeadStartTask(task)) {
     return headRequest(cfg, workItem.number, task, view.target);
   }
-  return await requirementsRequest(cfg, workItem, task, view);
+  return requirementsRequest(task, view);
 }
 
 // What the journal keeps of a record's source while its write is uncertain.
@@ -694,101 +612,14 @@ function deliverQualified(
 // Delivers `start` when no action ran its binding yet, when it `recovers`
 // its requirements' lost Implement run, or when it `continues` their
 // interrupted one.
-async function deliverStart(
-  cfg: Config,
-  scope: SignalScope,
-  poll: IssuePoll,
-  start: { signal: StartSignal; recovers: boolean; continues: boolean },
-): Promise<void> {
-  const { signal, recovers, continues } = start;
-  if ("requirements" in signal && !recovers && !continues) {
-    const previous = await previousOf(cfg, {
-      workItem: signal.workItem,
-      task: signal.task,
-      target: signal.target,
-      requirements: signal.requirements,
-    });
-    if (!previous.ok) {
-      holdFor(poll, `accepted start ${signal.id} held`, previous);
-      return;
-    }
-    if (previous.value !== null) {
-      return;
-    }
-  }
-  deliverQualified(cfg, scope, poll, signal);
-}
-
-// Whether `signal` is an Implement start whose requirements' latest
-// attempt never settled: it is delivered again only so Implement can settle
-// that run by reading. It never records another attempt.
+// Spent starts are delivered only to reconcile their own unsettled task.
 function recovering(
   attempts: readonly AttemptCause[],
   signal: StartSignal,
 ): boolean {
-  if (signal.task !== "implement") {
-    return false;
-  }
-  const latest = attempts
-    .filter(
-      ({ binding }) =>
-        binding.task === "implement" &&
-        "requirements" in binding &&
-        binding.requirements === signal.requirements,
-    )
-    .at(-1);
-  return latest?.unsettled === true;
-}
-
-// Whether `signal` still requests work: not spent by an attempt of its task
-// and, for Author or Implement, its requirements not attempted by its task
-// unless it `continues` an interrupted Implement run; or else an Implement
-// start that recovers its requirements' lost run.
-function pendingStart(
-  attempts: readonly AttemptCause[],
-  signal: StartSignal,
-  continues: boolean,
-): boolean {
-  if (recovering(attempts, signal)) {
-    return true;
-  }
-  if (spends(attempts, signal)) {
-    return false;
-  }
-  if (!("requirements" in signal) || continues) {
-    return true;
-  }
-  return (
-    attemptedRequirements(attempts, signal.task, signal.requirements) ===
-    undefined
-  );
-}
-
-// Whether `signal` is a start of Implement, for the current requirements,
-// that would continue their interrupted run. The task view is read only
-// for such a start.
-async function continuing(
-  cfg: Config,
-  poll: IssuePoll,
-  attempts: readonly AttemptCause[],
-  signal: StartSignal,
-): Promise<Checked<boolean>> {
-  if (
-    signal.task !== "implement" ||
-    spends(attempts, signal) ||
-    attemptedRequirements(attempts, "implement", signal.requirements) ===
-      undefined
-  ) {
-    return ok(false);
-  }
-  let view: TaskView;
-  try {
-    view = await readTaskView(cfg, poll.workItem.number);
-  } catch (error) {
-    return unread(`its task view is unreadable: ${errorText(error)}`);
-  }
-  return ok(
-    view.requirements === signal.requirements && continuesImplement(view),
+  return attempts.some(
+    ({ binding, unsettled }) =>
+      binding.task === signal.task && unsettled === true,
   );
 }
 
@@ -811,21 +642,11 @@ async function deliverStarts(
     holdFor(poll, "accepted starts held", attempts);
     return;
   }
-  await inOrder(starts, async (signal) => {
-    const continues = await continuing(cfg, poll, attempts.value, signal);
-    if (!continues.ok) {
-      holdFor(poll, `accepted start ${signal.id} held`, continues);
-      return;
+  for (const signal of starts) {
+    if (!spends(attempts.value, signal) || recovering(attempts.value, signal)) {
+      deliverQualified(cfg, scope, poll, signal);
     }
-    if (!pendingStart(attempts.value, signal, continues.value)) {
-      return;
-    }
-    await deliverStart(cfg, scope, poll, {
-      signal,
-      recovers: recovering(attempts.value, signal),
-      continues: continues.value,
-    });
-  });
+  }
 }
 
 // Delivers each accepted review that still stands on its PR and whose

@@ -112,7 +112,7 @@ There is no generic restart-at-stage command or automatic continuation operation
 
 ## Settle an interrupted pre-effect Implement
 
-Use this only with every participant stopped. This command supports an original Implement action that ended before checkpoint or task effects, preserved its checkout, and retained its issue or model-session claim because settlement could not read GitHub. It does not support uncertain pushes, retained checkouts, Fix, Land or arbitrary claims.
+Use this only with every participant stopped. This command supports an original Implement action that ended before checkpoint or task effects, preserved its checkout, and retained its issue or model-session claim because settlement could not read GitHub. The one effect it accepts is the draft PR that Implement opens before its session, while that PR is still an open draft and its branch changes no files from the base. It does not support uncertain pushes, retained checkouts, Fix, Land or arbitrary claims.
 
 First inspect the action's run record and preservation artifacts. Confirm that all participants, including other hosts and standalone operators, have stopped. The command conservatively requires every locally observed buddy to have stopped cooperatively on this host. It verifies the original authenticated attempt and confirmed issue ownership, recorded model-process exits, existing preservation artifacts and the absence of uncertain-write journals or lane consumers. A vanished process or old timestamp alone never suffices.
 
