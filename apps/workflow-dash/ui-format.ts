@@ -22,6 +22,8 @@ type Ink =
   | "syntaxFunction"
   | "mdHeading"
   | "borderAccent";
+/** The theme parts these helpers draw with. */
+type StyleTheme = Pick<Theme, "fg" | "style" | "colors">;
 interface Badge {
   icon: string;
   text: string;
@@ -33,6 +35,9 @@ interface Panel {
   content: string[];
   width: number;
   height: number;
+  /** Border and title colors; the defaults are the original subdued frame. */
+  border?: Ink | "borderMuted";
+  heading?: Ink;
 }
 const layout = {
   narrow: 65,
@@ -63,7 +68,7 @@ function pad(text: string, width: number, right = false): string {
   return clipped + space;
 }
 /** Rebuild theme colors at render time; retain no styled strings in state. */
-function pill(theme: Theme, badge: Badge): string {
+function pill(theme: StyleTheme, badge: Badge): string {
   const color = theme.colors[badge.ink ?? "accent"];
   const body = theme.colors.userMessageBg;
   let foreground: "muted" | "text" = "text";
@@ -77,7 +82,7 @@ function pill(theme: Theme, badge: Badge): string {
     theme.style("\ue0b4", { fg: body })
   );
 }
-function chip(theme: Theme, text: string, ink: Ink): string {
+function chip(theme: StyleTheme, text: string, ink: Ink): string {
   return theme.style(` ${text} `, {
     fg: theme.colors[ink],
     bg: "userMessageBg",
@@ -101,11 +106,18 @@ function labelInk(
   }
   return "syntaxFunction";
 }
-function panel(theme: Theme, box: Panel): string[] {
-  const { width, height, title, content } = box;
+function panel(theme: StyleTheme, box: Panel): string[] {
+  const {
+    width,
+    height,
+    title,
+    content,
+    border: ink = "borderMuted",
+    heading = "borderAccent",
+  } = box;
   const inner = Math.max(0, width - layout.panelInset);
   function border(text: string): string {
-    return theme.fg("borderMuted", text);
+    return theme.fg(ink, text);
   }
   const top = truncateToWidth(
     `─ ${title} `,
@@ -113,7 +125,7 @@ function panel(theme: Theme, box: Panel): string[] {
   );
   const lines = [
     border("╭") +
-      theme.fg("borderAccent", top) +
+      theme.fg(heading, top) +
       border(
         "─".repeat(Math.max(0, width - layout.frameInset - visibleWidth(top))),
       ) +
@@ -132,5 +144,5 @@ function panel(theme: Theme, box: Panel): string[] {
   return lines.map((line) => truncateToWidth(line, width));
 }
 
-export type { Badge, Ink, Panel };
+export type { Badge, Ink, Panel, StyleTheme };
 export { chip, fmt, labelInk, layout, pad, panel, pill, shortRepo };
