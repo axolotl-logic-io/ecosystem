@@ -1,70 +1,184 @@
-import { Key } from "@earendil-works/pi-tui";
+import { Key, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Config, configure, defaults } from "./config.ts";
+import { empty, type Snapshot } from "./data.ts";
 import { type DashboardApi, type DashboardContext, enabled } from "./host.ts";
-import { DashboardInteraction } from "./interaction.ts";
-import { DashboardRuntime, widgetKey } from "./runtime.ts";
+import { readWhole } from "./local-files.ts";
+import { MonitorRuntime } from "./monitor/runtime.ts";
+import { MonitorView } from "./monitor/view.ts";
+import { loadRuntimeRuns } from "./runtime-runs.ts";
+import { parse } from "./source-records.ts";
 import { registerReadTools } from "./tools.ts";
 
+const configReadBytes = 32_768;
+const widgetKey = "workflow-monitor";
 class DashboardExtension {
   private readonly pi: DashboardApi;
   private readonly configPath: string;
-  private readonly runtime = new DashboardRuntime();
-  private readonly interaction: DashboardInteraction;
-  private readonly registered = new Set<"commands" | "tools">();
+  private readonly runtime = new MonitorRuntime();
+  private registered: boolean;
+  private toolsRegistered: boolean;
+  private active: boolean;
+  private config: Config = configure(null);
+  private toolSnapshot: Snapshot = empty;
+  private generation = 0;
+  private repositories = defaults.repos;
+  private opened: Promise<void> | null = null;
   constructor(pi: DashboardApi, configPath: string) {
     this.pi = pi;
+    this.registered = false;
+    this.toolsRegistered = false;
+    this.active = false;
     this.configPath = configPath;
-    this.interaction = new DashboardInteraction(pi, this.runtime);
   }
   install(): void {
     this.pi.registerFlag("workflow-dash", {
       type: "boolean",
       default: false,
-      description: "Opt in to the read-only workflow dashboard (TUI only)",
+      description:
+        "Opt in to the read-only database workflow dashboard (TUI only)",
     });
-    this.pi.on("session_start", async (_event, ctx) => {
-      this.runtime.stop();
-      if (ctx.mode === "tui") {
-        this.registerCommands();
-        if (enabled(ctx.mode, this.pi.getFlag("workflow-dash") === true)) {
-          await this.activate(ctx);
-        }
+    this.pi.on("session_start", async (_event, ctx): Promise<void> => {
+      await this.stop(ctx);
+      if (ctx.mode !== "tui") {
+        return;
+      }
+      this.registerCommands();
+      if (enabled(ctx.mode, this.pi.getFlag("workflow-dash") === true)) {
+        await this.activate(ctx);
       }
     });
-    this.pi.on("session_shutdown", (_event, ctx) => this.stop(ctx));
+    this.pi.on("session_shutdown", async (_event, ctx): Promise<void> => {
+      await this.stop(ctx);
+    });
   }
   private async activate(ctx: DashboardContext): Promise<void> {
-    await this.runtime.start(ctx, this.configPath);
-    if (this.runtime.active && !this.registered.has("tools")) {
-      registerReadTools(this.pi, {
-        active: () => this.runtime.active,
-        refresh: () => this.runtime.refresh(),
-        get: () => this.runtime.state,
-      });
-      this.registered.add("tools");
+    this.generation += 1;
+    const { generation } = this;
+    const file = await readWhole(this.configPath, configReadBytes);
+    let config = configure(null);
+    if (file.state === "read") {
+      config = configure(parse(file.text));
     }
+    if (generation !== this.generation) {
+      return;
+    }
+    this.active = true;
+    this.config = config;
+    this.repositories = config.repos;
+    this.registerTools();
+    await this.runtime.start(config);
+    if (generation !== this.generation) {
+      return;
+    }
+    ctx.ui.setWidget(widgetKey, (_host, theme) => ({
+      render: (width: number): string[] => {
+        const health = this.runtime.snapshot?.entities.find(
+          (item): boolean => item.id === "collector",
+        );
+        let label = "Work · monitoring unavailable";
+        if (health !== undefined) {
+          label = "Work · /dash to inspect";
+        }
+        return [truncateToWidth(theme.fg("muted", label), width)];
+      },
+      invalidate: (): void => {
+        /* Stateless widget; render reads current runtime values. */
+      },
+    }));
   }
   private async open(ctx: DashboardContext): Promise<void> {
-    if (!this.runtime.active) {
+    if (this.opened !== null) {
+      return this.opened;
+    }
+    if (!this.active) {
       await this.activate(ctx);
     }
-    await this.interaction.open(ctx);
+    const { generation } = this;
+    if (!this.active) {
+      return;
+    }
+    const work = ctx.ui
+      .custom<void>(
+        (host, theme, _keyboard, done) => {
+          const view = new MonitorView(host, {
+            runtime: this.runtime,
+            theme,
+            done,
+            repositories: this.repositories,
+          });
+          function changed(): void {
+            host.requestRender();
+          }
+          this.runtime.changed = changed;
+          return {
+            render: (width: number): string[] => view.render(width),
+            invalidate: (): void => view.invalidate(),
+            handleInput: (data: string): void => view.handleInput(data),
+            dispose: (): void => {
+              if (this.runtime.changed === changed) {
+                this.runtime.changed = undefined;
+              }
+            },
+          };
+        },
+        {
+          overlay: true,
+          overlayOptions: {
+            width: "100%",
+            maxHeight: "100%",
+            row: 0,
+            col: 0,
+            margin: 0,
+          },
+        },
+      )
+      .finally((): void => {
+        if (generation === this.generation) {
+          this.opened = null;
+        }
+      });
+    this.opened = work;
+    return work;
   }
-  private stop(ctx: DashboardContext): void {
-    const wasActive = this.runtime.active;
-    this.runtime.stop();
-    if (wasActive) {
+  private async stop(ctx: DashboardContext): Promise<void> {
+    this.generation += 1;
+    const { active } = this;
+    this.active = false;
+    this.opened = null;
+    await this.runtime.stop();
+    if (active) {
       ctx.ui.setWidget(widgetKey, undefined);
     }
   }
+  /**
+   * Keeps the agent-facing buddy_runs and action_run tools. They read the
+   * runtime records on demand; they are not part of the database-backed view.
+   */
+  private registerTools(): void {
+    if (this.toolsRegistered) {
+      return;
+    }
+    registerReadTools(this.pi, {
+      active: (): boolean => this.active,
+      refresh: async (): Promise<void> => {
+        this.toolSnapshot = {
+          ...empty,
+          runtime: await loadRuntimeRuns(this.config),
+        };
+      },
+      get: (): Snapshot => this.toolSnapshot,
+    });
+    this.toolsRegistered = true;
+  }
   private registerCommands(): void {
-    if (this.registered.has("commands")) {
+    if (this.registered) {
       return;
     }
     this.pi.registerCommand("dash", {
-      description: "Workflow dashboard (`/dash off` stops it)",
-      handler: async (args: string, ctx: DashboardContext) => {
+      description: "Combined database-backed work view (/dash off stops reads)",
+      handler: async (args: string, ctx: DashboardContext): Promise<void> => {
         if (args.trim() === "off") {
-          this.stop(ctx);
+          await this.stop(ctx);
           ctx.ui.notify("Workflow dashboard stopped", "info");
           return;
         }
@@ -73,9 +187,9 @@ class DashboardExtension {
     });
     this.pi.registerShortcut(Key.ctrlShift("j"), {
       description: "Open workflow dashboard",
-      handler: (ctx: DashboardContext) => this.open(ctx),
+      handler: (ctx: DashboardContext): Promise<void> => this.open(ctx),
     });
-    this.registered.add("commands");
+    this.registered = true;
   }
 }
 
