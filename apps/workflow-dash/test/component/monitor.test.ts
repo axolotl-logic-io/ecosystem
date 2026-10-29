@@ -44,13 +44,31 @@ function action(state: string, task = "implement"): MonitorEntity {
   }
   return result;
 }
+// A theme that leaves text unstyled, so assertions read plain text.
+const plainTheme: MonitorViewOptions["theme"] = {
+  fg: (_color: string, text: string): string => text,
+  bg: (_color: string, text: string): string => text,
+  bold: (text: string): string => text,
+  style: (text: string): string => text,
+  colors: new Proxy<MonitorViewOptions["theme"]["colors"]>(
+    {},
+    {
+      get: (): { kind: "rgb"; r: number; g: number; b: number } => ({
+        kind: "rgb",
+        r: 0,
+        g: 0,
+        b: 0,
+      }),
+    },
+  ),
+};
 function viewModel(state: MonitorSnapshot): MonitorViewOptions {
   return {
     repositories: [repo, "axolotl-logic-io/ecosystem"],
     done: (): void => {
       /* The fixture does not close the surrounding terminal. */
     },
-    theme: { fg: (_color: string, text: string): string => text },
+    theme: plainTheme,
     runtime: {
       snapshot: state,
       error: null,
@@ -178,7 +196,7 @@ test("credentials and terminal control sequences never become transcript content
   assert.ok(!event?.body.includes(credential));
 });
 
-test("the combined view fits narrow terminals and does not present missing usage as zero", (): void => {
+test("the combined view fills the terminal, fits narrow widths and does not present missing usage as zero", (): void => {
   const options = viewModel(snapshot([work(), action("running")]));
   const view = new MonitorView(
     {
@@ -192,7 +210,8 @@ test("the combined view fits narrow terminals and does not present missing usage
   for (const width of [24, 60, screen.wide]) {
     const lines = view.render(width);
     assert.ok(lines.every((line): boolean => visibleWidth(line) <= width));
-    assert.ok(lines.length <= screen.rows);
+    // Exactly the terminal's height, so the overlay hides the conversation behind it.
+    assert.equal(lines.length, screen.rows);
   }
   const text = view.render(screen.wide).join("\n");
   assert.ok(text.includes("ctx — · tokens —"));

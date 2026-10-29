@@ -1,13 +1,8 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
-import {
-  type Component,
-  Key,
-  matchesKey,
-  truncateToWidth,
-  wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import { type Component, Key, matchesKey } from "@earendil-works/pi-tui";
 import type { MonitorEntity } from "@ecosystem/db/monitoring-protocol";
 import type { ViewHost } from "../selection.ts";
+import { type Badge, chip, pill } from "../ui-format.ts";
 import {
   actionUsage,
   compactNumber,
@@ -20,6 +15,19 @@ import {
 } from "./model.ts";
 import { safeBody } from "./records.ts";
 import type { MonitorRuntime } from "./runtime.ts";
+import {
+  frame,
+  type Line,
+  line,
+  type MonitorTheme,
+  raw,
+  repoInk,
+  type Span,
+  sectionBadge,
+  sectionInk,
+  span,
+  stateInk,
+} from "./style.ts";
 
 const viewSize = {
   page: 8,
@@ -31,6 +39,56 @@ const viewSize = {
   minimumHeight: 6,
 };
 const filters = ["All", "Messages", "Reasoning", "Tools"];
+const sections = ["ACTIVE", "NEEDS YOU", "PENDING", "SUBAGENTS", "FINISHED"];
+const eventInks: Record<string, ThemeColor> = {
+  message: "borderAccent",
+  reasoning: "syntaxFunction",
+  tool: "syntaxType",
+  compaction: "mdHeading",
+  error: "error",
+  policy: "warning",
+};
+const keySets: Record<"home" | "work" | "trace" | "notices", Badge[]> = {
+  home: [
+    { icon: "↑↓", text: "select" },
+    { icon: "Enter", text: "details" },
+    { icon: "f", text: "repository" },
+    { icon: "n", text: "notices" },
+    { icon: "r", text: "refresh" },
+    { icon: "Esc", text: "close" },
+  ],
+  work: [
+    { icon: "↑↓", text: "session" },
+    { icon: "Enter", text: "transcript" },
+    { icon: "PgUp/PgDn", text: "scroll" },
+    { icon: "Esc", text: "back" },
+  ],
+  trace: [
+    { icon: "↑↓", text: "pause/select" },
+    { icon: "Enter", text: "expand" },
+    { icon: "Tab", text: "filter" },
+    { icon: "[", text: "older" },
+    { icon: "End", text: "follow" },
+    { icon: "PgUp/PgDn", text: "body" },
+    { icon: "Esc", text: "back" },
+  ],
+  notices: [
+    { icon: "PgUp/PgDn", text: "scroll" },
+    { icon: "n/Esc", text: "back" },
+  ],
+};
+/** Where an action or session's elapsed time stops: now while it runs. */
+function endOf(entity: MonitorEntity | null): number {
+  if (
+    entity?.endedAt === null ||
+    entity?.endedAt === undefined ||
+    entity.state === "running" ||
+    entity.state === "waiting"
+  ) {
+    return Date.now();
+  }
+  return Date.parse(entity.endedAt);
+}
 interface MonitorViewOptions {
   runtime: Pick<
     MonitorRuntime,
@@ -42,7 +100,7 @@ interface MonitorViewOptions {
     | "refresh"
     | "loadPage"
   >;
-  theme: Pick<Theme, "fg">;
+  theme: MonitorTheme;
   done: () => void;
   repositories: string[];
 }
@@ -275,52 +333,147 @@ class MonitorView implements Component {
     }
     this.changed();
   }
-  private header(): string[] {
-    const { snapshot, error } = this.options.runtime;
-    const lines = ["WORK · Ecosystem + Project Buddy"];
-    if (error !== null) {
-      lines.push(error);
+  private heading(rows: WorkRow[]): string[] {
+    const { theme, runtime } = this.options;
+    const { snapshot, error } = runtime;
+    let scope = "Ecosystem + Project Buddy";
+    if (this.repo !== null) {
+      scope = this.repo;
     }
+    const title = `${pill(theme, { icon: "\u{f06a9}", text: "WORK" })}  ${theme.fg("muted", `${safeBody(scope)} · read-only`)}`;
+    const status: string[] = [];
     const health = snapshot?.entities.find(
       (item): boolean => item.id === "collector",
     );
     if (health === undefined) {
-      lines.push(
-        "Waiting for monitoring data · run the collector after database setup",
+      status.push(
+        chip(
+          theme,
+          "◷ Waiting for monitoring data · start the collector",
+          "warning",
+        ),
       );
     } else {
-      let freshness = `Updated ${elapsed(health.activityAt, Date.now())} ago`;
+      const updated = `Updated ${elapsed(health.activityAt, Date.now())} ago`;
       if (
         Date.now() - Date.parse(health.activityAt ?? health.sourceAt) >
         viewSize.staleMilliseconds
       ) {
-        freshness = `Status delayed · ${freshness.toLowerCase()}`;
+        status.push(
+          chip(theme, `◷ Status delayed · ${updated.toLowerCase()}`, "warning"),
+        );
+      } else {
+        status.push(chip(theme, `● ${updated}`, "success"));
       }
       if (health.state !== "ok") {
-        freshness += " · partial data (see notices)";
+        status.push(chip(theme, "partial data · n for notices", "warning"));
       }
-      lines.push(freshness);
     }
     if (snapshot?.partial === true) {
-      lines.push("Some older work is outside the 1000-record display bound");
+      status.push(chip(theme, "older work beyond 1000 records", "warning"));
     }
-    return lines;
-  }
-  private home(): string[] {
-    const { snapshot } = this.options.runtime;
-    if (snapshot === null) {
-      return ["", "Database-backed monitoring is not available yet."];
+    if (error !== null) {
+      status.push(chip(theme, safeBody(summary(error)), "error"));
     }
-    const { rows } = this;
-    const counts = ["ACTIVE", "PENDING", "NEEDS YOU", "FINISHED"].map(
-      (section): string =>
+    const counts = sections.map((section): string =>
+      chip(
+        theme,
         `${rows.filter((row): boolean => row.section === section).length} ${section.toLowerCase()}`,
+        sectionInk(section),
+      ),
     );
-    let scope = "";
-    if (this.repo !== null) {
-      scope = `${this.repo} · `;
+    return [title, status.join(" "), counts.join(" ")];
+  }
+  /** One work item: its title, then its step, timing and usage. */
+  private itemLines(row: WorkRow, selected: boolean): Line[] {
+    const { snapshot } = this.options.runtime;
+    let marker = "  ";
+    if (selected) {
+      marker = "› ";
     }
-    const lines = [`${scope}${counts.join(" · ")}`, ""];
+    const first = line(
+      span(marker, "accent", true),
+      span(
+        row.item.repo?.split("/").at(-1) ?? "subagent",
+        repoInk(this.options.repositories, row.item.repo),
+        true,
+      ),
+    );
+    if (row.item.issue !== null) {
+      first.spans.push(span(` #${row.item.issue}`, "accent", true));
+    }
+    first.spans.push(span(` ${row.item.title}`, "text", selected));
+    first.hang = 2;
+    const lines = [first];
+    const sessionUsage = snapshot?.usage.find(
+      (usage): boolean => usage.session === row.session?.id,
+    );
+    let tokenTotal: number | null = null;
+    if (row.action !== null && snapshot !== null) {
+      tokenTotal = totalUsage(actionUsage(snapshot, row.action));
+    } else if (sessionUsage !== undefined) {
+      tokenTotal = totalUsage([sessionUsage]);
+    }
+    let end = endOf(row.action);
+    if (row.item.kind === "session") {
+      end = endOf(row.item);
+    }
+    if (row.action === null && row.session === null) {
+      lines.push(
+        line(
+          span("    "),
+          span(summary(row.reason ?? row.state), stateInk(row.state)),
+        ),
+      );
+    } else {
+      lines.push(
+        line(
+          span("    "),
+          span(row.action?.actor ?? row.session?.actor ?? "", "text"),
+          span(" · ", "dim"),
+          span(stepLabel(row), stateInk(row.state), true),
+          span("  ", "dim"),
+          span(
+            elapsed(row.action?.startedAt ?? row.session?.startedAt, end),
+            "text",
+          ),
+          span("  ctx ", "muted"),
+          span(compactNumber(sessionUsage?.latest), "syntaxNumber"),
+          span(" · tokens ", "muted"),
+          span(compactNumber(tokenTotal), "syntaxNumber"),
+        ),
+      );
+    }
+    if (row.session !== null && row.section === "ACTIVE") {
+      lines.push(
+        line(
+          span(
+            `    Last activity ${elapsed(sessionUsage?.lastActivity ?? row.session.activityAt, Date.now())} ago`,
+            "muted",
+          ),
+        ),
+      );
+    }
+    if (
+      row.reason !== null &&
+      (row.section === "NEEDS YOU" || row.action?.state === "waiting")
+    ) {
+      let ink: ThemeColor = "warning";
+      if (row.section === "NEEDS YOU") {
+        ink = "error";
+      }
+      lines.push(line(span(`    ${summary(row.reason)}`, ink)));
+    }
+    return lines.map((entry): Line => ({ ...entry, selected }));
+  }
+  private home(rows: WorkRow[]): Line[] {
+    const { theme, runtime } = this.options;
+    const { snapshot } = runtime;
+    if (snapshot === null) {
+      return [
+        line(span("Database-backed monitoring is not available yet.", "muted")),
+      ];
+    }
     if (this.homeSelection !== null) {
       const index = rows.findIndex(
         (row): boolean => row.id === this.homeSelection,
@@ -332,85 +485,61 @@ class MonitorView implements Component {
     this.selected = Math.min(this.selected, Math.max(0, rows.length - 1));
     this.homeSelection = rows.at(this.selected)?.id ?? null;
     const start = Math.max(0, this.selected - viewSize.precedingRows);
+    const lines: Line[] = [];
     let currentSection = "";
     for (const [index, row] of [...rows.entries()].slice(start)) {
       if (row.section !== currentSection) {
         currentSection = row.section;
-        lines.push("", currentSection);
+        if (lines.length > 0) {
+          lines.push(line());
+        }
+        const count = rows.filter(
+          (entry): boolean => entry.section === row.section,
+        ).length;
+        lines.push(raw(pill(theme, sectionBadge(row.section, count))));
       }
-      let prefix = "  ";
-      if (index === this.selected) {
-        prefix = "› ";
-      }
-      const repo = row.item.repo?.split("/").at(-1) ?? "subagent";
-      let number = "";
-      if (row.item.issue !== null) {
-        number = `#${row.item.issue} `;
-      }
-      lines.push(`${prefix}${repo} ${number}${row.item.title}`);
-      const sessionUsage = snapshot.usage.find(
-        (usage): boolean => usage.session === row.session?.id,
-      );
-      let tokenTotal: number | null = null;
-      if (row.action !== null) {
-        tokenTotal = totalUsage(actionUsage(snapshot, row.action));
-      } else if (sessionUsage !== undefined) {
-        tokenTotal = totalUsage([sessionUsage]);
-      }
-      let end = Date.now();
-      if (
-        row.action?.endedAt !== null &&
-        row.action?.endedAt !== undefined &&
-        row.action.state !== "running" &&
-        row.action.state !== "waiting"
-      ) {
-        end = Date.parse(row.action.endedAt);
-      }
-      if (row.item.kind === "session" && row.item.endedAt !== null) {
-        end = Date.parse(row.item.endedAt);
-      }
-      if (row.action === null && row.session === null) {
-        lines.push(`    ${summary(row.reason ?? row.state)}`);
-      } else {
-        lines.push(
-          `    ${row.action?.actor ?? row.session?.actor ?? ""} · ${stepLabel(row)}  |  ${elapsed(row.action?.startedAt ?? row.session?.startedAt, end)}  |  ctx ${compactNumber(sessionUsage?.latest)} · tokens ${compactNumber(tokenTotal)}`,
-        );
-      }
-      if (row.session !== null && row.section === "ACTIVE") {
-        lines.push(
-          `    Last activity ${elapsed(sessionUsage?.lastActivity ?? row.session.activityAt, Date.now())} ago`,
-        );
-      }
-      if (
-        row.reason !== null &&
-        (row.section === "NEEDS YOU" || row.action?.state === "waiting")
-      ) {
-        lines.push(`    ${summary(row.reason)}`);
-      }
+      lines.push(...this.itemLines(row, index === this.selected));
     }
     if (rows.length === 0) {
-      lines.push("No work in the current database selection.");
+      lines.push(
+        line(span("No work in the current database selection.", "muted")),
+      );
     }
     const warnings = notices(snapshot, this.repo);
     if (warnings.length > 0) {
       lines.push(
-        "",
-        `NOTICES · ${warnings.length} · n to inspect`,
-        ...warnings.slice(0, viewSize.notices),
+        line(),
+        raw(
+          `${pill(theme, { icon: "!", text: `NOTICES · ${warnings.length}`, ink: "warning" })} ${theme.fg("muted", "n to inspect")}`,
+        ),
+        ...warnings
+          .slice(0, viewSize.notices)
+          .map(
+            (warning): Line =>
+              line(span("  • ", "warning"), span(warning, "warning")),
+          ),
       );
     }
     return lines;
   }
-  private workDetails(): string[] {
+  private workDetails(): Line[] {
     const { snapshot } = this.options.runtime;
     if (this.work === null || snapshot === null) {
       return [];
     }
     const { item } = this.work;
-    const lines = [
-      `${item.repo} #${item.issue} · ${item.title}`,
-      "",
-      "TASK ATTEMPTS",
+    const lines: Line[] = [
+      line(
+        span(
+          item.repo ?? "",
+          repoInk(this.options.repositories, item.repo),
+          true,
+        ),
+        span(` #${item.issue}`, "accent", true),
+        span(` ${item.title}`, "text", true),
+      ),
+      line(),
+      line(span("TASK ATTEMPTS", "borderAccent", true)),
     ];
     for (const action of newest(
       snapshot.entities.filter(
@@ -420,58 +549,124 @@ class MonitorView implements Component {
           entry.issue === item.issue,
       ),
     )) {
-      let end = Date.now();
-      if (
-        action.endedAt !== null &&
-        action.state !== "running" &&
-        action.state !== "waiting"
-      ) {
-        end = Date.parse(action.endedAt);
-      }
       lines.push(
-        `${action.task} · ${action.state} · ${elapsed(action.startedAt, end)} · ${compactNumber(totalUsage(actionUsage(snapshot, action)))} tokens`,
+        line(
+          span("  "),
+          span(action.task ?? "task", "syntaxFunction", true),
+          span(" · ", "dim"),
+          span(action.state, stateInk(action.state), true),
+          span(" · ", "dim"),
+          span(elapsed(action.startedAt, endOf(action)), "text"),
+          span(" · ", "dim"),
+          span(
+            compactNumber(totalUsage(actionUsage(snapshot, action))),
+            "syntaxNumber",
+          ),
+          span(" tokens", "muted"),
+        ),
       );
       if (action.reason !== null) {
-        lines.push(action.reason);
+        lines.push(line(span(`    ${action.reason}`, stateInk(action.state))));
       }
     }
-    lines.push("", "SESSIONS · select one to inspect messages");
+    lines.push(
+      line(),
+      line(
+        span("SESSIONS", "borderAccent", true),
+        span(" · select one to inspect messages", "muted"),
+      ),
+    );
     const { sessions } = this;
     this.selected = Math.min(this.selected, Math.max(0, sessions.length - 1));
     for (const [index, session] of sessions.entries()) {
-      let prefix = "  ";
-      if (index === this.selected) {
-        prefix = "› ";
+      const selected = index === this.selected;
+      let marker = "  ";
+      if (selected) {
+        marker = "› ";
       }
-      lines.push(
-        `${prefix}${session.task} › ${session.phase ?? session.title} · ${session.state} · ${session.model ?? "model unavailable"}`,
-      );
+      lines.push({
+        spans: [
+          span(marker, "accent", true),
+          span(session.task ?? "", "syntaxFunction", true),
+          span(` › ${session.phase ?? session.title}`, "text"),
+          span(" · ", "dim"),
+          span(session.state, stateInk(session.state), true),
+          span(` · ${session.model ?? "model unavailable"}`, "muted"),
+        ],
+        selected,
+        hang: 2,
+      });
     }
     if (sessions.length === 0) {
-      lines.push("No recorded model sessions.");
+      lines.push(line(span("No recorded model sessions.", "muted")));
     }
     return lines;
   }
-  private transcript(): string[] {
+  private usageLines(): Line[] {
+    const { runtime } = this.options;
+    const { trace } = this;
+    if (trace === null) {
+      return [];
+    }
+    const usage = runtime.snapshot?.usage.find(
+      (item): boolean => item.session === trace.id,
+    );
+    const total = totalUsage(
+      runtime.snapshot?.usage.filter(
+        (item): boolean => item.session === trace.id,
+      ) ?? [],
+    );
+    function metric(label: string, value: number | null | undefined): Span[] {
+      return [
+        span(` · ${label} `, "muted"),
+        span(compactNumber(value), "syntaxNumber"),
+      ];
+    }
+    let follow = span("Paused · End resumes follow", "warning", true);
+    if (runtime.following) {
+      follow = span("● Following", "success", true);
+    }
+    return [
+      line(
+        span(trace.actor ?? trace.title, "text", true),
+        span(" · ", "dim"),
+        span(trace.model ?? "model unavailable", "syntaxFunction"),
+        span(" · ", "dim"),
+        span(trace.state, stateInk(trace.state), true),
+      ),
+      line(
+        span("Context ", "muted"),
+        span(compactNumber(usage?.latest), "syntaxNumber", true),
+        span(" / ", "muted"),
+        span(compactNumber(usage?.window ?? trace.window), "syntaxNumber"),
+        ...metric("start", usage?.first),
+        ...metric("peak", usage?.peak),
+        ...metric("target", usage?.target),
+      ),
+      line(
+        span("Tokens ", "muted"),
+        span(compactNumber(total), "syntaxNumber", true),
+        ...metric("in", usage?.input),
+        ...metric("out", usage?.output),
+        ...metric("cache read", usage?.cacheRead),
+        ...metric("cache write", usage?.cacheWrite),
+      ),
+      line(
+        span(compactNumber(usage?.compactions), "syntaxNumber"),
+        span(" compactions · ", "muted"),
+        follow,
+        span(" · ", "dim"),
+        span(filters.at(this.filter) ?? "All", "accent", true),
+      ),
+      line(),
+    ];
+  }
+  private transcript(): Line[] {
     const { runtime } = this.options;
     if (this.trace === null) {
       return [];
     }
-    const usage = runtime.snapshot?.usage.find(
-      (item): boolean => item.session === this.trace?.id,
-    );
-    const window = usage?.window ?? this.trace.window;
-    let follow = "Paused · End resumes follow";
-    if (runtime.following) {
-      follow = "Following";
-    }
-    const lines = [
-      `${this.trace.actor ?? this.trace.title} · ${this.trace.model ?? "model unavailable"} · ${this.trace.state}`,
-      `Context ${compactNumber(usage?.latest)} / ${compactNumber(window)} · start ${compactNumber(usage?.first)} · peak ${compactNumber(usage?.peak)} · target ${compactNumber(usage?.target)}`,
-      `Tokens ${compactNumber(totalUsage(runtime.snapshot?.usage.filter((item): boolean => item.session === this.trace?.id) ?? []))} · in ${compactNumber(usage?.input)} · out ${compactNumber(usage?.output)} · cache read ${compactNumber(usage?.cacheRead)} · cache write ${compactNumber(usage?.cacheWrite)}`,
-      `${compactNumber(usage?.compactions)} compactions · ${follow} · ${filters.at(this.filter)}`,
-      "",
-    ];
+    const lines = this.usageLines();
     const { events } = this;
     const last = events.at(-1)?.sequence ?? 0;
     if (runtime.following && last !== this.followSequence) {
@@ -480,83 +675,100 @@ class MonitorView implements Component {
     }
     this.selected = Math.min(this.selected, Math.max(0, events.length - 1));
     if (runtime.page.more) {
-      lines.push("[ loads earlier events");
+      lines.push(line(span("[ loads earlier events", "dim")));
     }
     const start = Math.max(0, this.selected - viewSize.precedingEvents);
     for (const [index, row] of [...events.entries()].slice(start)) {
       const { event } = row;
-      let prefix = "  ";
-      if (index === this.selected) {
-        prefix = "› ";
+      const selected = index === this.selected;
+      let marker = "  ";
+      if (selected) {
+        marker = "› ";
       }
       let preview =
-        event.body.split("\n").find((line): boolean => line.trim() !== "") ??
+        event.body.split("\n").find((text): boolean => text.trim() !== "") ??
         "";
       if (this.filter === 2) {
         preview = event.reasoning?.split("\n").at(0) ?? "";
       }
-      lines.push(
-        `${prefix}${event.at?.split("T").at(1)?.split(".").at(0) ?? "—"} ${event.label} · ${preview.slice(0, viewSize.preview)}`,
-      );
+      lines.push({
+        spans: [
+          span(marker, "accent", true),
+          span(event.at?.split("T").at(1)?.split(".").at(0) ?? "—", "dim"),
+          span(` ${event.label}`, eventInks[event.kind] ?? "muted", true),
+          span(` · ${preview.slice(0, viewSize.preview)}`, "text"),
+        ],
+        selected,
+        hang: 2,
+      });
       if (this.expanded === row.sequence) {
-        let { body } = event;
+        lines.push(
+          ...event.body
+            .split("\n")
+            .map((text): Line => line(span(`    ${text}`))),
+        );
         if (event.reasoning !== null) {
-          body += `\n\nReasoning\n${event.reasoning}`;
+          lines.push(
+            line(),
+            line(span("    Reasoning", "syntaxFunction", true)),
+            ...event.reasoning
+              .split("\n")
+              .map((text): Line => line(span(`    ${text}`, "muted"))),
+          );
         }
-        return [
-          ...lines,
-          ...body.split("\n").map((line): string => `    ${line}`),
-        ];
+        return lines;
       }
     }
     if (events.length === 0) {
       lines.push(
-        "No matching recorded events. Reasoning is available only when the provider exposes it.",
+        line(
+          span(
+            "No matching recorded events. Reasoning is available only when the provider exposes it.",
+            "muted",
+          ),
+        ),
       );
     }
     return lines;
   }
+  private noticeLines(): Line[] {
+    const warnings = notices(
+      this.options.runtime.snapshot ?? {
+        entities: [],
+        usage: [],
+        at: "",
+        partial: false,
+      },
+      this.repo,
+    );
+    if (warnings.length === 0) {
+      return [line(span("No current notices.", "muted"))];
+    }
+    return warnings.map(
+      (warning): Line => line(span("• ", "warning"), span(warning, "warning")),
+    );
+  }
   render(width: number): string[] {
-    const { theme } = this.options;
     const height = Math.max(viewSize.minimumHeight, this.host.terminal.rows);
-    let body: string[];
-    if (this.work === null && this.trace === null) {
-      body = this.home();
-    } else {
-      body = [];
-    }
-    let footer =
-      "↑↓ select · Enter details · f repository · n notices · r refresh · Esc close";
-    if (this.work !== null) {
-      body = this.workDetails();
-      footer = "↑↓ session · Enter transcript · PgUp/PgDn scroll · Esc back";
-    }
-    if (this.trace !== null) {
-      body = this.transcript();
-      footer =
-        "↑↓ pause/select · Enter expand · Tab filter · [ older · End follow · PgUp/PgDn body · Esc back";
-    }
+    const { rows } = this;
+    let body: Line[];
+    let title = `Work · ${rows.length}`;
+    let keys = keySets.home;
     if (this.panel === "notices") {
-      body = [
-        "NOTICES",
-        "",
-        ...notices(
-          this.options.runtime.snapshot ?? {
-            entities: [],
-            usage: [],
-            at: "",
-            partial: false,
-          },
-          this.repo,
-        ),
-      ];
-      if (body.length === 2) {
-        body.push("No current notices.");
-      }
-      footer = "PgUp/PgDn scroll · n or Esc back";
+      body = this.noticeLines();
+      title = `Notices · ${body.length}`;
+      keys = keySets.notices;
+    } else if (this.trace !== null) {
+      body = this.transcript();
+      title = `Transcript · ${safeBody(this.trace.actor ?? this.trace.title)}`;
+      keys = keySets.trace;
+    } else if (this.work === null) {
+      body = this.home(rows);
+    } else {
+      body = this.workDetails();
+      title = `${this.work.item.repo?.split("/").at(-1) ?? ""} #${this.work.item.issue}`;
+      keys = keySets.work;
     }
-    const heading = this.header();
-    const available = Math.max(1, height - heading.length - 2);
     let offset = 0;
     if (
       this.work !== null ||
@@ -565,19 +777,11 @@ class MonitorView implements Component {
     ) {
       offset = this.detailOffset;
     }
-    const wrapped = body
-      .flatMap((line): string[] =>
-        wrapTextWithAnsi(safeBody(line), Math.max(1, width - 2)),
-      )
-      .slice(offset, offset + available);
-    return [
-      ...heading.map((line): string => theme.fg("accent", line)),
-      ...wrapped,
-      "",
-      theme.fg("muted", footer),
-    ]
-      .slice(0, height)
-      .map((line): string => truncateToWidth(line, width));
+    return frame(
+      this.options.theme,
+      { heading: this.heading(rows), title, body, offset, keys },
+      { width, height },
+    );
   }
 }
 
