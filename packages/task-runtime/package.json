@@ -6,7 +6,7 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "check": "tsc -p . && biome check --error-on-warnings && node --test 'test/**/*.test.ts'"
+    "check": "tsc -p . && biome check --error-on-warnings && node --test --test-timeout=180000 'test/**/*.test.ts'"
   },
   "dependencies": {
     "zod": "^4.6.7"

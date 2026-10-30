@@ -85,9 +85,11 @@ A source-side effective-config read is distinct from either a job or `--print-bo
 ```bash
 node --input-type=module - /absolute/operator/repo.json <<'JS'
 import { loadConfig } from './apps/issue-pipeline/src/config.ts';
-import { runtimeBoundary } from './apps/issue-pipeline/src/job/runtime-policy.ts';
+import { policyOf, RUNTIME_SCHEMA } from '@ecosystem/task-runtime/job/runtime-policy';
 const cfg = loadConfig(process.argv[2]);
-console.log(JSON.stringify({ models: cfg.models, runtime: runtimeBoundary(cfg.runtime, cfg.models) }, null, 2));
+const runtime = RUNTIME_SCHEMA.parse(cfg.runtime);
+const policies = Object.fromEntries(Object.entries(cfg.models).map(([profile, model]) => [profile, policyOf(model, runtime)]));
+console.log(JSON.stringify({ models: cfg.models, policies }, null, 2));
 JS
 ```
 

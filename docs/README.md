@@ -54,3 +54,6 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 [Checkouts](reference/checkouts.md): where clones, checkouts and run files live, and what an action preserves when it ends.
 
 [Stops and labels](reference/stops-and-labels.md): start, running and stop labels and operator cutover.
+
+The [shared task runtime](../packages/task-runtime/README.md) documents service
+ownership, dependency direction and host-provisioned capability interfaces.

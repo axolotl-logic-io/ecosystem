@@ -82,6 +82,16 @@ function committedSettings(
     }
     expected = cloneUrl;
   }
+  return { ...raw, ...readTrustedProjectSettings(source, expected) };
+}
+
+// The host supplies repository identity and an immutable policy pin. Only Git
+// objects are read; candidate working-tree settings never become authority.
+function readTrustedProjectSettings(
+  source: ProjectPolicySource,
+  expectedOrigin: string,
+): ReturnType<typeof parseProjectSettings> {
+  PROJECT_POLICY_SOURCE.parse(source);
   const origin = gitObject(source, [
     "config",
     "--null",
@@ -89,7 +99,7 @@ function committedSettings(
     "remote.origin.url",
   ]);
   // Exact framing requires one raw value; blank extras and padding reject.
-  if (origin !== `${expected}\u0000`) {
+  if (origin !== `${expectedOrigin}\u0000`) {
     throw new OpsError(
       "project policy source must have the configured repository origin",
     );
@@ -122,7 +132,7 @@ function committedSettings(
     );
   }
   const settings = parseProjectSettings(text);
-  return { ...raw, ...settings };
+  return settings;
 }
 
 function resolveProjectSettings(
@@ -150,26 +160,43 @@ function resolveProjectSettings(
   return committedSettings(raw);
 }
 
-interface PolicyConfig {
+interface PolicySnapshot {
   projectPolicy: ProjectPolicySource;
   policyBinding?: ProjectPolicyBinding | undefined;
-  [key: string]: unknown;
+  commands?: unknown;
+  practices?: unknown;
+  lockfiles?: unknown;
+  migrations?: unknown;
+  requireCi?: unknown;
+  ciWaitMinutes?: unknown;
+  commandTimeoutMinutes?: unknown;
+  permissions?: unknown;
+  resources?: unknown;
 }
 
-function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
-  const effective = Object.fromEntries(
-    [
-      "commands",
-      "practices",
-      "lockfiles",
-      "migrations",
-      "requireCi",
-      "ciWaitMinutes",
-      "commandTimeoutMinutes",
-      "permissions",
-      "resources",
-    ].map((key) => [key, cfg[key]]),
-  );
+function computePolicyBinding(cfg: PolicySnapshot): ProjectPolicyBinding {
+  const {
+    commands,
+    practices,
+    lockfiles,
+    migrations,
+    requireCi,
+    ciWaitMinutes,
+    commandTimeoutMinutes,
+    permissions,
+    resources,
+  } = cfg;
+  const effective = {
+    commands,
+    practices,
+    lockfiles,
+    migrations,
+    requireCi,
+    ciWaitMinutes,
+    commandTimeoutMinutes,
+    permissions,
+    resources,
+  };
   const source = cfg.projectPolicy;
   const entry = gitObject(source, ["ls-tree", source.revision, "--", DOCUMENT]);
   const match = TREE_ENTRY.exec(entry);
@@ -191,16 +218,16 @@ function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
 
 // Loaded configs use their snapshot; in-process callers with parsed configs get
 // the same computation. Requests may compare this value but cannot supply it.
-function configPolicyDigest(cfg: PolicyConfig): string {
+function configPolicyDigest(cfg: PolicySnapshot): string {
   return (cfg.policyBinding ?? computePolicyBinding(cfg)).digest;
 }
 
-function policyRevision(cfg: PolicyConfig): { policy: string } {
+function policyRevision(cfg: PolicySnapshot): { policy: string } {
   return { policy: configPolicyDigest(cfg) };
 }
 
 function assertPolicyDigest(
-  cfg: PolicyConfig,
+  cfg: PolicySnapshot,
   expected: string | undefined,
 ): void {
   if (expected !== undefined && configPolicyDigest(cfg) !== expected) {
@@ -215,5 +242,6 @@ export {
   computePolicyBinding,
   configPolicyDigest,
   policyRevision,
+  readTrustedProjectSettings,
   resolveProjectSettings,
 };
