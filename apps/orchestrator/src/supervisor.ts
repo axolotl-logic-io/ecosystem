@@ -9,6 +9,7 @@ interface Launch {
   launcher: string;
   config: string;
   manifest: string;
+  hiddenVariables: readonly string[];
 }
 interface Event {
   kind: "started" | "output" | "exited" | "error" | "draining";
@@ -29,11 +30,15 @@ interface Ended {
 }
 
 function startLauncher(launch: Launch): ChildProcess {
+  const env = childEnvironment(process.env);
+  for (const variable of launch.hiddenVariables) {
+    delete env[variable];
+  }
   return spawn(
     process.execPath,
     [launch.launcher, "--config", launch.config, "--manifest", launch.manifest],
     {
-      env: childEnvironment(process.env),
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -82,6 +87,7 @@ async function runOrchestrator(
       config,
       manifest: fleet.manifest,
       launcher: fleet.launcher,
+      hiddenVariables: fleet.hiddenVariables,
     });
     for (const [stream, readable] of [
       ["stdout", child.stdout],

@@ -1,6 +1,7 @@
 // Validate the entire operator-owned fleet before starting a launcher.
 import fs from "node:fs";
 import path from "node:path";
+import { readBuddyFile } from "@ecosystem/launcher/buddy-file";
 import { type Checked, checkLauncher } from "@ecosystem/launcher/launcher";
 import { untrustedFile } from "@ecosystem/task-runtime/trusted-file";
 import { z } from "zod";
@@ -15,6 +16,7 @@ const CONFIG = z.strictObject({
 interface Fleet {
   manifest: string;
   launcher: string;
+  hiddenVariables: string[];
   buddies: { file: string; checked: Checked }[];
 }
 
@@ -37,6 +39,7 @@ function checkOrchestrator(file: string): Fleet {
   const files = new Set<string>();
   const names = new Set<string>();
   const accounts = new Set<string>();
+  const hiddenVariables = new Set<string>();
   const buddies = config.buddies.map((buddy) => {
     const canonical = fs.realpathSync(buddy);
     if (files.has(canonical)) {
@@ -44,6 +47,7 @@ function checkOrchestrator(file: string): Fleet {
     }
     files.add(canonical);
     const checked = checkLauncher(buddy, config.manifest);
+    hiddenVariables.add(readBuddyFile(buddy).credentials.variable);
     const name = checked.buddy.toLowerCase();
     const account = checked.account.toLowerCase();
     if (names.has(name) || accounts.has(account)) {
@@ -55,7 +59,12 @@ function checkOrchestrator(file: string): Fleet {
     accounts.add(account);
     return { file: path.resolve(buddy), checked };
   });
-  return { manifest: config.manifest, launcher: config.launcher, buddies };
+  return {
+    manifest: config.manifest,
+    launcher: config.launcher,
+    hiddenVariables: [...hiddenVariables],
+    buddies,
+  };
 }
 
 export type { Fleet };

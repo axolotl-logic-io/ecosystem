@@ -15,7 +15,13 @@ const BUDDIES = [
 ] as const;
 
 test("two supervised launchers execute their own tasks and drain on orchestrator shutdown", async () => {
-  const box = machine((world) => apply(world, "start:fix"));
+  const box = machine((world) => apply(world, "start:fix"), {
+    environment: new Map([
+      ["GH_TOKEN", "ambient-token"],
+      ["HIPPY_GITHUB_TOKEN", "ambient-first"],
+      ["LAWD_GITHUB_TOKEN", "ambient-second"],
+    ]),
+  });
   try {
     box.install("gherkin");
     box.install("fix");
@@ -24,7 +30,9 @@ test("two supervised launchers execute their own tasks and drain on orchestrator
       const worker = path.join(box.pipeline, `${task}.mjs`);
       fs.writeFileSync(
         worker,
-        `process.env.SAMPLE_TASK_GATE = ${JSON.stringify(gate.path)};\n${fs.readFileSync(worker, "utf8")}`,
+        `import fs from "node:fs";
+        fs.writeFileSync(${JSON.stringify(path.join(box.root, `${task}-environment.json`))}, JSON.stringify({ github: process.env.GH_TOKEN, first: process.env.HIPPY_GITHUB_TOKEN, second: process.env.LAWD_GITHUB_TOKEN }));
+        process.env.SAMPLE_TASK_GATE = ${JSON.stringify(gate.path)};\n${fs.readFileSync(worker, "utf8")}`,
       );
       return gate;
     });
@@ -50,6 +58,15 @@ test("two supervised launchers execute their own tasks and drain on orchestrator
       ["fix", "gherkin"],
     );
     for (const task of ["gherkin", "fix"]) {
+      assert.deepEqual(
+        JSON.parse(
+          fs.readFileSync(
+            path.join(box.root, `${task}-environment.json`),
+            "utf8",
+          ),
+        ),
+        {},
+      );
       assert.equal(marked(box.world(), "note", task).length, 0);
       assert.equal(marked(box.world(), "end", task).length, 1);
     }

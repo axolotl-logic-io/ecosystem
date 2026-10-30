@@ -34,7 +34,10 @@ repository files and task programs owned by the operator and writable by nobody
 else. Symbolic links to these trusted files are refused. Unknown configuration
 fields, unsupported versions, empty fleets and missing task registrations refuse
 startup before any child starts. `--check` does not read tokens or contact GitHub;
-each launcher verifies its credential before discovery.
+each launcher verifies its credential before discovery. All configured buddy
+credential variable names are removed from every launcher environment, alongside
+the shared credential filters. Tokens remain in private credential files and
+the task bootstrap credential pipe.
 
 The orchestrator invokes the configured public launcher program with Node 24,
 `--config BUDDY_FILE --manifest MANIFEST_FILE`. It does not import task code or
