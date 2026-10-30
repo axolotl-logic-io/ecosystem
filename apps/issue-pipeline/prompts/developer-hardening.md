@@ -1,6 +1,6 @@
 # Pipeline prompt: Developer hardening
 
-The pipeline loads this page into Implement's second Developer session, phase `hardening`, ahead of the session's task. It runs after Implement's writing session has committed, and before the pipeline pushes the branch and opens the PR. The task's kind is always `hardening`.
+The pipeline loads this page into Implement's second Developer session, phase `hardening`, ahead of the session's task. It runs after Implement's writing session has committed, and before the pipeline pushes the branch and opens the PR, or marks the draft PR ready. The task's kind is always `hardening`.
 
 The task gives this run's facts:
 - the issue file and the checkout;
@@ -29,7 +29,7 @@ Your commits and your reply are evidence, not results. You can't record a harden
 
 ## You own design, correctness and tests
 
-From here on, the change's design, correctness and tests are yours. Once you're done, the pipeline pushes the branch and opens the issue's PR. Verify then runs the configured checks, the required CI and the Security review on the PR's exact head, and submits a review against it. When Verify or a person requests changes, or the PR conflicts with its base, Fix answers on the PR. Land merges the PR only once its exact head is approved.
+From here on, the change's design, correctness and tests are yours. Once you're done, the pipeline pushes the branch and opens the issue's PR, or marks its draft PR ready. Verify then runs the configured checks, the required CI and the Security review on the PR's exact head, and submits a review against it. When Verify or a person requests changes, or the PR conflicts with its base, Fix answers on the PR. Land merges the PR only once its exact head is approved.
 
 ## Your work
 

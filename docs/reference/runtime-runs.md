@@ -331,7 +331,7 @@ Both schemas are exported as `BUDDY_RUN` and `ACTION_RUN` from `src/runtime/obse
 
 ## Task app runs
 
-A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
+A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Implement runs as `implement.mjs`; see [Implement](#implement). Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
 
 To run a task app, run:
 
@@ -396,3 +396,18 @@ A task app's model sessions write their JSONL files to `sessions/` in the same f
 `claim.start` is the `labeled` event of the start the run took, or null when the timeline doesn't show one, and `claim.removal` is its claim's `unlabeled` event. `step` is the lifecycle step the run is in. `reason` names the error of a failed run. The schema is exported as `TASK_RUN` from `src/task-app/run-record.ts`.
 
 The [workflow dashboard](../../apps/workflow-dash/README.md) shows each task run as an action. It shows a run recorded as running whose process is gone, or doesn't run on this host, as unavailable.
+
+### Implement
+
+`implement.mjs` runs Implement when a person applies `start:implement`. It writes the change the issue asks for on the branch `agent/issue-N`, hardens it in a fresh session and marks the issue's pull request (PR) ready for review. It doesn't wait for an assignee, an Author result or an earlier start, and it continues earlier work from GitHub alone:
+
+1. It refuses unless the buddy's account is the repository config's `devAccount`, which pushes the code. It also refuses when the issue's PR from `agent/issue-N` is merged or closed. A person reopens a closed PR to continue on it.
+2. It clones the repository into a checkout of its own under `runs/SLUG/issue-N/`. The checkout starts from the branch's head when the branch exists, and from the base branch otherwise. It runs the repository's setup there.
+3. It pushes the branch, with an empty `Start work on #N` commit when the branch has nothing ahead of the base. It then opens a draft PR with `Closes #N`, or moves the existing open PR back to draft.
+4. It writes `issue.md` in the task run's folder. The file holds the issue's title and body, the latest Gherkin, the issue's comments and, when the PR exists, its reviews, review threads and conversation. The latest Gherkin is the newest marked comment from an account that claimed `start:gherkin`. Comments, reviews and threads show only when a collaborator wrote them. The file counts the ones it leaves out.
+5. It runs a Developer session, then a fresh hardening session that doesn't see the first one's conversation. Each session commits through `pipeline_commit`, and each commit is pushed as it's made. When the branch already held work, the writing session is told to continue it.
+6. It marks the PR ready and posts a result comment that names the PR and its head.
+
+A push never overwrites the branch. If the branch holds commits that the checkout lacks, the run pushes its work to `agent/issue-N-recovery-ID` instead and fails. While `agents:stop` is on the issue, a session's commits stay in the checkout and the run stops. When the checkout closes, it bundles any commits that GitHub still lacks into the issue's run folder.
+
+Implement doesn't support a repository that sets `commands.teardown`. It reserves no model-session capacity, and it doesn't use the older Implement task's checkpoints or `recover-implement.mjs`.

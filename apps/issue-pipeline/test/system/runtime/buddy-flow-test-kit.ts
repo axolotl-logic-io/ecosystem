@@ -146,6 +146,11 @@ interface MachineSetup {
   provider?: "openai" | "anthropic";
 }
 
+interface TaskAppRun {
+  exited: Promise<TaskAppEnd>;
+  kill: () => void;
+}
+
 // How a task app's process ended, and what it wrote to stderr.
 interface TaskAppEnd {
   status: number | null;
@@ -184,6 +189,11 @@ interface Machine {
   ) => Promise<BuddyOutcome>;
   // Runs task app `app` (APP.mjs) once on issue ISSUE as `buddy`, from a
   // trusted file of its own, with `sessions` planned, to its end.
+  startTaskApp: (
+    app: string,
+    sessions: PlannedSession[],
+    buddy?: BuddyChoice,
+  ) => TaskAppRun;
   runTaskApp: (
     app: string,
     buddy: BuddyChoice,
@@ -717,11 +727,11 @@ function machine(
     );
     return { status, stderr, ended, run, actions: actionsOf(pipeline) };
   }
-  async function runTaskApp(
+  function startTaskApp(
     app: string,
-    buddy: BuddyChoice,
     sessions: PlannedSession[],
-  ): Promise<TaskAppEnd> {
+    buddy: BuddyChoice = { role: "developer", tasks: ["implement"] },
+  ): TaskAppRun {
     const buddyConfig = path.join(root, `launcher-${buddy.role}-${app}.json`);
     writeLauncherBuddy(
       buddyConfig,
@@ -746,16 +756,24 @@ function machine(
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
-    // A deadline that only fails the test.
-    const overstay = setTimeout(() => {
-      child.kill("SIGKILL");
-    }, OVERSTAY_MS);
-    const status = await new Promise<number | null>((resolve) => {
-      child.on("close", (code) => resolve(code));
+    const exited = new Promise<TaskAppEnd>((resolve, reject) => {
+      const deadline = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error(`${app} did not exit: ${stderr}`));
+      }, OVERSTAY_MS);
+      child.once("close", (status) => {
+        clearTimeout(deadline);
+        resolve({ status, stderr });
+      });
     });
-    clearTimeout(overstay);
-    return { status, stderr };
+    return {
+      exited,
+      kill: (): void => {
+        child.kill("SIGKILL");
+      },
+    };
   }
+
   return {
     root,
     origin,
@@ -782,7 +800,9 @@ function machine(
         .filter((line) => line !== "")
         .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
     runBuddy,
-    runTaskApp,
+    startTaskApp,
+    runTaskApp: (app, buddy, sessions) =>
+      startTaskApp(app, sessions, buddy).exited,
     recoverImplement: (
       action: string,
       apply: boolean,
@@ -876,5 +896,6 @@ export type {
   MachineSetup,
   PlannedSession,
   TaskAppEnd,
+  TaskAppRun,
 };
 export { applyStart, DEVELOPER, HARDENING, HUMAN, ISSUE, machine, marked };
