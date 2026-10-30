@@ -29,7 +29,7 @@ import {
   startLabel,
   unmark,
 } from "./claims.ts";
-import { loadIdentity } from "./identity.ts";
+import { type Identity, loadIdentity } from "./identity.ts";
 import { IssueGitHub, type IssueRef } from "./issue-github.ts";
 import { isTaskId, marked } from "./markers.ts";
 import { type Recovery, recovery } from "./recovery.ts";
@@ -51,7 +51,9 @@ interface TaskRun {
   run: string;
   account: string;
   issue: IssueRef;
+  // Repository settings and the verified buddy transport for private checkouts.
   config: string;
+  gitAccount: { account: string; env: ReadonlyMap<string, string> };
   github: IssueGitHub;
   recovery: Recovery;
   checkStop: () => void;
@@ -115,7 +117,7 @@ function wait(ms: number): Promise<void> {
 async function runClaimed(
   app: TaskApp,
   github: IssueGitHub,
-  repository: { config: string; base: string },
+  identity: Identity,
   claim: { start: number | null; claim: number },
 ): Promise<ExitStatus> {
   const { id: task } = app;
@@ -141,9 +143,10 @@ async function runClaimed(
       run,
       account: github.account,
       issue: github.issue,
-      config: repository.config,
+      config: identity.config,
+      gitAccount: { account: identity.account, env: identity.env },
       github,
-      recovery: recovery(github, task, repository.base),
+      recovery: recovery(github, task, identity.base),
       checkStop: (): void => github.checkStop(),
       comment: (text: string, kind: string, payload: object): void =>
         github.comment(marked(text, task, kind, payload)),

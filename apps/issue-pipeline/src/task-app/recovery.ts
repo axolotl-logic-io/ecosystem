@@ -40,6 +40,7 @@ const REVIEW = z.looseObject({
 });
 const REVIEW_COMMENT = z.looseObject({
   id: z.number().int().positive(),
+  pull_request_review_id: z.number().int().positive().nullish(),
   in_reply_to_id: z.number().int().positive().optional(),
   user: z.looseObject({ login: z.string() }).nullable(),
   path: z.string(),
@@ -65,6 +66,7 @@ interface Review {
   body: string;
 }
 interface ThreadComment {
+  review: number | null;
   id: number;
   author: string | null;
   body: string;
@@ -116,6 +118,7 @@ function threadsOf(rows: z.output<typeof REVIEW_COMMENT>[]): Thread[] {
   const threads = new Map<number, Thread>();
   for (const row of rows) {
     const comment = {
+      review: row.pull_request_review_id ?? null,
       id: row.id,
       author: row.user?.login ?? null,
       body: row.body,

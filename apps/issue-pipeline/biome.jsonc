@@ -80,7 +80,8 @@
         "src/task-app/run-record.ts",
         "src/task-app/task-app.ts",
         "src/task-apps/head-checkout.ts",
-        "src/task-apps/verify-session.ts"
+        "src/task-apps/verify-session.ts",
+        "src/task-apps/writer.ts"
       ],
       "linter": {
         "rules": {

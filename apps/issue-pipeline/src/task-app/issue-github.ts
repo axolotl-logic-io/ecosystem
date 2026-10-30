@@ -271,6 +271,23 @@ class IssueGitHub {
     return this.write(args, options);
   }
 
+  // Posts a thread reply through the same stop boundary as other writes.
+  reply(pull: number, comment: number, body: string): void {
+    const args = [
+      "api",
+      "-X",
+      "POST",
+      `repos/${this.issue.repo}/pulls/${pull}/comments/${comment}/replies`,
+      "-f",
+      `body=${body}`,
+    ];
+    const result = this.write(args, {});
+    if (result.code !== 0) {
+      throw this.failure(args, result);
+    }
+
+  }
+
   private write(
     args: readonly string[],
     options: WriteOptions,

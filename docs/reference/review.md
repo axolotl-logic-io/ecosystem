@@ -105,53 +105,36 @@ GitHub is the app's whole record. If the buddy's account already approved or req
 
 ## Fix
 
-Fix belongs to the Developer and uses the writer profile. It binds the item PR's current head. It runs only when a qualified person applies `start:fix`, and it answers what stands on that head:
+Fix is the `fix.mjs` [task app](runtime-runs.md#task-app-runs). Only `start:fix` starts it. A request for changes or a Land conflict never starts Fix by itself.
 
-- Verify's request-changes review on the current head;
-- Land's refused result for a PR that conflicts with its base;
-- otherwise, a qualified person's request-changes review on the current head. Fix confirms on GitHub that one stands, and records a failure when none does.
+To run Fix by hand:
 
-Fix does two things in one run:
+```bash
+node "$ISSUE_PIPELINE_ROOT/fix.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
+```
 
-1. It catches the PR's head branch up with its base branch. For a PR that merges branch A into branch B, Fix merges B into A, and resolves any conflict in the same run.
-2. It answers every blocking comment on the current head with a code change, and replies on each thread with what changed.
+`BUDDY_FILE` is the absolute path to the Fix buddy's version 2 configuration. `OWNER/REPO#N` identifies the issue. The buddy's account makes every GitHub write and authenticates every remote Git operation. Its token never reaches the model session.
 
-Fix merges rather than rebases. Commits that were already reviewed keep their identity, and the final merge commit keeps them in history.
+Fix reads the issue branch's open PR and the latest standing review from each reviewer. It accepts requests for changes from Verify's account or someone with repository write access. The optional repository setting `verifyAccount` names Verify's account; when absent, `landingAccount` supplies it for compatibility. Configure this when Verify uses a different buddy account.
 
-Fix's session is an `issue-pipeline-developer` session in phase `fix`, using the `fix.md` page. It runs only when the merge conflicts, a request for changes stands on the head, or Verify caused the round. A Land conflict that now merges cleanly is pushed without a session.
+Fix opens a fresh checkout of the pushed branch and merges the PR's base into its head, never rebasing. Existing commits keep their identity. A clean merge is committed immediately. For conflicts or unanswered blocking threads, Fix starts an `issue-pipeline-developer` session with the pinned `fix.md` page. The session resolves conflicts, makes code changes, runs relevant tests and commits with [pipeline_commit](sessions.md#pipeline_commit). Verify runs the full check afterwards.
 
-The session stages its resolution and concludes the merge with one [pipeline_commit](sessions.md#pipeline_commit). Fix's finish step then checks the checkout is clean, has no conflict markers and contains both the old head and the base. It pushes through the development account and replies on each blocking thread through the same account. If Land had marked the PR as a draft, Fix marks it ready for review after its push.
+A blocking thread belongs to a standing request-changes review, is unresolved on GitHub and doesn't start with a nit or non-blocking marker. A reply from Fix's account counts as answered. A rerun skips answered threads, including after a push moved the head beyond the reviewed commit. Resolved threads and other accounts' requests are excluded. The session also receives the accepted reviews' bodies as context.
 
-A blocking thread is the first comment of a request-changes review that still stands on the head. Fix also gives the session each such review's body, but GitHub has no thread to reply to there, so a finding in the body gets a code change and no reply. Only the landing account's reviews, which are Verify's, and a qualified person's direct Fix. Fix checks the reviewer's membership again when it reads the reviews. A request from anyone else, or from someone whose membership can't be read, is neither given to the session nor answered.
+Fix validates that the session returned exactly one reply per selected comment. It concludes a staged, resolved merge if needed, requires a clean checkout and pushes without force. It posts each reply in its thread, then comments on the issue with the pushed head and `start:verify` as the next step. It never applies that label itself.
 
-Fix's passed result names the new head as the code it produced. Every earlier review and result was for the old head; apply `start:verify` to review the new one.
+### Recovery
 
-### Conflicts
+GitHub is the record: every rerun starts from the pushed branch and reads the reviews and thread replies again. It doesn't depend on task records, task bindings, checkpoints or saved push journals. A failed or stopped run retains its private checkout for inspection; a successful run removes it. Sessions and the dashboard's observational run record remain in the task run folder.
 
-A conflict stays in the action checkout for Fix's session. The session stages its resolution, and Fix's guarded finish operation concludes the merge and pushes. A conflict that remains is kept, not sent through another session automatically.
-
-A session failure keeps the conflict. A `cannot` reply, or a session that leaves files unmerged, saves the conflict's numbered stages and a bundle of the checkout's commits in a `merge-*` folder of the issue's recovery folder, aborts the merge and records a failure. Neither outcome grants another attempt. A changed submodule pointer isn't a text resolution, so Fix keeps its unresolved evidence rather than choose a submodule revision.
-
-### Retained evidence
-
-Recovery preserves staged and working-tree patches and verified Git bundles before destructive checkout cleanup. An unresolved index also records paths, stages, modes and full object IDs in `conflict-stages.json`. An unfinished merge or an uncertain checkpoint keeps the original checkout. See [checkout preservation](checkouts.md).
-
-Read-only reconciliation settles an interrupted Fix from the remote branch, the PR and its threads. It never merges, pushes, replies, marks the PR ready, resets or cleans up.
-
-| What it reads | Verdict |
-|---|---|
-| The branch is still at the bound head | `failed` |
-| A new head that descends from the bound head and contains the base, shown pushed by this run, a reply from this run on every blocking thread, and a PR that isn't a draft | `passed` |
-| Anything else | `unknown`, held for a person |
-
-Two things show that this run pushed the head. The finish step records the head it pushes, and the run, in the issue's run folder before it pushes, so a matching record on this machine shows it. A reply from this run on a blocking thread shows it too. Only the development account's replies count, because anyone who can comment could copy a run's hidden mark. A Fix with no blocking threads therefore recovers from its push record, and holds for a person when that record is missing. Unpublished merged work stays held for explicit recovery rather than reset to the remote branch.
+A non-fast-forward push fails and keeps the checkout. It never overwrites another run's commits. Preserve and reconcile unpublished work before removing retained folders. Applying `start:fix` again starts a fresh run from GitHub; it doesn't reopen a retained checkout. Repository configurations with `laneSlots` are currently refused before checkout creation.
 
 ## Loop limit
 
-The loop has no automatic rounds: a person applies `start:fix` for each one. `VERIFY_FIX_ROUNDS` still limits Fix attempts that a refused Verify result caused before start labels were required, so those older attempts settle as before. Those older machine-caused attempts still have at most three attempts for one binding; a person's starts have no attempt limit.
+Fix counts Verify's request-changes reviews on the PR, not earlier task records. The first, second and third requests permit a Fix round. After the third, a further request ends with a comment asking a person to step in, without a session, merge or push. Reviews by other people don't increase this count. Repeating a start after a partial run doesn't consume another round.
 
 ## Failure and recovery
 
-To investigate a failure, read the authenticated task result and the [action observations](runtime-runs.md). Preserve the associated checkout and recovery evidence. A failed result, an unknown effect or an unanswered product question needs its supported resolution; none silently starts another model session.
+Read the task app's end comment and [run observation](runtime-runs.md#task-app-runs) to investigate a failure. The end comment identifies the failing lifecycle step and says how to retry. Preserve any retained checkout and its unpublished work first.
 
-A request-changes review isn't a failure. It's Verify's normal refusal, and Fix answers it. A loop held at its limit waits for a person; no label or restart lifts the limit.
+A request-changes review is Verify's normal verdict. Apply `start:fix` to answer it, then `start:verify` to review the pushed head. Neither label is applied automatically.

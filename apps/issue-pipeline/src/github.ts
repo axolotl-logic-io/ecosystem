@@ -252,7 +252,10 @@ function git(
   const helper = gitHelper(cfg);
   return credentialedRun("git", [...helper, ...args], {
     ...options,
-    env: withEnv(authenticatedEnv(cfg, identity), GIT_ENV),
+    env: withEnv(
+      cfg.gitAccount?.env ?? authenticatedEnv(cfg, identity),
+      GIT_ENV,
+    ),
   });
 }
 
