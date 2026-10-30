@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./reply": "./src/reply.ts"
+    "./reply": "./src/reply.ts",
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "check": "tsc -p . && biome check --error-on-warnings"
+    "check": "tsc -p . && biome check --error-on-warnings && node --test 'test/**/*.test.ts'"
   },
   "dependencies": {
     "@ecosystem/task-framework": "*",

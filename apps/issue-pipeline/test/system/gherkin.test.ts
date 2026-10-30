@@ -355,3 +355,75 @@ for (const task of ["gherkin", "implement", "verify", "fix", "land"]) {
     }
   });
 }
+
+test("each questions reply posts a fresh comment without replacing earlier questions", async () => {
+  const box = machine(started);
+  try {
+    const first = await box.runTaskApp(
+      "gherkin",
+      { account: "hippy", tasks: ["gherkin"] },
+      [asks("Do broken widgets count?")],
+    );
+    assert.equal(first.status, 0, first.stderr);
+    const [before] = marked(box, QUESTIONS_MARK);
+    applyStart(box, "start:gherkin");
+    const second = await box.runTaskApp(
+      "gherkin",
+      { account: "hippy", tasks: ["gherkin"] },
+      [asks("Which widgets are broken?")],
+    );
+    assert.equal(second.status, 0, second.stderr);
+    const questions = marked(box, QUESTIONS_MARK);
+    assert.equal(questions.length, 2);
+    assert.deepEqual(questions[0], before);
+    assert.ok(questions[1]?.body.includes("Which widgets are broken?"));
+    assert.equal(marked(box, GHERKIN_MARK).length, 0);
+    assert.equal(marked(box, END_MARK).length, 2);
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("stop before Gherkin holds the start without claims or sessions", async () => {
+  const box = machine((world) => {
+    started(world);
+    const issue = world.issues.find((item) => item.number === ISSUE);
+    issue?.labels.push("agents:stop");
+  });
+  try {
+    const before = box.world();
+    const run = await box.runTaskApp(
+      "gherkin",
+      { account: "hippy", tasks: ["gherkin"] },
+      [],
+    );
+    assert.equal(run.status, 0, run.stderr);
+    assert.deepEqual(box.world(), before);
+    assert.equal(box.launches().length, 0);
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("stop during the model session suppresses publication and reports stopped", async () => {
+  const box = machine(started);
+  try {
+    const run = await box.runTaskApp(
+      "gherkin",
+      { account: "hippy", tasks: ["gherkin"] },
+      [{ ...writes(FIRST), change: "stop-issue" }],
+    );
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(marked(box, GHERKIN_MARK).length, 0);
+    assert.equal(marked(box, QUESTIONS_MARK).length, 0);
+    assert.deepEqual(labelsOf(box), ["agents:stop"]);
+    const [end] = marked(box, END_MARK);
+    assert.ok(end?.body.includes("stopped at its work step"));
+    assert.ok(end?.body.includes('"outcome":"stopped"'));
+    const [launch] = box.launches();
+    assert.ok(launch !== undefined);
+    assert.equal(fs.existsSync(path.join(launch.cwd, "repo")), false);
+  } finally {
+    box.cleanup();
+  }
+});

@@ -26,7 +26,7 @@ function command(cwd: string, program: string, args: string[]): string {
 
 function fixture(): { root: string; source: string; cleanup: () => void } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-distribution-"));
-  const source = path.join(root, "source");
+  const source = path.join(root, "source/apps/issue-pipeline");
   fs.cpSync(SOURCE, source, {
     recursive: true,
     filter: (file: string): boolean => {
@@ -34,11 +34,19 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
       return !["dist", "node_modules", "test"].includes(first ?? "");
     },
   });
+  fs.cpSync(
+    path.resolve(SOURCE, "../../tasks/gherkin"),
+    path.resolve(source, "../../tasks/gherkin"),
+    { recursive: true },
+  );
   fs.symlinkSync(DEPENDENCIES, path.join(source, "node_modules"), "dir");
-  command(source, "git", ["init", "--initial-branch=main"]);
+  command(path.resolve(source, "../.."), "git", [
+    "init",
+    "--initial-branch=main",
+  ]);
   command(source, "git", ["config", "user.name", "Distribution test"]);
   command(source, "git", ["config", "user.email", "distribution@example.test"]);
-  command(source, "git", ["add", "."]);
+  command(source, "git", ["add", "../.."]);
   command(source, "git", ["commit", "-m", "Fixture source"]);
   return {
     root,
@@ -74,7 +82,10 @@ test("installer accepts uncommitted source and records its dirty identity", () =
     const root = path.join(sandbox.root, "operator-root");
     const agent = path.join(sandbox.root, "agent");
     const prompt = "# Modified local prompt\n";
-    fs.writeFileSync(path.join(sandbox.source, "prompts/gherkin.md"), prompt);
+    fs.writeFileSync(
+      path.resolve(sandbox.source, "../../tasks/gherkin/prompts/gherkin.md"),
+      prompt,
+    );
     const commit = command(sandbox.source, "git", ["rev-parse", "HEAD"]).trim();
     const result = spawnSync(process.execPath, ["install.ts"], {
       cwd: sandbox.source,

@@ -86,9 +86,9 @@ function headingOf(
   return null;
 }
 
-// Writes the issue file of `github`'s issue to `file`. Throws when the
-// issue's own author isn't a trusted person: its body is the request.
-function writeIssueFile(github: IssueGitHub, trust: Trust, file: string): void {
+// Returns trusted issue context. Rejects an untrusted issue author because
+// the issue body is the request. Storage and model execution remain host-owned.
+function issueContext(github: IssueGitHub, trust: Trust): string {
   const isPerson = personCheck(github, trust);
   const issue = github.issueNow();
   if (!isPerson(issue.author)) {
@@ -120,9 +120,14 @@ function writeIssueFile(github: IssueGitHub, trust: Trust, file: string): void {
       `(${withheld} other comment(s) were withheld: they are from people not on the pipeline's allow list, or the pipeline's own records.)`,
     );
   }
+  return lines.join("\n");
+}
+
+function writeIssueFile(github: IssueGitHub, trust: Trust, file: string): void {
+  const context = issueContext(github, trust);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, lines.join("\n"));
+  fs.writeFileSync(file, context);
 }
 
 export type { Trust };
-export { writeIssueFile };
+export { issueContext, writeIssueFile };

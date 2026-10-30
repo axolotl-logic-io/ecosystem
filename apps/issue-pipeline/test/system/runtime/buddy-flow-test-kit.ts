@@ -260,8 +260,17 @@ function install(pipeline: string, agentDir: string): void {
   fs.cpSync(path.join(SOURCE, "prompts"), path.join(pipeline, "prompts"), {
     recursive: true,
   });
+  const task = path.resolve(SOURCE, "../../tasks/gherkin");
+  fs.copyFileSync(
+    path.join(task, "prompts/gherkin.md"),
+    path.join(pipeline, "prompts/gherkin.md"),
+  );
   const agents = path.join(agentDir, "agents", "issue-pipeline");
   fs.mkdirSync(agents, { recursive: true });
+  fs.copyFileSync(
+    path.join(task, "agents/issue-pipeline-gherkin.md"),
+    path.join(agents, "issue-pipeline-gherkin.md"),
+  );
   for (const file of fs.readdirSync(path.join(SOURCE, "agents"))) {
     fs.copyFileSync(path.join(SOURCE, "agents", file), path.join(agents, file));
   }
