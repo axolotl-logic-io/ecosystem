@@ -273,3 +273,17 @@ test("a competing push is preserved and the losing run posts no replies", async 
     box.cleanup();
   }
 });
+
+test("Fix answers findings submitted only in the review body", async () => {
+  const { box, head } = opened();
+  try {
+    request(box, head, []);
+    const result = await box.runTaskApp("fix", FIXER, [fixes([])]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(box.git(["show", `${BRANCH}:counter.txt`]), "3 widgets");
+    assert.equal(box.launches().length, 1);
+    assert.deepEqual(replies(box), []);
+  } finally {
+    box.cleanup();
+  }
+});

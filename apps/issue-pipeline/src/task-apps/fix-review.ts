@@ -87,6 +87,7 @@ function unresolved(github: IssueGitHub, pull: number): Set<number> {
 }
 
 interface FixReview {
+  rounds: number;
   limit: boolean;
   requests: Review[];
   threads: Thread[];
@@ -102,7 +103,7 @@ function fixReview(
       same(review.author, verify) && review.state === "CHANGES_REQUESTED",
   ).length;
   if (rounds > LIMIT) {
-    return { limit: true, requests: [], threads: [] };
+    return { rounds, limit: true, requests: [], threads: [] };
   }
   const latest = new Map<string, Review>();
   for (const review of [...pull.reviews].sort((a, b) => a.id - b.id)) {
@@ -134,7 +135,7 @@ function fixReview(
     );
   });
   // The third requested round is allowed; a fourth needs a person.
-  return { limit: rounds > LIMIT, requests, threads };
+  return { rounds, limit: rounds > LIMIT, requests, threads };
 }
 
 // Include only repository writers' issue text in the model's task.

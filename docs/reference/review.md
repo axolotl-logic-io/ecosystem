@@ -119,7 +119,7 @@ Fix reads the issue branch's open PR and the latest standing review from each re
 
 Fix opens a fresh checkout of the pushed branch and merges the PR's base into its head, never rebasing. Existing commits keep their identity. A clean merge is committed immediately. For conflicts or unanswered blocking threads, Fix starts an `issue-pipeline-developer` session with the pinned `fix.md` page. The session resolves conflicts, makes code changes, runs relevant tests and commits with [pipeline_commit](sessions.md#pipeline_commit). Verify runs the full check afterwards.
 
-A blocking thread belongs to a standing request-changes review, is unresolved on GitHub and doesn't start with a nit or non-blocking marker. A reply from Fix's account counts as answered. A rerun skips answered threads, including after a push moved the head beyond the reviewed commit. Resolved threads and other accounts' requests are excluded. The session also receives the accepted reviews' bodies as context.
+A blocking thread belongs to a standing request-changes review, is unresolved on GitHub and doesn't start with a nit or non-blocking marker. A reply from Fix's account counts as answered. A rerun skips answered threads, including after a push moved the head beyond the reviewed commit. Resolved threads and other accounts' requests are excluded. The session also answers findings in the accepted reviews' bodies. A request with findings only in its body gets a session even when it has no inline thread; there is no thread reply for that body.
 
 Fix validates that the session returned exactly one reply per selected comment. It concludes a staged, resolved merge if needed, requires a clean checkout and pushes without force. It posts each reply in its thread, then comments on the issue with the pushed head and `start:verify` as the next step. It never applies that label itself.
 
@@ -131,7 +131,7 @@ A non-fast-forward push fails and keeps the checkout. It never overwrites anothe
 
 ## Loop limit
 
-Fix counts Verify's request-changes reviews on the PR, not earlier task records. The first, second and third requests permit a Fix round. After the third, a further request ends with a comment asking a person to step in, without a session, merge or push. Reviews by other people don't increase this count. Repeating a start after a partial run doesn't consume another round.
+Fix counts Verify's request-changes reviews on the PR, not earlier task records. The first, second and third requests permit a Fix round. The third round asks a person to step in if more changes are required. After it, a further request ends with a comment asking a person to step in, without a session, merge or push. Reviews by other people don't increase this count. Repeating a start after a partial run doesn't consume another round.
 
 ## Failure and recovery
 

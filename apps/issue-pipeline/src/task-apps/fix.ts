@@ -31,7 +31,14 @@ async function fix(run: TaskRun): Promise<void> {
   try {
     let summary = "Merged the base and checked the outstanding review threads.";
     let replies: { comment: number; reply: string }[] = [];
-    if (found.threads.length > 0 || writer.conflicts.length > 0) {
+    const bodyOnly = found.requests.some(
+      (review) =>
+        review.body.trim() !== "" &&
+        !pull.threads.some(
+          (thread) => thread.comments[0]?.review === review.id,
+        ),
+    );
+    if (found.threads.length > 0 || writer.conflicts.length > 0 || bodyOnly) {
       const reply = await writer.session(
         [
           `# Fix issue ${run.issue.repo}#${run.issue.number}, PR #${pull.number}`,
@@ -85,8 +92,13 @@ async function fix(run: TaskRun): Promise<void> {
         );
       }
     }
+    let roundNotice = "";
+    if (found.rounds === 3) {
+      roundNotice =
+        "\n\nThis completes the third Verify-triggered Fix round. A person needs to step in if more changes are required.";
+    }
     run.comment(
-      `${summary}\n\nPushed ${head} to PR #${pull.number}. Apply \`start:verify\` to review the new head.`,
+      `${summary}\n\nPushed ${head} to PR #${pull.number}. Apply \`start:verify\` to review the new head.${roundNotice}`,
       "finished",
       { head, pr: pull.number },
     );
