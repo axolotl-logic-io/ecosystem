@@ -1,8 +1,73 @@
 # Runtime runs
 
-The buddy runtime is the `buddy.mjs` CLI, built from `apps/issue-pipeline/src/buddy.ts`. One activation of a buddy is a *buddy run*. Each action that the run admits is an *action run*. This page gives the buddy configuration file, the runtime's identities, how a stop works, and the exact shape of the two local observation files. This is a source contract; nothing here runs until the pipeline is installed.
+The buddy runtime is the `buddy.mjs` CLI, built from `apps/issue-pipeline/src/buddy.ts`. A version 2 buddy file makes the buddy a [launcher of task apps](#launcher-buddies). A version 1 file runs the earlier runtime, which #254 removes: one activation of such a buddy is a *buddy run*, and each action that the run admits is an *action run*. This page gives both buddy files, the earlier runtime's identities, how a stop works, the exact shape of the local observation files and how task apps run. This is a source contract; nothing here runs until the pipeline is installed.
+
+## Launcher buddies
+
+A launcher buddy watches the repositories in its scope for start labels of its tasks and runs the matching task app for each start it sees. The [task app](#task-app-runs) claims the start, does the work and reports. The buddy does nothing else.
+
+### Launcher buddy file
+
+A launcher buddy file is strict JSON. The buddy refuses unknown keys. The file and every repository config that it names must be regular files, not links, owned by the current user and writable by nobody else.
+
+```json
+{
+  "version": 2,
+  "name": "hippy",
+  "scope": { "repositories": ["/absolute/path/to/repository-config.json"] },
+  "tasks": ["gherkin", "implement", "fix"],
+  "account": {
+    "login": "ACCOUNT",
+    "credentials": { "file": "/absolute/path/to/credentials.env", "variable": "VARIABLE" }
+  }
+}
+```
+
+- `name` names the buddy in its log.
+- `scope.repositories` lists absolute paths of repository configs. The buddy reads only each config's `repo` and `baseBranch`, which defaults to `main`. Two configs can't name one repository.
+- `tasks` lists the tasks whose start labels the buddy launches: `gherkin`, `implement`, `verify`, `fix` or `land`, each at most once.
+- `ACCOUNT` is the buddy's GitHub account. The buddy and its task apps make every GitHub write through it.
+- `credentials.file` is the absolute path of the operator's private credential file, which only its owner can read. `VARIABLE` is the entry in it that holds `ACCOUNT`'s token. The file is parsed as dotenv text and never exported.
+- `pollSeconds` is optional: the pause between polls, 1 to 3600 seconds, default 60.
+- `claimWaitsMs` is optional and read only by task apps. It lists up to 10 pauses, each 0 to 60000 milliseconds, between rereads of the issue timeline while it doesn't yet show the app's removal of a start label. The default is `[500, 1000, 2000, 4000]`.
+
+Each buddy needs its own GitHub account, so that the account that claims a start identifies the buddy. Keep a machine's buddy files in one folder. A buddy refuses to start when another JSON file in that folder is a buddy file, of either version, that names the same account, compared without case. Buddies on other machines are out of its sight.
+
+### Run a launcher buddy
+
+To check a launcher buddy file without contacting GitHub, run:
+
+```sh
+node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
+```
+
+It prints one JSON object with the buddy's name, account, tasks, repositories and the program of each task's app. It refuses the file, and exits 1, for every reason the buddy would refuse to start except an unverified credential.
+
+To start the buddy, omit `--check`. Before any other effect, it checks the file and its repository configs, refuses an account that another buddy file in its folder names and refuses a task whose app isn't installed at `$ISSUE_PIPELINE_ROOT/TASK.mjs`. It then reads the token and checks with GitHub that it is the account's.
+
+Each poll lists, for each repository and task, the open issues with `start:TASK`. Pull requests are skipped. For each issue, the buddy runs:
+
+```sh
+node "$ISSUE_PIPELINE_ROOT/TASK.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
+```
+
+The buddy checks nothing else first: not `agent:TASK:running`, earlier results nor `agents:stop`. The app's claim decides which buddy runs a start, and the app holds while `agents:stop` is on the issue. So the buddy runs every start it sees, two runs of one task on one issue can overlap, and an app launched for a start that another app already took ends quietly. An app that fails doesn't stop the buddy, which leaves the reporting to the app.
+
+SIGTERM or SIGINT ends the polling. The buddy then waits for the apps it launched to end, prints `{"buddy": NAME, "kind": "stopped", "reason": TEXT}` and exits 0. It doesn't signal its apps, though a terminal's Ctrl-C reaches every process in its group. To end their runs too, apply `agents:stop` to their issues, or signal the apps. A refused configuration or an unverified credential exits 1 with the reason on stderr.
+
+### Launcher log
+
+The buddy writes one JSON line to stderr for each app that ends:
+
+```json
+{"at": "TIME", "buddy": "NAME", "task": "TASK", "issue": "OWNER/REPO#N", "pid": 123, "exit": 0, "signal": null}
+```
+
+`exit` is the app's exit status, or null when a signal ended it, and `signal` names that signal. An app that couldn't start has an `error` instead of `pid`, `exit` and `signal`. A listing the buddy can't read writes a line with its `repo`, `task`, `"state": "warning"` and a `reason`; the next poll tries again. The apps' own output joins the buddy's stderr, so that its stdout holds only its final line.
 
 ## Buddy configuration
+
+This section describes the earlier runtime's version 1 buddy file, as do the sections up to [task app runs](#task-app-runs).
 
 A buddy file is strict JSON. The runtime refuses unknown keys. The file and every repository config that it names must be regular files, not links, owned by the current user and writable by nobody else.
 
@@ -31,7 +96,6 @@ A buddy file is strict JSON. The runtime refuses unknown keys. The file and ever
 - `identity.account.login` must be the repository config's `devAccount` for a Developer, or its `landingAccount` for a Gatekeeper.
 - `identity.models` is optional. It may override the repository config's `author`, `developer` or `reviewer` model.
 - `pollSeconds` (1 to 3600, default 60), `stopPollSeconds` (1 to 600, default 15) and `leaseSeconds` (30 to 3600, default 300) are optional.
-- `claimWaitsMs` is optional and read only by [task apps](#task-app-runs). It lists up to 10 pauses, each 0 to 60000 milliseconds, between rereads of the issue timeline while it doesn't yet show the app's removal of a start label. The default is `[500, 1000, 2000, 4000]`.
 
 The runtime refuses the obsolete scheduler and assignment controls `assignments`, `grant`, `grantor`, `maxJobs`, `stageCaps`, `orchestratorIntervalSeconds`, `takeNewWork`, `stage` and `stages`. It also refuses a buddy-level `modelSessions` or `resources`. Capacity is the repository's shared `resources.modelSessions` pool, which every repository config must supply; see [project settings](project-settings.md).
 
@@ -267,7 +331,7 @@ Both schemas are exported as `BUDDY_RUN` and `ACTION_RUN` from `src/runtime/obse
 
 ## Task app runs
 
-A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. No task runs on the framework yet, and no buddy launches it until #248 lands. The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
+A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
 
 To run a task app, run:
 
@@ -276,10 +340,10 @@ node TASK_APP --config BUDDY_FILE --issue OWNER/REPO#N
 ```
 
 - `TASK_APP` is the task app's program.
-- `BUDDY_FILE` is an absolute path to the buddy file. The app acts as its `identity.account.login`.
+- `BUDDY_FILE` is an absolute path to a [launcher buddy file](#launcher-buddy-file). The app acts as its `account.login`.
 - `OWNER/REPO#N` is the issue. The buddy's scope must name a repository config for `OWNER/REPO`.
 
-Until a buddy file names its own credential (#248), the app reads the token that the repository config's `credentialsEnvFile` holds for the account: the development token when the account is `devAccount`, and the landing token when it's `landingAccount`. It checks with GitHub that the token is that account's before any other call.
+The app reads the token that the buddy file's `account.credentials` entry selects, and checks with GitHub that the token is the account's before any other call. It doesn't check that the buddy file lists its task.
 
 The app exits 0 when its run ends normally: it finished its work, lost the claim, found `agents:stop` before claiming, or stopped on it. It exits 1 when the run failed or it couldn't confirm its claim.
 

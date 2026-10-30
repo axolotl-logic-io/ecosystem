@@ -74,7 +74,9 @@
         "src/runtime/observations.ts",
         "src/runtime/stop.ts",
         "src/trusted-file.ts",
+        "src/task-app/buddy-file.ts",
         "src/task-app/identity.ts",
+        "src/task-app/launcher.ts",
         "src/task-app/run-record.ts",
         "src/task-app/task-app.ts"
       ],

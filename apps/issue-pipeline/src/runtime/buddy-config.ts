@@ -47,8 +47,6 @@ const MAX_STOP_POLL_SECONDS = 600;
 const DEFAULT_STOP_POLL_SECONDS = 15;
 const MIN_LEASE_SECONDS = 30;
 const DEFAULT_LEASE_SECONDS = 300;
-const MAX_CLAIM_WAIT_MS = 60_000;
-const MAX_CLAIM_WAITS = 10;
 // Safe Refactor is a Developer task only when the buddy names it.
 const EXPLICIT_ONLY: readonly TaskId[] = ["refactor-safely"];
 
@@ -115,12 +113,6 @@ const BUDDY_CONFIG = z.strictObject({
     .min(MIN_LEASE_SECONDS)
     .max(MAX_POLL_SECONDS)
     .default(DEFAULT_LEASE_SECONDS),
-  // Read by task apps (src/task-app/identity.ts): pauses between rereads
-  // of the timeline while it doesn't yet show a start label's removal.
-  claimWaitsMs: z
-    .array(z.int().min(0).max(MAX_CLAIM_WAIT_MS))
-    .max(MAX_CLAIM_WAITS)
-    .optional(),
 });
 
 // What an ops request of a buddy action names: the trusted buddy file, the

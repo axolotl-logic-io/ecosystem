@@ -220,11 +220,4 @@ function readCredential(file: string, variable: string, name: string): string {
 }
 
 export type { Account, BuddyAuthorization, Config, JobCheckout };
-export {
-  CREDENTIAL_VARIABLES,
-  credential,
-  loadConfig,
-  paths,
-  readCredential,
-  withCheckout,
-};
+export { credential, loadConfig, paths, readCredential, withCheckout };

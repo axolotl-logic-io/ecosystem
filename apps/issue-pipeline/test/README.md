@@ -124,7 +124,7 @@ Put the file at `acceptance/<issue number>-<short name>.test.ts`, so the test le
 
 Look in `support/` and the level's own folder before writing a helper, and extend what's there. A kit used by more than one level belongs in `support/`, under its subject's path. Fakes are named `fake-*.ts`, fixtures `*-fixtures.ts` and kits `*-test-kit.ts`.
 
-Task app tests start from `support/task-app/task-app-test-kit.ts`. It runs the sample task app, `support/task-app/sample-task-app.ts`, as two buddies with their own accounts against fake GitHub, and can hold a run live at its gate. `acceptance/246-task-app-framework.test.ts` shows it in use.
+Task app tests start from `support/task-app/task-app-test-kit.ts`. It runs the sample task app, `support/task-app/sample-task-app.ts`, as two buddies with their own accounts against fake GitHub, and can hold a run live at its gate. `acceptance/246-task-app-framework.test.ts` shows it in use. To test the buddy as a launcher, the kit installs the sample app as other tasks' apps in the pipeline root, runs `src/buddy.ts` with a launcher buddy file and reads each app's exit from the buddy's log; see `acceptance/248-task-app-launcher.test.ts`.
 
 A fake external service is one long-lived server per test machine, not a process per call. Fake GitHub is `support/signals/fake-gh-server.ts`. The `gh` on the machine's `PATH` is a small sh script that forwards each call to it with `curl --unix-socket`.
 
