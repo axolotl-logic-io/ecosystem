@@ -66,6 +66,7 @@
         "src/task-app/run-record.ts",
         "src/task-app/session.ts",
         "src/task-app/task-app.ts",
+        "src/task-app/issue-execution.ts",
         "src/task-app/sessions.ts",
         "src/task-apps/implement.ts",
         "src/task-apps/head-checkout.ts",
