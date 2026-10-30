@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
-import { childEnvironment } from "./child-env.ts";
+import { childEnvironment } from "@ecosystem/task-runtime/child-env";
 
 // How often groupEnded looks at the group again.
 const POLL_MS = 20;

@@ -1,30 +1,11 @@
 // Installed compatibility bootstrap. Task code receives no buddy configuration.
 import { gherkin } from "@ecosystem/gherkin";
 import { executeTask } from "@ecosystem/task-framework";
+import { issueArtifacts } from "@ecosystem/task-runtime/issue/artifacts";
+import { issueContext } from "@ecosystem/task-runtime/issue/issue-file";
 import { loadConfig } from "./config.ts";
-import { OpsError } from "./ops-error.ts";
-import { issueContext } from "./task-app/issue-file.ts";
 import { gherkinSessionHost } from "./task-app/session.ts";
 import { main, type TaskRun } from "./task-app/task-app.ts";
-
-// Marker format and comment recovery are private to this issue adapter.
-function publish(run: TaskRun, name: string, body: string): void {
-  run.checkStop();
-  const payload = { run: run.run };
-  if (name === "questions") {
-    run.comment(body, "questions", payload);
-    return;
-  }
-  if (name !== "gherkin") {
-    throw new OpsError(`unknown Gherkin artifact: ${name}`);
-  }
-  const earlier = run.recovery.earlierComments("gherkin").at(-1);
-  if (earlier === undefined) {
-    run.comment(body, "gherkin", payload);
-  } else {
-    run.edit(earlier.comment.id, body, "gherkin", payload);
-  }
-}
 
 async function work(run: TaskRun): Promise<void> {
   const cfg = loadConfig(run.config);
@@ -48,10 +29,13 @@ async function work(run: TaskRun): Promise<void> {
       Promise.resolve(session.capabilities),
     {
       signal: new AbortController().signal,
-      artifacts: {
-        publish: (name: string, body: string): Promise<void> =>
-          Promise.resolve(publish(run, name, body)),
-      },
+      artifacts: issueArtifacts(run.github, {
+        task: gherkin.id,
+        execution: run.run,
+        baseBranch: cfg.baseBranch,
+        update: ["gherkin"],
+        append: ["questions"],
+      }),
       cleanup: session.cleanup,
       // The claimed issue adapter owns final lifecycle reporting, including stop.
       report: (): Promise<void> => Promise.resolve(),

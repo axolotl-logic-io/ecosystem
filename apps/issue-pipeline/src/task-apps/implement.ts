@@ -12,11 +12,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import type { PullRequest } from "@ecosystem/task-runtime/issue/recovery";
+import type { PushReply } from "@ecosystem/task-runtime/job/control-protocol";
+import type { InvocationBinding } from "@ecosystem/task-runtime/job/session-identity";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { Config } from "../config.ts";
 import { loadConfig } from "../config.ts";
-import type { PushReply } from "../job/control-protocol.ts";
-import type { InvocationBinding } from "../job/session-identity.ts";
-import { OpsError } from "../ops-error.ts";
 import { run as runProcess } from "../process.ts";
 import {
   type BranchCheckout,
@@ -24,7 +25,6 @@ import {
   type Pushed,
 } from "../task-app/branch-checkout.ts";
 import { issueBrief } from "../task-app/issue-brief.ts";
-import type { PullRequest } from "../task-app/recovery.ts";
 import { taskRunFile } from "../task-app/run-record.ts";
 import { openSessions, type Sessions } from "../task-app/sessions.ts";
 import { main, type TaskRun } from "../task-app/task-app.ts";

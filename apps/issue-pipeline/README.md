@@ -74,6 +74,16 @@ host owns claim lifecycle, trusted-author filtering, credential isolation and
 comment markers. The installed CLI and prompt paths remain unchanged.
 
 
+## Shared runtime ownership
+
+[`packages/task-runtime`](../../packages/task-runtime/README.md) owns checkout
+lifecycle, model execution, guarded publication, trusted policy resolution,
+recovery artifacts and GitHub issue adapters. The compatibility host resolves
+buddy configuration, credentials and installed resource paths before calling
+those services. Packages import no applications. Tasks receive explicit inputs
+and only their required capabilities; they do not discover a pipeline root.
+Installed command names and per-task subprocess isolation remain unchanged.
+
 ## Standalone tools and shared utilities
 
 Safe Refactor and standards upgrade retain their standalone entrypoints. The task apps share credential-free model sessions, bounded Git review, guarded commits and private checkouts. These tools preserve local work when a run fails. A local mirror mutex only serializes Git metadata updates; it grants no work ownership.

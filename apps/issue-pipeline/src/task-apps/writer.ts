@@ -5,27 +5,34 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import type { JobDirs } from "@ecosystem/task-runtime/checkout";
+import {
+  type LiveHandle,
+  openControlSocket,
+  stopLaunch,
+} from "@ecosystem/task-runtime/job/control";
+import type { PushReply } from "@ecosystem/task-runtime/job/control-protocol";
+import type { LaunchHooks } from "@ecosystem/task-runtime/job/launch";
+import { COMMIT_SCOPE_ENV } from "@ecosystem/task-runtime/job/pipeline-commit";
+import { pinPage } from "@ecosystem/task-runtime/job/prompts";
+import {
+  resultOf,
+  SESSION_MINUTES,
+} from "@ecosystem/task-runtime/job/session-result";
+import type { LaunchStart } from "@ecosystem/task-runtime/job/status";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import { publishCheckout } from "@ecosystem/task-runtime/publish-checkout";
+import { conflictStages } from "@ecosystem/task-runtime/rebase";
 import { z } from "zod";
 import { setUpCheckout } from "../checkouts.ts";
 import { type Config, loadConfig, paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { git } from "../github.ts";
 import { agentEnvOf } from "../job/agent-env.ts";
-import { type JobDirs, openJobCheckout } from "../job/checkout.ts";
-import {
-  type LiveHandle,
-  openControlSocket,
-  stopLaunch,
-} from "../job/control.ts";
-import type { PushReply } from "../job/control-protocol.ts";
-import { type LaunchHooks, runSession } from "../job/launch.ts";
-import { COMMIT_SCOPE_ENV } from "../job/pipeline-commit.ts";
-import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
-import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
-import type { LaunchStart } from "../job/status.ts";
-import { OpsError } from "../ops-error.ts";
+import { openJobCheckout } from "../job/checkout.ts";
+import { runSession } from "../job/launch.ts";
+import { PROMPTS_DIR } from "../job/prompts.ts";
 import { run } from "../process.ts";
-import { conflictStages } from "../rebase.ts";
 import type { TaskRun } from "../task-app/task-app.ts";
 
 const MINUTE_MS = 60_000;
@@ -83,47 +90,20 @@ function openWriter(taskRun: TaskRun, head: string, base: string): Writer {
     );
   }
   function push(): string {
-    taskRun.checkStop();
-    const merging = run(
-      "git",
-      ["-C", dirs.repo, "rev-parse", "--verify", "MERGE_HEAD"],
-      { allowFail: true },
+    return publishCheckout(
+      {
+        repository: dirs.repo,
+        branch: dirs.branch,
+        expectedHead: head,
+        baseHead: target,
+      },
+      {
+        checkStop: taskRun.checkStop,
+        push: (args: readonly string[]): void => {
+          git(cfg, "dev", args);
+        },
+      },
     );
-    if (merging.code === 0) {
-      if (
-        gitIn(dirs.repo, ["diff", "--name-only", "--diff-filter=U"]).trim() !==
-        ""
-      ) {
-        throw new OpsError("the base merge still has unresolved conflicts");
-      }
-      gitIn(dirs.repo, ["diff", "--cached", "--check"]);
-      run("git", ["-C", dirs.repo, "commit", "--no-edit"], { env: COMMIT_ENV });
-    }
-    if (
-      gitIn(dirs.repo, [
-        "status",
-        "--porcelain",
-        "--untracked-files=all",
-      ]).trim() !== ""
-    ) {
-      throw new OpsError("writer left uncommitted files; checkout retained");
-    }
-    const sha = gitIn(dirs.repo, ["rev-parse", "HEAD"]).trim();
-    for (const ancestor of [head, target]) {
-      gitIn(dirs.repo, ["merge-base", "--is-ancestor", ancestor, sha]);
-    }
-    gitIn(dirs.repo, ["diff", "--check", `${target}...${sha}`]);
-    // The checkout hook admits only this command; credentials never reach pi.
-    git(cfg, "dev", [
-      "-c",
-      "core.hooksPath=/dev/null",
-      "-C",
-      dirs.repo,
-      "push",
-      "origin",
-      `HEAD:refs/heads/${dirs.branch}`,
-    ]);
-    return sha;
   }
   return {
     cfg,

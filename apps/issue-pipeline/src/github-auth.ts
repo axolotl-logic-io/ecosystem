@@ -1,5 +1,7 @@
 // One selected operator credential per call, verified against its configured
 // identity. Failures and allowFail outputs never expose that selected token.
+
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { Account, Config } from "./config.ts";
 import { credential } from "./config.ts";
 import {
@@ -7,7 +9,6 @@ import {
   githubRead,
   transientGithubRead,
 } from "./github-read.ts";
-import { OpsError } from "./ops-error.ts";
 import type { RunOptions, RunResult } from "./process.ts";
 import { run, runFailure } from "./process.ts";
 

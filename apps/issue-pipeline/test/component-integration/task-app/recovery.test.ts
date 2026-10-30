@@ -118,11 +118,11 @@ test("the readers show the issue's branch and its PR as earlier runs left them",
         ["ISSUE_PIPELINE_ROOT", box.pipeline],
       ]),
     );
-    const { IssueGitHub } = await import(
+    const { issueGitHub } = await import(
       "../../../src/task-app/issue-github.ts"
     );
-    const { recovery } = await import("../../../src/task-app/recovery.ts");
-    const github = new IssueGitHub(
+    const { recovery } = await import("@ecosystem/task-runtime/issue/recovery");
+    const github = issueGitHub(
       { repo: REPO, number: 7 },
       { account: BUDDIES.hippy, env: new Map([["GH_TOKEN", "dev-token"]]) },
     );

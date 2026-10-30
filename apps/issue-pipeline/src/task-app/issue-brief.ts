@@ -4,9 +4,14 @@
 // Comments, reviews and review threads show only when their author is one
 // of the repository's collaborators; the rest are withheld and counted,
 // since a session must treat other people's words as untrusted data.
+
+import type { IssueComment } from "@ecosystem/task-runtime/issue/issue-github";
+import {
+  type PullRequest,
+  recovery,
+  type Thread,
+} from "@ecosystem/task-runtime/issue/recovery";
 import { z } from "zod";
-import type { IssueComment } from "./issue-github.ts";
-import { type PullRequest, recovery, type Thread } from "./recovery.ts";
 import type { TaskRun } from "./task-app.ts";
 
 // The task whose marked comments hold the issue's Gherkin.

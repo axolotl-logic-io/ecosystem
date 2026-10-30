@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { RESOURCE_CAPACITY } from "@ecosystem/task-runtime/project-policy-schema";
 import { z } from "zod";
-import { RESOURCE_CAPACITY } from "../../src/project-policy-schema.ts";
 
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const OBSERVED = z.strictObject({
@@ -15,7 +15,7 @@ const OBSERVED = z.strictObject({
 });
 const LOADER = `
 import { loadConfig } from './src/config.ts';
-import { configPolicyDigest } from './src/project-policy.ts';
+import { configPolicyDigest } from '@ecosystem/task-runtime/project-policy';
 const cfg = loadConfig(process.argv[1]);
 console.log(JSON.stringify({digest: configPolicyDigest(cfg), resources: cfg.resources}));
 `;

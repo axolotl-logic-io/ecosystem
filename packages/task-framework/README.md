@@ -77,7 +77,8 @@ and other recoverable work remain the capability provider's responsibility.
 ## Compatibility adapter
 
 During migration, `apps/issue-pipeline/src/task-app/issue-execution.ts` owns the
-existing claimed-run lifecycle and its compatibility `TaskRun`. The CLI in
+existing claimed-run lifecycle and its compatibility `TaskRun`. Its claim, stop, recovery and artifact services live in
+[`task-runtime`](../task-runtime/README.md). The CLI in
 `task-app.ts` resolves identity and arbitrates claims before invoking that adapter.
 The compatibility `TaskRun` still contains legacy configuration and transport;
 new independent task definitions use the package contract above instead. The

@@ -6,7 +6,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { AGENT_DIR } from "../pipeline-root.ts";
 import { COMMIT_TOOL } from "./pipeline-commit.ts";
 
 const FRONTMATTER =
@@ -100,8 +99,8 @@ function parseDefinition(text: string): AgentDefinition | null {
 
 // The installed definition of `agent`. A missing, unreadable or malformed
 // file is "missing", with an error that names the agent.
-function readDefinition(agent: string): DefinitionRead {
-  const file = path.join(AGENT_DIR, "agents", "issue-pipeline", `${agent}.md`);
+function readDefinition(agent: string, directory: string): DefinitionRead {
+  const file = path.join(directory, `${agent}.md`);
   let text = "";
   try {
     text = fs.readFileSync(file, "utf8");

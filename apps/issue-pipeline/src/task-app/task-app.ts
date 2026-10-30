@@ -2,8 +2,14 @@
 import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { parseArgs } from "node:util";
-import { OpsError } from "../ops-error.ts";
-import { claimStart, type Sleep, startLabel } from "./claims.ts";
+import {
+  claimStart,
+  type Sleep,
+  startLabel,
+} from "@ecosystem/task-runtime/issue/claims";
+import type { IssueRef } from "@ecosystem/task-runtime/issue/issue-github";
+import { isTaskId, marked } from "@ecosystem/task-runtime/issue/markers";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { loadIdentity } from "./identity.ts";
 import {
   code,
@@ -11,8 +17,7 @@ import {
   runClaimed,
   type TaskApp,
 } from "./issue-execution.ts";
-import { IssueGitHub, type IssueRef } from "./issue-github.ts";
-import { isTaskId, marked } from "./markers.ts";
+import { issueGitHub } from "./issue-github.ts";
 
 const ISSUE_ARG = /^(?<repo>[\w.-]+\/[\w.-]+)#(?<number>[1-9]\d*)$/u;
 const USAGE = "usage: TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N";
@@ -51,7 +56,7 @@ async function runTaskApp(
   }
   const issue = parseIssue(values.issue);
   const identity = loadIdentity(values.config, issue.repo, app.id);
-  const github = new IssueGitHub(issue, identity);
+  const github = issueGitHub(issue, identity);
   if (github.stopped()) {
     return 0;
   }

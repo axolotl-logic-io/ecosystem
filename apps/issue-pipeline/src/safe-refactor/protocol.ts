@@ -1,5 +1,5 @@
+import { RUNTIME_SCHEMA } from "@ecosystem/task-runtime/job/runtime-policy";
 import { z } from "zod";
-import { RUNTIME_SCHEMA } from "../job/runtime-policy.ts";
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 const COMMIT_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;

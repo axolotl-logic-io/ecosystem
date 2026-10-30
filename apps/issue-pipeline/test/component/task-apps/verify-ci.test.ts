@@ -2,7 +2,10 @@
 // answers and the pauses between them faked.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Check, PullRequest } from "../../../src/task-app/recovery.ts";
+import type {
+  Check,
+  PullRequest,
+} from "@ecosystem/task-runtime/issue/recovery";
 import type { CiWait } from "../../../src/task-apps/verify-ci.ts";
 import { requiredCi } from "../../../src/task-apps/verify-ci.ts";
 

@@ -1,10 +1,10 @@
 // What a repo's pipeline config file holds: its defaults, and the shape the
 // ops modules check (src/config.ts loads it).
 
+import { RUNTIME_SCHEMA } from "@ecosystem/task-runtime/job/runtime-policy";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import { PROJECT_POLICY_SOURCE } from "@ecosystem/task-runtime/project-policy-schema";
 import { z } from "zod";
-import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
-import { OpsError } from "./ops-error.ts";
-import { PROJECT_POLICY_SOURCE } from "./project-policy-schema.ts";
 
 const DEFAULTS: Readonly<Record<string, unknown>> = {
   baseBranch: "main",

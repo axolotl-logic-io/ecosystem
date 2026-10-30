@@ -1,0 +1,41 @@
+{
+  "extends": "//",
+  "overrides": [
+    {
+      // GitHub REST wire schemas retain upstream snake_case keys.
+      "includes": ["src/issue/issue-github.ts", "src/issue/recovery.ts"],
+      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+    },
+    {
+      // Runtime services and their tests implement Node filesystem/process boundaries.
+      "includes": [
+        "test/**",
+        "src/command.ts",
+        "src/process-group.ts",
+        "src/project-policy.ts",
+        "src/clone-setup.ts",
+        "src/checkout.ts",
+        "src/rebase.ts",
+        "src/job/launch.ts",
+        "src/job/runtime-profile.ts",
+        "src/job/runtime-version.ts",
+        "src/job/agent-definition.ts",
+        "src/job/prompts.ts",
+        "src/job/rpc.ts",
+        "src/job/control.ts",
+        "src/job/control-protocol.ts",
+        "src/job/checkout-close.ts",
+        "src/job/code-recovery.ts",
+        "src/job/dropped-patch.ts",
+        "src/issue/issue-file.ts"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": { "noNodejsModules": "off", "noProcessGlobal": "off" },
+          "style": { "noProcessEnv": "off" },
+          "suspicious": { "noConsole": "off" }
+        }
+      }
+    }
+  ]
+}

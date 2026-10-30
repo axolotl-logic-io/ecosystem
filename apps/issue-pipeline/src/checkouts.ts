@@ -1,9 +1,9 @@
 // Run configured setup in a task's private checkout.
 import path from "node:path";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import { OpsError } from "./ops-error.ts";
 import { shell } from "./process.ts";
 
 const MS_PER_MINUTE = 60_000;

@@ -4,11 +4,11 @@
 // touches them. They leave the checkout's tracked files as they found them.
 
 import path from "node:path";
+import { matchAny } from "@ecosystem/task-runtime/globs";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
-import { matchAny } from "../globs.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 

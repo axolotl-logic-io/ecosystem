@@ -1,9 +1,14 @@
 // Fix answers standing requests from Verify or repository writers. Replies
 // from its own account and GitHub's resolved threads are the recovery record.
+
+import type { IssueGitHub } from "@ecosystem/task-runtime/issue/issue-github";
+import type {
+  PullRequest,
+  Review,
+  Thread,
+} from "@ecosystem/task-runtime/issue/recovery";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
-import { OpsError } from "../ops-error.ts";
-import type { IssueGitHub } from "../task-app/issue-github.ts";
-import type { PullRequest, Review, Thread } from "../task-app/recovery.ts";
 
 const NIT = /^\W*(?:nit|non-blocking)\b/iu;
 const PERMISSION = z.looseObject({ permission: z.string() });

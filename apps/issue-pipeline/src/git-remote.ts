@@ -1,6 +1,7 @@
 // Credentialed Git destinations and the native push's observed URL binding.
+
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { Config } from "./config.ts";
-import { OpsError } from "./ops-error.ts";
 import { run } from "./process.ts";
 
 const LOCAL_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;

@@ -7,15 +7,16 @@
 // the checkout's work goes to a recovery branch of its own instead, and
 // nothing is overwritten. Closing it bundles any commits GitHub still
 // lacks into the issue's run folder before it removes the folder.
+
+import type { JobDirs } from "@ecosystem/task-runtime/checkout";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import { setUpCheckout } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
-import type { JobDirs } from "../job/checkout.ts";
 import { openJobCheckout } from "../job/checkout.ts";
 import { closeJobCheckout } from "../job/checkout-close.ts";
-import { OpsError } from "../ops-error.ts";
 import { run, runFailure } from "../process.ts";
 
 // What git prints when the branch moved to history the pushed head lacks.

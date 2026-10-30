@@ -1,10 +1,11 @@
 // Current comment content and editor provenance are read together. GitHub field
 // semantics still require operator verification before activation.
+
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { ghJson } from "./github.ts";
-import { OpsError } from "./ops-error.ts";
 
 const COMMENT_FIELDS =
   "databaseId body createdAt updatedAt lastEditedAt author { login } editor { login }";

@@ -3,11 +3,11 @@
 // GitHub. They run git and gh but touch no files themselves, so they need no
 // Node API.
 
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { git } from "./github.ts";
 import { withCloneLock } from "./mirror-lock.ts";
-import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
 import { run, tail } from "./process.ts";
 

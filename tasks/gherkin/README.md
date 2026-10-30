@@ -34,7 +34,8 @@ retains the validated model reply. The task knows no GitHub marker format or
 comment ids.
 
 The installed `gherkin.mjs` remains the compatibility bootstrap. Its issue adapter
-claims the start, resolves policy, filters trusted issue context and provisions
+uses the [shared runtime](../../packages/task-runtime/README.md) to claim the
+start, resolve policy, filter trusted issue context and provision
 credential-free model execution. It updates the existing Gherkin comment and posts
 a fresh questions comment on every questions reply. Claims, running labels, stop
 guards, recovery markers and final reporting remain host responsibilities.
