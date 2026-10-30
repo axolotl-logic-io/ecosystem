@@ -801,8 +801,11 @@ function machine(
         .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
     runBuddy,
     startTaskApp,
-    runTaskApp: (app, buddy, sessions) =>
-      startTaskApp(app, sessions, buddy).exited,
+    runTaskApp: (
+      app: string,
+      buddy: BuddyChoice,
+      sessions: PlannedSession[],
+    ): Promise<TaskAppEnd> => startTaskApp(app, sessions, buddy).exited,
     recoverImplement: (
       action: string,
       apply: boolean,
