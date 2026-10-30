@@ -44,6 +44,11 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
     path.resolve(source, "../launcher"),
     { recursive: true },
   );
+  fs.cpSync(
+    path.resolve(SOURCE, "../orchestrator"),
+    path.resolve(source, "../orchestrator"),
+    { recursive: true },
+  );
   fs.symlinkSync(
     DEPENDENCIES,
     path.resolve(source, "../../node_modules"),
@@ -157,6 +162,23 @@ test("installer accepts uncommitted source and records its dirty identity", () =
       ...args,
     ]);
     assert.equal(compatible, launcher);
+    const fleet = path.join(sandbox.root, "fleet.json");
+    fs.writeFileSync(
+      fleet,
+      JSON.stringify({
+        version: 1,
+        buddies: [config],
+        manifest: path.join(root, "tasks.json"),
+        launcher: path.join(root, "launcher.mjs"),
+      }),
+    );
+    const orchestrator = command(sandbox.root, process.execPath, [
+      path.join(root, "orchestrator.mjs"),
+      "--config",
+      fleet,
+      "--check",
+    ]);
+    assert.equal(JSON.parse(orchestrator).buddies.length, 1);
     assert.ok(launcher.includes(path.join(root, "gherkin.mjs")));
   } finally {
     sandbox.cleanup();

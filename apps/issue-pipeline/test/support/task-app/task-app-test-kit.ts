@@ -27,6 +27,10 @@ import {
 const { PATH: searchPath }: NodeJS.ProcessEnv = process.env;
 const SAMPLE = path.join(import.meta.dirname, "sample-task-app.ts");
 const BUDDY = path.resolve(import.meta.dirname, "../../../dist/launcher.mjs");
+const ORCHESTRATOR = path.resolve(
+  import.meta.dirname,
+  "../../../dist/orchestrator.mjs",
+);
 const REPO = "acme/widgets";
 const ISSUE = 7;
 const PERSON = "autumn";
@@ -49,6 +53,10 @@ const APP_EXIT = z.looseObject({
   issue: z.string(),
   exit: z.number().int().nullable(),
   signal: z.string().nullable(),
+});
+const APP_OUTPUT = z.looseObject({
+  kind: z.literal("output"),
+  line: z.string(),
 });
 const NEWLINE = /\r?\n/u;
 
@@ -123,6 +131,10 @@ interface Machine {
   gate: () => Gate;
   // Starts `buddy` as a launcher of `options.tasks`.
   launch: (buddy: Buddy, options: LauncherOptions) => BuddyRun;
+  orchestrate: (
+    buddies: { buddy: Buddy; tasks: string[] }[],
+    options?: Omit<LauncherOptions, "tasks">,
+  ) => BuddyRun;
   cleanup: () => void;
 }
 
@@ -266,7 +278,12 @@ function appExits(stderr: string): AppExit[] {
     if (!line.startsWith("{")) {
       return [];
     }
-    const parsed = APP_EXIT.safeParse(JSON.parse(line));
+    const raw: unknown = JSON.parse(line);
+    const output = APP_OUTPUT.safeParse(raw);
+    if (output.success) {
+      return appExits(output.data.line);
+    }
+    const parsed = APP_EXIT.safeParse(raw);
     if (!parsed.success) {
       return [];
     }
@@ -440,15 +457,15 @@ function machine(
       },
     };
   }
-  function launch(buddy: Buddy, options: LauncherOptions): BuddyRun {
-    const child = spawn(
-      process.execPath,
-      [BUDDY, "--config", buddyFile(buddy, options.tasks)],
-      {
-        env: appEnv(options.gate?.path ?? "", options.fail),
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+  function launchProgram(
+    program: string,
+    args: string[],
+    options: Omit<LauncherOptions, "tasks">,
+  ): BuddyRun {
+    const child = spawn(process.execPath, [program, ...args], {
+      env: appEnv(options.gate?.path ?? "", options.fail),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     children.push(child);
     let stdout = "";
     let stderr = "";
@@ -517,7 +534,28 @@ function machine(
     install,
     check: checkBuddy,
     gate: newGate,
-    launch,
+    launch: (buddy: Buddy, options: LauncherOptions): BuddyRun =>
+      launchProgram(
+        BUDDY,
+        ["--config", buddyFile(buddy, options.tasks)],
+        options,
+      ),
+    orchestrate: (
+      buddies: { buddy: Buddy; tasks: string[] }[],
+      options: Omit<LauncherOptions, "tasks"> = {},
+    ): BuddyRun => {
+      const file = path.join(root, "fleet.json");
+      writePrivate(
+        file,
+        JSON.stringify({
+          version: 1,
+          buddies: buddies.map(({ buddy, tasks }) => buddyFile(buddy, tasks)),
+          manifest: path.join(pipeline, "tasks.json"),
+          launcher: BUDDY,
+        }),
+      );
+      return launchProgram(ORCHESTRATOR, ["--config", file], options);
+    },
     run: start,
     runToEnd: (buddy: Buddy, options: RunOptions = {}): Promise<Ended> =>
       start(buddy, options).exited,

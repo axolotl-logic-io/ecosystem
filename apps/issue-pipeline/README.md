@@ -1,6 +1,6 @@
 # Issue pipeline
 
-The [launcher application](../launcher/README.md) runs one configured buddy and launches task apps. It polls its configured repositories for `start:TASK` labels and runs the matching app. The framework claims the start, marks the issue, runs the task and unmarks it. Only version 2 buddy files are supported.
+The [launcher application](../launcher/README.md) runs one configured buddy and launches task apps. It polls its configured repositories for `start:TASK` labels and runs the matching app. The framework claims the start, marks the issue, runs the task and unmarks it. Only version 2 buddy files are supported. The optional [orchestrator](../orchestrator/README.md) supervises several standalone launchers with fleet validation and drain shutdown.
 
 Landing changes nothing that runs until the operator installs the release. See [operations](../../docs/reference/operations.md), [runtime runs](../../docs/reference/runtime-runs.md) and the [reference index](../../docs/README.md).
 
