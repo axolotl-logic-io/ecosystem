@@ -5,13 +5,12 @@
 // part of ending a run. Reads GitHub can repeat are retried through its
 // transient failures; writes run once.
 import { z } from "zod";
+import { redactGhArgs } from "../github.ts";
 import { credentialedRun } from "../github-auth.ts";
 import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
 import { OpsError } from "../ops-error.ts";
-import { redactLocalPaths } from "../pipeline-root.ts";
 import type { RunResult } from "../process.ts";
 import { runFailure } from "../process.ts";
-import { redactAddresses } from "../redact-addresses.ts";
 import {
   type Observation,
   observeAll,
@@ -85,15 +84,6 @@ function observed<T>(observation: Observation<T>, what: string): T {
     throw new OpsError(`cannot read ${what}: ${unreadable(observation)}`);
   }
   return observation.value;
-}
-
-function redacted(args: readonly string[]): string[] {
-  return args.map((arg) => {
-    if (arg.startsWith("body=")) {
-      return redactAddresses(redactLocalPaths(arg));
-    }
-    return arg;
-  });
 }
 
 class IssueGitHub {
@@ -287,6 +277,15 @@ class IssueGitHub {
     }
   }
 
+  // Runs a gh write once, after checking the issue's stop label.
+  change(args: readonly string[], options: WriteOptions = {}): string {
+    const result = this.write(args, options);
+    if (result.code !== 0) {
+      throw this.failure(args, result);
+    }
+    return result.stdout;
+  }
+
   private write(
     args: readonly string[],
     options: WriteOptions,
@@ -295,7 +294,7 @@ class IssueGitHub {
     if (options.ending !== true) {
       this.checkStop();
     }
-    return this.gh(redacted(args), input);
+    return this.gh(redactGhArgs(args), input);
   }
 
   private gh(args: readonly string[], input?: string): RunResult {
@@ -313,7 +312,10 @@ class IssueGitHub {
   failure(args: readonly string[], result: RunResult): OpsError {
     const token = this.env.get("GH_TOKEN") ?? "";
     return new OpsError(
-      runFailure("gh", redacted(args), result, {}).replaceAll(token, "<token>"),
+      runFailure("gh", redactGhArgs(args), result, {}).replaceAll(
+        token,
+        "<token>",
+      ),
     );
   }
 }

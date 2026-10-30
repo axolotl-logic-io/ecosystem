@@ -126,6 +126,8 @@ Look in `support/` and the level's own folder before writing a helper, and exten
 
 Task app tests start from `support/task-app/task-app-test-kit.ts`. It runs the sample task app, `support/task-app/sample-task-app.ts`, as two buddies with their own accounts against fake GitHub, and can hold a run live at its gate. `acceptance/246-task-app-framework.test.ts` shows it in use. To test the buddy as a launcher, the kit installs the sample app as other tasks' apps in the pipeline root, runs `src/buddy.ts` with a launcher buddy file and reads each app's exit from the buddy's log; see `acceptance/248-task-app-launcher.test.ts`. To run another task app, pass its program as `app` to `machine()`, as `acceptance/253-land-task-app.test.ts` does for Land over a real local origin.
 
+A built task app runs through the buddy flow kit's `startTaskApp`; `system/task-apps/implement.test.ts` runs `implement.mjs` that way.
+
 A fake external service is one long-lived server per test machine, not a process per call. Fake GitHub is `support/signals/fake-gh-server.ts`. The `gh` on the machine's `PATH` is a small sh script that forwards each call to it with `curl --unix-socket`.
 
 `fake-gh-service.ts` and `startFakeGhTransport` share that protocol and process startup across the signal/runtime fake and the reservation fake in `component-integration/fake-coordination-gh.ts`. Reservation scenarios pass their native test signal to each driver, await driver closure before teardown, and stop their owned service between cases. A cancelled driver retains its evidence and prevents later scenarios from starting; expected negative driver results do not count as cancellation.

@@ -79,6 +79,8 @@
         "src/task-app/launcher.ts",
         "src/task-app/run-record.ts",
         "src/task-app/task-app.ts",
+        "src/task-app/sessions.ts",
+        "src/task-apps/implement.ts",
         "src/task-apps/head-checkout.ts",
         "src/task-apps/verify-session.ts",
         "src/task-apps/writer.ts"
@@ -123,6 +125,7 @@
       "includes": [
         "src/comments.ts",
         "src/task-app/issue-github.ts",
+        "src/task-app/issue-brief.ts",
         "src/task-app/recovery.ts",
         "src/task-apps/submit-review.ts",
         "src/task-apps/land.ts"

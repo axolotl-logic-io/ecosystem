@@ -245,6 +245,13 @@ function listing(
   const { number, part } = ISSUE_PART.exec(path)?.groups ?? {};
   if (part !== undefined) {
     const issue = issueOf(world, number);
+    // Every PR is an issue too; the world keeps no conversation on one.
+    const isPull = (world.pulls ?? []).some(
+      (item) => String(item.number) === number,
+    );
+    if (issue === null && isPull && part === "comments") {
+      return [];
+    }
     if (issue === null) {
       return null;
     }

@@ -211,7 +211,7 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 ## Programs and observations
 
-`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs`, `standards-upgrade.mjs` and the task apps `verify.mjs`, `fix.mjs` and `land.mjs`.
+`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs`, `standards-upgrade.mjs`, `recover-implement.mjs` and the task apps [Implement](../../docs/reference/runtime-runs.md#implement), `implement.mjs`, `verify.mjs`, `fix.mjs` and `land.mjs`.
 
 Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json` for the earlier runtime and, for [task app runs](../../docs/reference/runtime-runs.md#task-app-runs), `runs/SLUG/issue-N/task-runs/ID/run.json`. A launcher buddy writes no observation file of its own. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
