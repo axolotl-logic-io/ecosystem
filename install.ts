@@ -53,8 +53,7 @@ const AGENT_DIR = path.resolve(
 const dryRun = process.argv.includes("--dry-run");
 
 function fail(message: string): never {
-  console.error(`install: ${message}`);
-  process.exit(1);
+  throw new Error(`install: ${message}`);
 }
 
 function git(...args: string[]): string | null {
@@ -78,27 +77,31 @@ function fill(text: string): string {
     .replaceAll("{{PI_CODING_AGENT_DIR}}", AGENT_DIR);
 }
 
-function sources(): Source[] {
+function sources(output: string): Source[] {
   const backend = fs
-    .globSync("dist/vendor/node_modules/typescript-*/**/*", { cwd: SRC })
-    .filter((file) => fs.statSync(path.join(SRC, file)).isFile())
+    .globSync("vendor/node_modules/typescript-*/**/*", { cwd: output })
+    .filter((file) => fs.statSync(path.join(output, file)).isFile())
     .sort();
   return [
     ...backend.map((from) => ({
-      from,
-      to: path.join(ROOT, path.relative("dist", from)),
+      from: path.join(output, from),
+      to: path.join(ROOT, from),
       fill: false,
     })),
     ...PROGRAMS.map(({ file }) => ({
-      from: `dist/${file}`,
+      from: path.join(output, file),
       to: path.join(ROOT, file),
       fill: false,
     })),
-    { from: "dist/tasks.json", to: path.join(ROOT, "tasks.json"), fill: false },
+    {
+      from: path.join(output, "tasks.json"),
+      to: path.join(ROOT, "tasks.json"),
+      fill: false,
+    },
     ...ASSETS.map(({ file }) => {
       if (file.startsWith("agents/")) {
         return {
-          from: `dist/${file}`,
+          from: path.join(output, file),
           to: path.join(
             AGENT_DIR,
             "agents/issue-pipeline",
@@ -107,13 +110,17 @@ function sources(): Source[] {
           fill: true,
         };
       }
-      return { from: `dist/${file}`, to: path.join(ROOT, file), fill: false };
+      return {
+        from: path.join(output, file),
+        to: path.join(ROOT, file),
+        fill: false,
+      };
     }),
   ];
 }
 
 function read({ from, to, fill: filled }: Source): InstallFile {
-  const text = fs.readFileSync(path.join(SRC, from), "utf8");
+  const text = fs.readFileSync(path.resolve(SRC, from), "utf8");
   if (filled) {
     return { from, to, text: fill(text) };
   }
@@ -235,7 +242,10 @@ function outcome(changed: number, shortSha: string, backup: string): string {
 
 // Requires a Git checkout outside the pipeline root, then builds. Returns
 // the commit and the uncommitted changes for the installation record.
-function checkedBuild(): { commit: string; dirty: string | null } {
+function checkedBuild(output: string): {
+  commit: string;
+  dirty: string | null;
+} {
   if (real(SRC) === real(ROOT) || real(SRC).startsWith(real(ROOT) + path.sep)) {
     fail(
       `refusing to install from ${SRC}, inside the pipeline root; install from a checkout of your own`,
@@ -246,10 +256,14 @@ function checkedBuild(): { commit: string; dirty: string | null } {
     fail(`${SRC} is not in a git checkout`);
   }
   const dirty = git("status", "--porcelain");
-  const built = spawnSync(process.execPath, [path.join(SRC, "build.ts")], {
-    cwd: SRC,
-    stdio: "inherit",
-  });
+  const built = spawnSync(
+    process.execPath,
+    [path.join(SRC, "build.ts"), output],
+    {
+      cwd: SRC,
+      stdio: "inherit",
+    },
+  );
   if (built.status !== 0) {
     fail("build failed");
   }
@@ -284,18 +298,20 @@ function checkTargets(files: readonly string[]): void {
   }
 }
 
-function main(): void {
-  const { commit, dirty } = checkedBuild();
+function installRelease(output: string): void {
+  const { commit, dirty } = checkedBuild(output);
   const repo = (git("remote", "get-url", "origin") ?? "")
     .replace(GITHUB_PREFIX, "")
     .replace(GIT_SUFFIX, "");
-  const files = sources().map(read);
+  const files = sources(output).map(read);
   for (const f of files) {
     // Vendored compiler declarations contain literal template braces, not
     // agent-definition placeholders. They are copied without interpolation.
     if (
       f.text.includes("{{") &&
-      !f.from.startsWith("dist/vendor/node_modules/typescript-")
+      !path
+        .relative(output, f.from)
+        .startsWith("vendor/node_modules/typescript-")
     ) {
       fail(`${f.from} has a placeholder this script doesn't know`);
     }
@@ -323,4 +339,14 @@ function main(): void {
   console.log(outcome(changed, shortSha, backup));
 }
 
-main();
+const temporaryBuild = fs.mkdtempSync(
+  path.join(os.tmpdir(), "ecosystem-install-"),
+);
+try {
+  installRelease(temporaryBuild);
+} catch (error: unknown) {
+  console.error(String(error));
+  process.exitCode = 1;
+} finally {
+  fs.rmSync(temporaryBuild, { recursive: true, force: true });
+}

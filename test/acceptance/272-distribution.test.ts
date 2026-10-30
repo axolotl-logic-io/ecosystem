@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { TASK_RUN } from "../../apps/issue-host/src/task-app/run-record.ts";
 import {
   applyStart,
   type BuddyChoice,
@@ -106,8 +107,8 @@ test("a clean installation runs all five tasks through the launcher with separat
     });
     assert.equal(records.length, TASK_COUNT);
     for (const file of records) {
-      const record = JSON.parse(
-        fs.readFileSync(path.join(box.root, file), "utf8"),
+      const record = TASK_RUN.parse(
+        JSON.parse(fs.readFileSync(path.join(box.root, file), "utf8")),
       );
       assert.equal(record.state, "ended");
       assert.equal(record.outcome, "succeeded");

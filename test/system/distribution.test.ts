@@ -1,12 +1,25 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { promisify } from "node:util";
+import { z } from "zod";
 import { PROGRAMS } from "../../programs.ts";
 
+const INSTALLED = z.object({
+  commit: z.string(),
+  dirty: z.boolean(),
+  files: z.array(z.string()),
+  backup: z.string(),
+});
+const REGISTRATIONS = z.object({
+  tasks: z.array(z.object({ id: z.string() })),
+});
+const FLEET = z.object({ buddies: z.array(z.unknown()) });
+const execute = promisify(execFile);
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const DEPENDENCIES = path.resolve(SOURCE, "node_modules");
 const TEST_TIMEOUT_MS = 120_000;
@@ -35,6 +48,10 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
       const [first] = path.relative(SOURCE, file).split(path.sep);
       return !["dist", "node_modules", "test", ".git"].includes(first ?? "");
     },
+  });
+  fs.rmSync(path.join(source, "apps/issue-pipeline"), {
+    recursive: true,
+    force: true,
   });
   fs.symlinkSync(DEPENDENCIES, path.join(source, "node_modules"), "dir");
   command(source, "git", ["init", "--initial-branch=main"]);
@@ -99,8 +116,8 @@ test("installer accepts uncommitted source and records its dirty identity", () =
       fs.readFileSync(path.join(root, "prompts/gherkin.md"), "utf8"),
       prompt,
     );
-    const installed = JSON.parse(
-      fs.readFileSync(path.join(root, "INSTALLED.json"), "utf8"),
+    const installed = INSTALLED.parse(
+      JSON.parse(fs.readFileSync(path.join(root, "INSTALLED.json"), "utf8")),
     );
     assert.equal(installed.commit, commit);
     assert.equal(installed.dirty, true);
@@ -159,7 +176,7 @@ test("installer accepts uncommitted source and records its dirty identity", () =
       fleet,
       "--check",
     ]);
-    assert.equal(JSON.parse(orchestrator).buddies.length, 1);
+    assert.equal(FLEET.parse(JSON.parse(orchestrator)).buddies.length, 1);
     assert.ok(launcher.includes(path.join(root, "gherkin.mjs")));
   } finally {
     sandbox.cleanup();
@@ -238,8 +255,8 @@ test("replacement backs up every managed file and preserves private and historic
       },
     });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    const installed = JSON.parse(
-      fs.readFileSync(path.join(root, "INSTALLED.json"), "utf8"),
+    const installed = INSTALLED.parse(
+      JSON.parse(fs.readFileSync(path.join(root, "INSTALLED.json"), "utf8")),
     );
     for (const [file, text] of previous) {
       assert.equal(
@@ -303,6 +320,54 @@ test("a symlink in the installation plan refuses before replacing any operator f
     assert.equal(fs.readFileSync(program, "utf8"), "previous release\n");
     assert.deepEqual(fs.readdirSync(outside), []);
     assert.equal(fs.existsSync(path.join(root, "INSTALLED.json")), false);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test("concurrent installs use private builds and leave source distribution output untouched", async () => {
+  const sandbox = fixture();
+  try {
+    await Promise.all(
+      ["first", "second"].map(async (name): Promise<void> => {
+        const root = path.join(sandbox.root, name);
+        await execute(process.execPath, ["install.ts"], {
+          cwd: sandbox.source,
+          timeout: TEST_TIMEOUT_MS,
+          env: {
+            ...process.env,
+            ...Object.fromEntries([
+              ["ECOSYSTEM_INSTALL_ROOT", root],
+              ["PI_CODING_AGENT_DIR", path.join(sandbox.root, `${name}-agent`)],
+            ]),
+          },
+        });
+        const manifest = REGISTRATIONS.parse(
+          JSON.parse(fs.readFileSync(path.join(root, "tasks.json"), "utf8")),
+        );
+        assert.deepEqual(manifest.tasks.map(({ id }) => id).sort(), [
+          "fix",
+          "gherkin",
+          "implement",
+          "land",
+          "verify",
+        ]);
+        command(root, process.execPath, [
+          "--check",
+          path.join(root, "launcher.mjs"),
+        ]);
+        const compiler = fs.globSync(
+          "vendor/node_modules/typescript-*/lib/typescript.js",
+          { cwd: root },
+        );
+        assert.equal(compiler.length, 1);
+        assert.equal(
+          fs.lstatSync(path.join(root, compiler[0] ?? "missing")).nlink,
+          1,
+        );
+      }),
+    );
+    assert.equal(fs.existsSync(path.join(sandbox.source, "dist")), false);
   } finally {
     sandbox.cleanup();
   }
