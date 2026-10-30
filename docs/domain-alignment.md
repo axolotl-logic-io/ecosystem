@@ -6,6 +6,8 @@ Tasks replace Stage, and a role is a set of tasks. Buddies, accounts and identit
 
 Five delivery tasks and a review loop on the pull request (PR) replace the separate-duties tasks. [PR review tasks](#pr-review-tasks) maps them onto the source.
 
+Label-started task apps then replace the task actors, their signals and their records. Each task becomes a command-line program that only its start label starts, and GitHub becomes the only record of earlier work. [Label-started task apps](#label-started-task-apps) records that migration, and it supersedes the older sections wherever they disagree.
+
 ## Scope and evidence
 
 The inventory covers ecosystem's issue pipeline, the local Pi dash extension, the status-report skill, and the issue-pipeline and test-assessment plans. It records known change surfaces, not a complete symbol-by-symbol audit.
@@ -38,6 +40,59 @@ The local source path, package identity, extension symlink and `--pipeline-dash`
 
 `add-pipeline-dash-to-ecosystem` in `~/brain/plans/stryker-test-assessment.md` records Autumn's request to add dash's source, tests, configuration and documentation to ecosystem. It is open and unassigned. Before implementation, choose the destination, tooling/workspace integration, technical-name migration and installation/update contract. Preserve existing callers/configuration and distinguish source delivery from an operator-authorized extension cutover. No copy, move or symlink change has been performed.
 
+## Label-started task apps
+
+These mappings move the source from the five task actors onto the model in the [domain runtime contract](domain-runtime-contract.md). Issues #246 and #248 to #254 make the code changes; this page and the glossary changed first, in #247. Nothing here is built or installed yet. Until each code issue lands, the reference pages describe the code as it is.
+
+### Names
+
+| Old name | New name | Class | Issue |
+| --- | --- | --- | --- |
+| Author task, `author`, `start:author` | Gherkin task, `gherkin`, `start:gherkin` | Terminology; public label impact | #249 |
+| `prompts/author.md`, `agents/issue-pipeline-author.md`, `models.author` | `prompts/gherkin.md`, `agents/issue-pipeline-gherkin.md`, `models.gherkin` | Terminology; config impact | #249 |
+| None | Task app: a task's command-line program, built on the task framework | New term | #246 |
+| Accepted start signal, spent start | Claim: a buddy's removal of `start:X`, confirmed on the timeline as made by its own account | Structure | #246 |
+| None | Running label: `agent:X:running`, which shows a live run and never gates a start | New public label | #246 |
+| Sensor, inbox, signal matching | None: a task app reads GitHub directly | Structure | #246, #254 |
+| Qualified signal | Start label, trusted through GitHub's triage permission | Behavior | #246 |
+| Receipt, task result record | Result: a GitHub artifact | Structure; persisted impact | #250 to #254 |
+| Checkpoint | None: every run continues from GitHub | Structure; persisted impact | #246, #254 |
+| Durable stop latch | Stop: `agents:stop` holds only while it's on the issue | Behavior | #246 |
+| Landing account, development account | The buddy's own GitHub account | Structure; config impact | #248 |
+
+Renaming the `start:author` label in place on GitHub keeps it on issues that already carry it. Issue #207 carries it today, so Gherkin would start on #207 once the new release is installed.
+
+### Behavior
+
+| Old behavior | New behavior | Issue |
+| --- | --- | --- |
+| A task declares sensors, receives signals in an inbox and matches them to actions | The framework runs claim, mark, work and unmark; a task supplies only its work | #246 |
+| A start qualifies only when a current organization member applied it | A start label being present is enough, because only triage access or higher can add labels | #246 |
+| A refused Verify, a person's request for changes or Land's conflict makes Fix ready | Only `start:fix` starts Fix | #252 |
+| A passed Verify and an approval make Land ready | Only `start:land` starts Land; it reads its prerequisites from GitHub when it runs | #253 |
+| Implement waits for an assigned person or a spent start | A start label always starts Implement | #250 |
+| A reapplied start retries only a failed run, and a passed or refused run stands | Every start label starts a run, and the run does only what's missing on GitHub | #246 |
+| Any accepted `agents:stop` latches the issue and makes pending starts inert | `agents:stop` holds claims and ends live runs while it's there; removing it lets waiting starts run | #246 |
+| Fix counts Verify rounds from result causes | Fix counts them from the PR's reviews by Verify's account | #252 |
+| Several identities share a GitHub account | Each buddy has its own GitHub account, so an event's `actor` identifies the buddy | #248 |
+| The buddy runtime activates task loops, admits actions and reserves capacity | The buddy launches a task app for every start it sees, with no prerequisite check | #248 |
+
+### Records
+
+These records stop being read when the task that wrote them moves to a task app. #254 removes the code that reads and writes them.
+
+| Old record | Replacement on GitHub |
+| --- | --- |
+| Signal records, accepted starts and stops | The start label and its `labeled` and `unlabeled` timeline events |
+| Task-result v2 records, receipts and attempts | The Gherkin comment, the pushed head, the review on a head commit, the merge commit and the closed issue |
+| Verify's binding in a result record | The commit that Verify's review was submitted on |
+| Saved work state v4, checkpoints and journals | The branch `agent/issue-N`, the PR, its reviews and threads, and each task's own comments, found by hidden marker |
+| Action-run observation files | One run record per task run that wins its claim, kept for the workflow dashboard |
+
+Existing records stay where they are as history. No task app reads them, and none is rewritten or relabeled. Work in progress carries over, because the existing branch name is already `agent/issue-N` and the PR, reviews and comments are already on GitHub.
+
+The status labels `agent:working`, `agent:merged`, `agent:needs-info` and the old `agent:stopped-*` labels stop being written. #254 deletes them from the repository once no installed release writes them.
+
 ## Tasks, buddies and landing
 
 These mappings apply the buddy and task model to the installed release `42a8771`. They are migration items, not completed changes. Saved state, labels, CLI flags and configuration keys are public or persisted, so each rename needs a compatibility decision before it changes.
@@ -46,7 +101,7 @@ These mappings apply the buddy and task model to the installed release `42a8771`
 
 | Installed surface | Canonical target | Class | Notes |
 | --- | --- | --- | --- |
-| `author` stage | Author task | Structure | Optional Author is installed in `42a8771`. |
+| `author` stage | Gherkin task, formerly Author | Structure | Optional Author is installed in `42a8771`. |
 | `implement` stage | Implementation task | Structure | Performed by the Developer. |
 | `review` stage, `hardening` session phase | Hardening task | Structure | |
 | `merge` stage | Security, Land and Completion tasks | Structure; public/persisted impact | Dash shows it as Legacy merge. Since #186 Sync and Integration are task jobs of their own (`job.mjs --task`); the merge stage requests them and keeps Security, Land and Completion (`src/roles/merge/`). |
@@ -74,10 +129,10 @@ These mappings apply the buddy and task model to the installed release `42a8771`
 | --- | --- | --- | --- |
 | Job roles `reader`, `writer`, `merger`, `STAGE_ROLES`, `jobRoles` | Access profiles within an identity: reader, writer and lander | Terminology and structure; config impact | They are credential and access classes, not roles. Each task names the least-privileged profile it needs. |
 | `devAccount`, `mergeAccount`, `models.*`, `runtime`, `jobRoles` tokens and network | Accounts and identities | Structure; config impact | `devAccount` is in Hippy's identity and `mergeAccount` in Lawd's. |
-| Developer and Reviewer sharing `axolotl-logic-hippy` | Separate identities that share an account | Structure | Allowed in general. |
+| Developer and Reviewer sharing `axolotl-logic-hippy` | Separate buddies, each with its own GitHub account | Structure | The task app model no longer allows a shared GitHub account (#248). |
 | Reviewer running both Hardening and Security | Hardening by Hippy, the Developer, in a fresh session; Security by Lawd, the Gatekeeper | Structure and behavior | Moves the installed `review` stage to the development account. No third account is needed. Since #179 the source supports it behind the job flag `--hardening-buddy hippy`; nothing passes the flag until #186. |
 | Dash Agent runs pane, `agentRuns` config | Buddy runs, with each run's account shown | Terminology; config impact | Model-free runs, such as landing, belong in the same view. |
-| GitHub event `actor` in the retired `src/discovery/` reader | Account, as external data | None | Not a buddy. The reader had no importer after E7 and #166 deleted it. |
+| GitHub event `actor` in the retired `src/discovery/` reader | Account, as external data | None | The reader had no importer after E7 and #166 deleted it. Under the task app model, each buddy has its own account, so the `actor` identifies the buddy. |
 | Candidate, exact candidate, version | Revision | Terminology | The `REVISION` schema in `src/merge-provenance.ts` and `ReviewedTarget` in `src/reviewed-target.ts` broadly match revision and target state. `REVISION` still accepts historical receipts with no policy and a null code commit. |
 
 ### Code names (#165) and persisted names (#166)
@@ -113,19 +168,17 @@ These mappings cover the five delivery tasks and the review loop in the source. 
 | Fast-forward Land with a strict-descendant lease | `gh pr merge --merge --match-head-commit`, then the issue close | Structure; the [merge glossary entry](../GLOSSARY.md#merge) now covers Land's merge commit |
 | Task result without a cause | `TaskResult.cause` repeats the attempt's cause | Structure |
 
-`start:implement` doesn't retry a failed Implement for the same requirements, and Implement doesn't wait for Author.
+In this source, `start:implement` doesn't retry a failed Implement for the same requirements, and Implement doesn't wait for Author. [Label-started task apps](#label-started-task-apps) supersedes the start and review-signal rows above: every task starts only from its own start label, and a review is never a signal.
 
 ## Signals and label controls
 
-The glossary defines [Signal](../GLOSSARY.md#signal), with its authority and label semantics. These are intended contracts; this documentation change implements no execution behavior.
+The glossary defines [Signal](../GLOSSARY.md#signal) and [Stop](../GLOSSARY.md#stop). These are intended contracts; this documentation change implements no execution behavior.
 
-The inspected source still uses assignment-based permission in `src/assignment/grant.ts` and `src/job/assignment.ts`, with fresh checks in `src/execution.ts`. The sweep in `scripts/sweep/plan.ts` filters issues by buddy account assignments. Replace that permission model with configured scope and responsibilities and shared signal-provenance checks; GitHub issue assignments are not required in the target model.
+The inspected source still uses assignment-based permission in `src/assignment/grant.ts` and `src/job/assignment.ts`, with fresh checks in `src/execution.ts`. The sweep in `scripts/sweep/plan.ts` filters issues by buddy account assignments. Under the task app model, a buddy's configured scope and tasks decide which starts it runs, and GitHub's label permissions decide who can start a task. GitHub issue assignments are not required.
 
-Tasks follow the actor pattern: they declare sensors, receive signals in an inbox and match signals to actions. A buddy run activates all its configured tasks' action loops, rather than executing one task. Stops propagate through affected loops, actions and their child work, within the stop's scope. Existing one-job and model-launch records need explicit mapping; do not relabel them as buddy runs by assumption. Signals encapsulate human or machine provenance; they are not necessarily requests. Inbox persistence, delivery guarantees, duplicate handling and actor-instance boundaries remain open.
+An earlier version of this inventory described tasks as actors with sensors, an inbox and signal matching, and qualified each start by its producer's organization membership. [Label-started task apps](#label-started-task-apps) replaces that design. A start label on the issue is the only start signal, a buddy's [claim](../GLOSSARY.md#claim) takes it, and `agents:stop` holds claims only while it's on the issue. Existing one-job and model-launch records need explicit mapping; do not relabel them as buddy runs by assumption.
 
-Required behavior includes qualifying human-produced `start:implement` and `agents:stop` application events by their producer's current organization membership, qualifying machine-produced signals through their authenticated evidence and bindings, retaining accepted-signal provenance, and stopping gracefully through one shared control. Label removal must never act as a signal, including cancellation or continuation. Unknown provenance or membership grants no permission. Continuation and the retry coverage of accepted requests remain open; do not infer them from label absence.
-
-Task names must use verbs. Implement is settled; remaining names and compatibility for persisted task identifiers still need decisions.
+Task names use verbs or name the method they follow. Implement and Gherkin are settled; compatibility for persisted task identifiers still needs decisions.
 
 ## Change classes
 
@@ -165,7 +218,7 @@ The inspected checkout declares four stages in `src/stages.ts`: `author`, `imple
 
 | Existing concept | Accepted stage | Migration requirement |
 | --- | --- | --- |
-| Author | Author, optional | Preserve authored and direct requirements modes. Optional Author is installed in `42a8771`. |
+| Author | Gherkin, formerly Author, optional | Preserve authored and direct requirements modes. Optional Author is installed in `42a8771`. |
 | Implement | Implementation | Align stage naming separately from the Developer role. |
 | Review / Hardening phase | Hardening | Preserve code/design/test responsibilities and applicable verification. |
 | Merge / Integration phase | Sync and Integration | Done in #186: the Developer's Sync writes, and the Gatekeeper's Integration only checks. |
@@ -196,8 +249,8 @@ Do not add watchers to status-report to match dash. Dash is a refreshed view; st
 | Existing surface | Required alignment | Class |
 | --- | --- | --- |
 | Dash action templates and `composeInstruction()` | Describe requests to the caller. Preserve user editing, cancel behavior and no direct process/GitHub control. | Terminology and invariant preservation |
-| Pipeline signed state, claims, policy bindings, review and Security records | Distinguish authorization, checkpoints and receipts. Keep provenance and exact scope; a diagnostic artifact or backup push does not grant action authority. | Structure review |
-| Attempted merge versus confirmed result | A request/attempt checkpoint is not a receipt. Unknown results require observations and reconciliation, not a repeated write. | Invariant preservation |
+| Pipeline signed state, claims, policy bindings, review and Security records | Replace with GitHub artifacts under the task app model. Keep historical records as they are; a diagnostic artifact or backup push does not grant action authority. | Structure review |
+| Attempted merge versus confirmed result | An attempted merge is not a merge. Unknown results require observations and reconciliation, such as reading the PR's merged state, not a repeated write. | Invariant preservation |
 | New buddy or task names | Do not infer privileges from role, assignment, stage label, report contents or available credentials. | Invariant preservation |
 | Assessment reports | Behavioral gaps/public entry points only; matching Markdown/JSON and identical randomized order; no receiving-agent implementation. | New artifact contract |
 
@@ -246,7 +299,7 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 - Unknown, unavailable and partial evidence never becomes a false negative, an empty result or a completion claim.
 - Dependencies identify specific required results, conditions and permissions, bound to the relevant revision, target state, policy and authorization scope, rather than completion of unrelated tasks. Historical results are preserved without treating them as applicable to a new revision.
 - Requests do not bypass authorization; role, buddy and task names and capabilities grant no extra authority.
-- Historical receipts/checkpoints retain provenance and exact result scope; uncertain writes are never blindly repeated.
+- Historical task records keep their original bytes and scope, and no task app reads them; uncertain writes are never blindly repeated.
 - Slot and reservation release respect registered consumers and explicit release conditions.
 - Status-report remains read-only; dash remains an observation/request interface, not a second scheduler.
 - Behavioral tests prove the changed contracts at the lowest appropriate level; no flaky pass, weakened guard or copied-prose assertion establishes acceptance.
@@ -254,12 +307,12 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 ## Open decisions
 
 - Canonical serialized identifiers. Run states are settled; task-result verdicts are passed, failed, refused or unknown.
-- Bindings for Author and the first Implementation, including which target changes make their results stale, and which binding parts apply to each task.
 - Identity/linkage for historical jobs, launches and externally managed Pi runs/sessions.
 - Configuration and CLI migration, historical readers, supported upgrade direction and removal of transitional readers.
-- Task prerequisite, result and recovery design, and ownership relative to current pipeline changes. Ecosystem #150, #151, #132, #133, #118–#121 and #167–#175 carry the approved re-scope.
+- The hidden markers that task apps use to find their own comments. Results, prerequisites and recovery come from GitHub, as the [domain runtime contract](domain-runtime-contract.md) describes.
 - Compatibility for renamed labels, saved state, CLI flags and configuration keys.
 - Observation schemas, freshness bounds and explicit coverage representation. Sources are settled.
-- Configured capacity provenance. Capacity is counted by resource and released by registered consumers.
+- Configured capacity provenance, and whether any capacity limit survives the launcher. Capacity is counted by resource and released by registered consumers.
+- Whether Land keeps the trusted `permissions.land` grant, which #253 doesn't list among Land's prerequisites.
 - Dash's destination and tooling/install integration inside ecosystem; the decision to add it there is accepted and tracked by `add-pipeline-dash-to-ecosystem`.
 - Whether glossary work should move to its own shared plan; it is currently tracked in `~/brain/plans/stryker-test-assessment.md`.

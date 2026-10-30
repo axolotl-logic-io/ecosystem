@@ -16,7 +16,7 @@ Issue delivery has five tasks: Author, Implement, Verify, Fix and Land. The refe
 
 [Domain alignment inventory](domain-alignment.md): the source cutover, historical differences and remaining acceptance gaps.
 
-[Domain runtime contract](domain-runtime-contract.md): canonical task, signal, authorization, resource and recovery interfaces.
+[Domain runtime contract](domain-runtime-contract.md): the source contract for label-started task apps: claims, running labels, stops, recovery from GitHub and results.
 
 ## Reference
 
