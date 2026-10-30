@@ -4,7 +4,7 @@ Source changes take effect only after installation. The operator owns credential
 
 ## Programs
 
-`programs.ts` is the build and install manifest. The generated `tasks.json` registers task ids and executable paths; the launcher never infers an executable from a task name. Delivery programs are `launcher.mjs`, compatibility `buddy.mjs`, `gherkin.mjs`, `implement.mjs`, `verify.mjs`, `fix.mjs` and `land.mjs`. Session support includes `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs` and `git-review.mjs`. Safe Refactor and standards upgrade retain their standalone entrypoints.
+`programs.ts` is the build and install manifest. The generated `tasks.json` registers task ids and executable paths; the launcher never infers an executable from a task name. Delivery programs are `orchestrator.mjs`, `launcher.mjs`, compatibility `buddy.mjs`, `gherkin.mjs`, `implement.mjs`, `verify.mjs`, `fix.mjs` and `land.mjs`. Session support includes `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs` and `git-review.mjs`. Safe Refactor and standards upgrade retain their standalone entrypoints.
 
 `ops.mjs`, `database.mjs` and `recover-implement.mjs` are retired. The installer does not delete files outside its manifest; obsolete installed files must not be invoked.
 
@@ -23,6 +23,27 @@ node "$ISSUE_PIPELINE_ROOT/launcher.mjs" --config BUDDY_FILE --check
 ```
 
 `BUDDY_FILE` is the absolute path of the operator's buddy file. Omit `--check` to start it. Validation checks configuration and installed task apps, but does not verify credentials with GitHub.
+
+## Supervise several buddies
+
+The [orchestrator](../../apps/orchestrator/README.md) runs one standalone launcher
+per configured buddy. Its strict version 1 fleet file supplies absolute paths to
+`buddies`, `manifest` and `launcher`. Validate the fleet before activation:
+
+```sh
+node "$ISSUE_PIPELINE_ROOT/orchestrator.mjs" --config FLEET_FILE --check
+```
+
+`FLEET_FILE` is the private fleet file's absolute path. Omit `--check` to start.
+The orchestrator validates every buddy before starting children and rejects
+duplicate files, names and accounts across folders. It never automatically
+restarts a failed launcher; healthy siblings continue. Inspect JSON reports on
+stderr and restart a failed buddy separately after fixing its cause.
+
+SIGTERM or SIGINT stops discovery through the launchers and waits for live tasks
+to drain without a forced deadline. Apply `agents:stop` to cancel issue work at
+guarded boundaries. Drain standalone copies before starting their supervised
+replacements. See the [failure and shutdown contract](../../apps/orchestrator/README.md#child-failures-and-restart-policy).
 
 ## Install a release
 

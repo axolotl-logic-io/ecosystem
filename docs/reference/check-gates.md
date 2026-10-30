@@ -29,7 +29,7 @@ To select the expensive suite explicitly, run from the repository root:
 npm run check:full
 ```
 
-It checks the shared task runtime, task framework and database packages, runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, followed by the dashboard and all five task workspace checks:
+It checks the orchestrator and launcher applications and the shared task runtime, task framework and database packages, runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, followed by the dashboard and all five task workspace checks:
 
 ```bash
 node --test --test-concurrency=8 --test-timeout=180000 'test/{component,component-integration,system,acceptance}/**/*.test.ts'
@@ -78,3 +78,5 @@ A change to the repository's scripts doesn't rewrite an operator's `commands.tes
 A newer push to a PR cancels that PR's older run.
 
 The launcher workspace participates in both root gates. Its manifest tests use real files. Built launcher system coverage runs in the pipeline suite against fake GitHub and real task subprocesses.
+
+The orchestrator workspace participates in both root gates. Its subprocess tests cover fleet validation, independent child failures, startup rollback and drain shutdown. Pipeline system tests cover the installed orchestrator with two real launchers and guarded task cancellation.

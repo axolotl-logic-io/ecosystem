@@ -2,7 +2,7 @@
 
 `@ecosystem/launcher` runs one configured buddy. It owns the version 2 buddy
 file, repository scope, account verification, duplicate-account protection and
-start-label discovery. It runs without an orchestrator. Task definitions live in
+start-label discovery. It runs standalone or under the [orchestrator](../orchestrator/README.md), which supervises one launcher process per buddy. Task definitions live in
 root `tasks/` workspaces and receive explicit validated inputs and task-specific
 capabilities from their bootstrap.
 
