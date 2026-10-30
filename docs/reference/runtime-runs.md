@@ -331,7 +331,7 @@ Both schemas are exported as `BUDDY_RUN` and `ACTION_RUN` from `src/runtime/obse
 
 ## Task app runs
 
-A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
+A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
 
 To run a task app, run:
 
@@ -390,6 +390,8 @@ const TASK_RUN = z.strictObject({
   endedAt: TIME.nullable(),
 });
 ```
+
+A task app's model sessions write their JSONL files to `sessions/` in the same folder.
 
 `claim.start` is the `labeled` event of the start the run took, or null when the timeline doesn't show one, and `claim.removal` is its claim's `unlabeled` event. `step` is the lifecycle step the run is in. `reason` names the error of a failed run. The schema is exported as `TASK_RUN` from `src/task-app/run-record.ts`.
 

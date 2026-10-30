@@ -146,6 +146,12 @@ interface MachineSetup {
   provider?: "openai" | "anthropic";
 }
 
+// How a task app's process ended, and what it wrote to stderr.
+interface TaskAppEnd {
+  status: number | null;
+  stderr: string;
+}
+
 // What one buddy run printed and left behind.
 interface BuddyOutcome {
   status: number | null;
@@ -176,6 +182,13 @@ interface Machine {
     buddy?: BuddyChoice,
     signal?: AbortSignal,
   ) => Promise<BuddyOutcome>;
+  // Runs task app `app` (APP.mjs) once on issue ISSUE as `buddy`, from a
+  // trusted file of its own, with `sessions` planned, to its end.
+  runTaskApp: (
+    app: string,
+    buddy: BuddyChoice,
+    sessions: PlannedSession[],
+  ) => Promise<TaskAppEnd>;
   recoverImplement: (
     action: string,
     apply: boolean,
@@ -677,6 +690,43 @@ function machine(
     );
     return { status, stderr, ended, run, actions: actionsOf(pipeline) };
   }
+  async function runTaskApp(
+    app: string,
+    buddy: BuddyChoice,
+    sessions: PlannedSession[],
+  ): Promise<TaskAppEnd> {
+    const buddyConfig = path.join(
+      root,
+      `buddy-${buddy.role}-${buddy.tasks.join("-")}.json`,
+    );
+    writeBuddyConfig(buddyConfig, repositoryConfig, buddy);
+    fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(pipeline, `${app}.mjs`),
+        "--config",
+        buddyConfig,
+        "--issue",
+        `${REPO}#${ISSUE}`,
+      ],
+      { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    // A deadline that only fails the test.
+    const overstay = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, OVERSTAY_MS);
+    const status = await new Promise<number | null>((resolve) => {
+      child.on("close", (code) => resolve(code));
+    });
+    clearTimeout(overstay);
+    return { status, stderr };
+  }
   return {
     root,
     origin,
@@ -703,6 +753,7 @@ function machine(
         .filter((line) => line !== "")
         .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
     runBuddy,
+    runTaskApp,
     recoverImplement: (
       action: string,
       apply: boolean,
@@ -795,5 +846,6 @@ export type {
   Machine,
   MachineSetup,
   PlannedSession,
+  TaskAppEnd,
 };
 export { applyStart, DEVELOPER, HARDENING, HUMAN, ISSUE, machine, marked };

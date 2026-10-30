@@ -15,6 +15,8 @@ interface Account {
   env: ReadonlyMap<string, string>;
 }
 interface Identity extends Account {
+  // The repository config file the buddy file names for the repository.
+  config: string;
   // The repository's base branch, which an issue's branch is compared with.
   base: string;
   claimWaitsMs: readonly number[];
@@ -63,6 +65,7 @@ function loadIdentity(buddyFile: string, repo: string): Identity {
   }
   return {
     ...accountOf(buddy),
+    config: repository.config,
     base: repository.base,
     claimWaitsMs: buddy.claimWaitsMs,
   };
