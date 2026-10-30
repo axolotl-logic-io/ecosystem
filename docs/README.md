@@ -2,7 +2,7 @@
 
 These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Reference pages describe how the code behaves today and how to recover when something goes wrong.
 
-Issue delivery has five tasks: Author, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, the page says so in a note.
+Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, the page says so in a note.
 
 ## Practices
 

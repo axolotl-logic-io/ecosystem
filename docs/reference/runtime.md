@@ -23,7 +23,7 @@ Compaction is context management, not a token or spending cap. There are no sess
 
 ## Models
 
-Set `models.author`, `models.developer` and `models.reviewer` explicitly in the repository config, with matching `runtime.modelContextWindows`. Model strings pass unchanged to `--model`. The default and example model is `openai/gpt-6.1-sol`.
+Set `models.gherkin`, `models.developer` and `models.reviewer` explicitly in the repository config, with matching `runtime.modelContextWindows`. Model strings pass unchanged to `--model`. The default and example model is `openai/gpt-6.1-sol`.
 
 ## Startup verification
 

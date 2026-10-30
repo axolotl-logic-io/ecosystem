@@ -2,7 +2,7 @@
 
 Control signals come from qualified human events, not from a label's presence alone. People control issue delivery with five start labels, one stop label and their reviews of the issue's pull request (PR). Accepted records, current authority and exact task results decide what may happen; status labels and process observations don't. See [signals](signals.md) and [authority](authority.md).
 
-**Note:** The installed pipeline accepts only `start:implement` and `agents:stop`. `start:author`, `start:verify` and review signals run only once this source is installed.
+**Note:** The installed pipeline accepts only `start:implement` and `agents:stop`. `start:gherkin`, `start:verify` and review signals run only once this source is installed.
 
 ## Human controls
 
@@ -10,7 +10,7 @@ Every control label goes on the issue. A label on a PR grants nothing.
 
 | Label application | Meaning |
 |---|---|
-| `start:author` | Request Author for the issue's current requirements |
+| `start:gherkin` | Start the Gherkin task app, which writes the issue's behaviour as Gherkin or asks its author questions |
 | `start:implement` | Request one Implement attempt for the issue's current requirements |
 | `start:verify` | Request Verify for the current head of the issue's linked PR |
 | `start:fix` | Request Fix for the current head of the issue's linked PR |
@@ -42,7 +42,7 @@ An authenticated attempt spends its start whatever its verdict. Target movement 
 
 To retry a task whose latest run failed, apply its start label again. Each new start event requests one new attempt, for any of the five tasks, with no attempt limit. The new attempt continues the existing work rather than starting over: it reads the earlier result, the issue's branch and PR, and the saved progress, and finishes what is unfinished. A run that is still unsettled is first settled by reading. A passed or refused run stands, and a new start for it holds.
 
-Implement doesn't wait for an unsettled Author. See [interrupted Implement runs](task-results.md#interrupted-implement-runs).
+Implement doesn't wait for Gherkin. See [interrupted Implement runs](task-results.md#interrupted-implement-runs).
 
 ## Completed starts
 

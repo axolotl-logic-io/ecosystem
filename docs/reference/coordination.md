@@ -6,7 +6,7 @@ A buddy run activates its configured task loops. Each task owns its sensors, mat
 
 Keep repository policy, operator credentials and buddy configuration separate. The [runtime reference](runtime-runs.md#buddy-configuration) defines the strict buddy file, organization scope, role, responsibilities, identity and access profiles. Repository `resources.modelSessions` supplies the shared capacity; there is no buddy-level capacity override.
 
-Issue delivery has five tasks. A Developer buddy's default responsibilities are Author, Implement and Fix, with the writer profile. A Gatekeeper's are Verify, with the reader profile, and Land, with the lander profile. Safe Refactor retains its [standalone entrypoint](safe-refactor.md). Merely configuring a responsibility supplies no causal signal or execution permission.
+Issue delivery has five tasks. A Developer buddy's default responsibilities are Implement and Fix, with the writer profile. Gherkin is a task app, not a responsibility; see [task app runs](runtime-runs.md#task-app-runs). A Gatekeeper's are Verify, with the reader profile, and Land, with the lander profile. Safe Refactor retains its [standalone entrypoint](safe-refactor.md). Merely configuring a responsibility supplies no causal signal or execution permission.
 
 **Note:** The installed pipeline still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. The five-task source runs only once it is installed.
 
@@ -24,7 +24,6 @@ The runtime independently checks the current buddy grant, qualified cause, work-
 
 Qualified human events on the issue and its pull request (PR) provide human signals:
 
-- `start:author` requests Author for the issue's current requirements.
 - `start:implement` requests Implement for its requirements binding.
 - `start:verify` requests Verify for the current head of the issue's linked PR.
 - `start:fix` requests Fix for the current head of the issue's linked PR.
@@ -34,7 +33,7 @@ Qualified human events on the issue and its pull request (PR) provide human sign
 
 The event must name a qualified human producer in the configured organization. Complete event reads, membership checks and authenticated acceptance records remain necessary. A bot, App, PR label, present label alone or assignment supplies no human authority. Removing a label creates no continuation signal. See [stops and labels](stops-and-labels.md).
 
-A start is spent by its authenticated action attempt, even if the attempt fails or the target later moves. Nothing retries a failed run automatically; a person's new start of the same task does. Implement doesn't wait for an unsettled Author.
+A start is spent by its authenticated action attempt, even if the attempt fails or the target later moves. Nothing retries a failed run automatically; a person's new start of the same task does. Implement doesn't wait for Gherkin.
 
 A start label is the only thing that requests a task. Results and reviews are evidence: a refused Verify, a person's request-changes review or Land's conflict is what a started Fix answers, and approvals count toward Land. Land still checks its own prerequisites.
 
@@ -60,7 +59,7 @@ Once a new Implement or Fix attempt is recorded, the development account assigns
 
 If the action retains the issue, the development account stays assigned while the pipeline holds it. It's removed when a later Implement or Fix on the issue releases it.
 
-Verify, Land and Author neither assign the issue nor back off from an assigned person. A machine account as an assignee never causes a back-off.
+Verify, Land and Gherkin neither assign the issue nor back off from an assigned person. A machine account as an assignee never causes a back-off.
 
 ## Read observations
 

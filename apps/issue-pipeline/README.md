@@ -38,11 +38,12 @@ node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 
 ## Tasks and signals
 
-Issue delivery has five tasks. The canonical task IDs are `author`, `implement`, `verify`, `fix`, `land` and `refactor-safely`. Developer and Gatekeeper are roles, not saved stages.
+Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The buddy runtime's canonical task IDs are `implement`, `verify`, `fix`, `land` and `refactor-safely`. Developer and Gatekeeper are roles, not saved stages.
+
+Gherkin, which was called Author, is a task app (`gherkin.mjs`) on the task app framework, not a buddy task. See [the Gherkin task app](#the-gherkin-task-app).
 
 | Task | Role and access | Binds | Becomes ready when |
 | --- | --- | --- | --- |
-| Author | Developer, writer | Requirements | `start:author` |
 | Implement | Developer, writer | Requirements | `start:implement` |
 | Verify | Gatekeeper, reader | The PR head | `start:verify` for the current head |
 | Fix | Developer, writer | The PR head | A request for changes on the head, or Land finding a conflict |
@@ -52,13 +53,32 @@ Safe Refactor retains its explicit standalone entrypoint.
 
 **Note:** The installed release still runs the older Harden, Sync, Integrate, Review Security and Complete tasks. This source's five tasks run only once it is installed.
 
-Qualified human events provide the human signals: the `start:author`, `start:implement`, `start:verify`, `start:fix`, `start:land` and `agents:stop` labels on the issue, and a qualified person's review of the issue's linked PR. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
+Qualified human events provide the buddy runtime's human signals: the `start:implement`, `start:verify`, `start:fix`, `start:land` and `agents:stop` labels on the issue, and a qualified person's review of the issue's linked PR. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
 
-An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. A person's new start of a failed task retries it, continuing the existing work, and Implement doesn't wait for Author. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
+An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. A person's new start of a failed task retries it, continuing the existing work, and Implement doesn't wait for Gherkin. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
 
 After a confirmed passed, refused or failed result, a task removes the start label whose application caused it. It preserves all accepted signals and task records, other labels and any newer application observed during cleanup. Uncertain results retain their label. Cleanup failures warn without changing the result. See [completed starts](../../docs/reference/stops-and-labels.md#completed-starts).
 
 Implement writes the change and hardens it in a fresh session before it records its result. Verify runs the full checks, the required CI and the Security review of the exact head. It then submits a review through the landing account: an approval for nothing or only nits, and a request for changes otherwise. A Security finding always blocks. Verify is also a task app, `verify.mjs`, which submits its review through the buddy's own account and keeps no task records; a launcher buddy whose tasks include `verify` runs it. See [the Verify task app](../../docs/reference/review.md#verify-task-app). Fix runs as the task app `fix.mjs`, started only by `start:fix`. It merges the base into the PR head, answers unresolved blocking threads with code and replies through the buddy's account, pushes and names `start:verify` as the next step. It recovers from GitHub and counts at most three Verify-triggered rounds from the PR's request-changes reviews. See [Fix](../../docs/reference/review.md#fix).
+
+## The Gherkin task app
+
+Gherkin writes an issue's behaviour as Gherkin, or asks the questions that only the issue's author can answer. It's a [task app](../../docs/reference/runtime-runs.md#task-app-runs), so only `start:gherkin` starts it, and the framework claims the start, marks the run with `agent:gherkin:running` and posts its end comment. A launcher buddy whose `tasks` lists `gherkin` runs it for each `start:gherkin` it sees. To run it by hand, run:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/gherkin.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
+```
+
+- `BUDDY_FILE` is the absolute path of a launcher buddy file. Gherkin acts as its account.
+- `OWNER/REPO#N` is the issue.
+
+Its work is one read-only session as the `issue-pipeline-gherkin` agent, on the `gherkin.md` prompt page and the repository config's `models.gherkin`. The session reads an issue file of trusted people's words and a detached checkout of the base branch, holds no GitHub token and returns its reply through structured output. See [the Gherkin session](../../docs/reference/sessions.md#gherkin-session).
+
+The app posts the reply. Gherkin goes in the issue's one Gherkin comment: a later run finds that comment by its hidden marker and edits it, rather than posting a second one. Questions go in a new comment every time. Either way, the issue's author answers on the issue and a person applies `start:gherkin` again.
+
+Gherkin reads the whole repository config, not just its `repo` and `baseBranch`: the session needs its `models.gherkin`, `allowedUsers`, `runtime` and `cloneUrl`. It fetches the base branch into the pipeline's mirror with the config's `devAccount` credential, as the buddy runtime does. Every GitHub write is still the buddy's own account's.
+
+The buddy runtime no longer has an Author task, and skips the retired Author task's records on GitHub.
 
 ## Ownership, resources and preservation
 
@@ -196,7 +216,7 @@ The default and example role models are `openai/gpt-6.1-sol`. Set all three repo
 ```json
 {
   "models": {
-    "author": "openai/gpt-6.1-sol",
+    "gherkin": "openai/gpt-6.1-sol",
     "developer": "openai/gpt-6.1-sol",
     "reviewer": "openai/gpt-6.1-sol"
   }
@@ -211,7 +231,7 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 ## Programs and observations
 
-`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs`, `standards-upgrade.mjs`, `recover-implement.mjs` and the task apps [Implement](../../docs/reference/runtime-runs.md#implement), `implement.mjs`, `verify.mjs`, `fix.mjs` and `land.mjs`.
+`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `gherkin.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs`, `standards-upgrade.mjs`, `recover-implement.mjs` and the task apps [Implement](../../docs/reference/runtime-runs.md#implement), `implement.mjs`, `verify.mjs`, `fix.mjs` and `land.mjs`.
 
 Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json` for the earlier runtime and, for [task app runs](../../docs/reference/runtime-runs.md#task-app-runs), `runs/SLUG/issue-N/task-runs/ID/run.json`. A launcher buddy writes no observation file of its own. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
@@ -287,8 +307,8 @@ Tests are sorted by ISTQB test level, as the [project practices](../../docs/proj
 | Folder | Level | Script | Holds |
 | --- | --- | --- | --- |
 | `test/component/` | Component | `npm run test:component` | the task ledger, read alone in a child process |
-| `test/component-integration/` | Component integration | `npm run test:component-integration` | signals, including Author and Verify starts and PR review signals, reservations, project policy, buddy authorization binding |
-| `test/system/` | System | `npm run test:system` | buddy flows of the built `buddy.mjs`, among them Author, Implement's hardening, Verify, Fix, Land and their recovery, `buddy --check`, `standards-upgrade apply`, the distribution |
+| `test/component-integration/` | Component integration | `npm run test:component-integration` | signals, including Implement and Verify starts and PR review signals, reservations, project policy, buddy authorization binding |
+| `test/system/` | System | `npm run test:system` | buddy flows of the built `buddy.mjs`, among them Implement's hardening and start-label cleanup, Verify, Fix, Land and their recovery, `buddy --check`, `standards-upgrade apply`, the distribution, and the Gherkin task app's built `gherkin.mjs` |
 | `test/system-integration/` | System integration | `npm run test:database` | real isolated PostgreSQL, relocated database bundle and reservation adapter; requires explicit test setup |
 | `test/support/` | none | none | helpers more than one level uses, such as the fake GitHub server and signal kit |
 

@@ -70,9 +70,9 @@ const DEFAULT_MODEL = "openai/gpt-6.1-sol";
 const MODEL = z.string().min(1).default(DEFAULT_MODEL);
 // The model of each of the three model roles (`three-configurable-models`).
 const MODELS = z
-  .object({ author: MODEL, developer: MODEL, reviewer: MODEL })
+  .object({ gherkin: MODEL, developer: MODEL, reviewer: MODEL })
   .default({
-    author: DEFAULT_MODEL,
+    gherkin: DEFAULT_MODEL,
     developer: DEFAULT_MODEL,
     reviewer: DEFAULT_MODEL,
   });

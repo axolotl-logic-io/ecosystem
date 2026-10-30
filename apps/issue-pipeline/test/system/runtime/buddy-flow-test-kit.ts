@@ -96,7 +96,7 @@ interface PlannedSession {
     | "events-unreadable"
     | "comments-unreadable"
     | "rival-push"
-    | "reapply-author-start"
+    | "reapply-implement-start"
     | "apply-verify-start"
     | null;
   // Whether `change` comes before the commit rather than after it.
@@ -125,7 +125,7 @@ const HARDENING: PlannedSession = {
 // the landing account, each responsible for `tasks`. Only a Gatekeeper
 // responsible for Land holds the lander profile and `permissions.land`.
 type BuddyChoice =
-  | { role: "developer"; tasks: ("author" | "implement" | "fix")[] }
+  | { role: "developer"; tasks: ("implement" | "fix")[] }
   | { role: "gatekeeper"; tasks: ("verify" | "land")[] };
 
 // The machine's trusted repository configuration, fixed before any action:
@@ -492,7 +492,6 @@ function actionsOf(pipeline: string): ActionRun[] {
 // The access profile each task the flow buddies run needs (its TASKS
 // definition's `access`).
 const ACCESS: Readonly<Record<BuddyChoice["tasks"][number], string>> = {
-  author: "writer",
   implement: "writer",
   fix: "writer",
   verify: "reader",
@@ -606,7 +605,7 @@ function machine(
     permissions: { land: setup.landPermission },
     requireCi: setup.requireCi,
     ...laneSlotsOf(setup),
-    models: { author: model, developer: model, reviewer: model },
+    models: { gherkin: model, developer: model, reviewer: model },
     runtime: provisionRuntime(root, provider),
     projectPolicy,
   });

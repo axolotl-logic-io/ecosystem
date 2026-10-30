@@ -44,7 +44,7 @@ const SESSION = z.strictObject({
       "events-unreadable",
       "comments-unreadable",
       "rival-push",
-      "reapply-author-start",
+      "reapply-implement-start",
       "apply-verify-start",
     ])
     .nullable(),
@@ -259,8 +259,8 @@ function edit(world: World, change: NonNullable<Session["change"]>): void {
     if (change === "apply-verify-start") {
       label = "start:verify";
     }
-    if (change === "reapply-author-start") {
-      label = "start:author";
+    if (change === "reapply-implement-start") {
+      label = "start:implement";
     }
     // A person who reapplies a present label removes it first.
     if (issue.labels.includes(label)) {

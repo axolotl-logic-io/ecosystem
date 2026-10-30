@@ -10,7 +10,7 @@ import { exec } from "../process-observations.ts";
 import { parse } from "../source-records.ts";
 import { safeBody } from "./records.ts";
 
-const taskSchema = z.enum(["author", "implement", "verify", "fix", "land"]);
+const taskSchema = z.enum(["gherkin", "implement", "verify", "fix", "land"]);
 const repoPattern = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/u;
 const targetSchema = z.object({
   action: z.string().min(1),

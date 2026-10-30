@@ -8,7 +8,7 @@ Each delivery task picks its sessions from this table. The runtime selects the p
 
 | Task | Model agent | Phase | Commits code | Prompt page |
 |---|---|---|---|---|
-| Author | `issue-pipeline-author` | None | No; it writes requirements | `author.md` |
+| Gherkin | `issue-pipeline-gherkin` | None | No; it writes requirements | `gherkin.md` |
 | Implement, writing | `issue-pipeline-developer` | None | Yes | `developer.md` |
 | Implement, hardening | `issue-pipeline-developer` | `hardening` | Yes | `developer-hardening.md` |
 | Verify, review with its Security | `issue-pipeline-reviewer` | `security-review` | No | `verify.md` |
@@ -20,9 +20,18 @@ Land starts no model. Verify's full checks and required CI are deterministic; on
 
 Implement's hardening runs in a fresh session that doesn't read the writing session's conversation. Implement records its result only after the hardening session ends.
 
-A qualified `start:author` requests Author, and `start:implement` requests Implement. Implement doesn't wait for an unsettled Author. Safe Refactor uses its [standalone tool](safe-refactor.md), whose reports grant no Verify or Land result.
+`start:gherkin` starts the Gherkin task app, and a qualified `start:implement` requests Implement. Implement doesn't wait for Gherkin. Safe Refactor uses its [standalone tool](safe-refactor.md), whose reports grant no Verify or Land result.
 
 Implement reads the trusted issue title, body and qualified collaborator comments. It needs no substitute Gherkin document, doesn't merge the base and doesn't own final verification. A changed requirement needs a newly accepted start; ending a session doesn't grant a retry.
+
+## Gherkin session
+
+Gherkin is a task app, so its session isn't an action's. It runs in the task run's folder, on the issue file and a detached checkout of the base branch, as [runtime runs](runtime-runs.md#model-session) describes. It uses the repository config's `models.gherkin` and times out after 30 minutes. It replies with one of two shapes:
+
+- `gherkin`: the behaviour as one Feature in `gherkin`, and the session's own calls in `assumptions`.
+- `needs-info`: one to five `questions` that only the issue's author can answer.
+
+The app posts Gherkin as the issue's one Gherkin comment, with the hidden marker `<!-- task-app:gherkin:gherkin {"run":"RUN_ID"} -->`. A later run finds that comment by its marker and edits it in place, so the issue keeps one Gherkin comment. The app posts questions in a new comment, with the marker kind `questions`, every time. A reply that doesn't match either shape fails the run, and the app posts nothing but its end comment.
 
 ## Prompts and provenance
 

@@ -7,23 +7,23 @@
 import { z } from "zod";
 import type { Config } from "./config.ts";
 
-// The five delivery tasks and Safe Refactor.
+// The delivery tasks the buddy runtime still runs, and Safe Refactor. The
+// Gherkin task, which was Author, is a task app (gherkin.ts).
 const TASK_IDS = [
-  "author",
   "implement",
   "verify",
   "fix",
   "land",
   "refactor-safely",
 ] as const;
-// Author and Implement bind the trusted requirements; every other task binds
+// Implement binds the trusted requirements; every other task binds
 // a revision: for Verify, Fix and Land the item PR's head, which is the item
 // branch's head.
-const REQUIREMENTS_TASKS = ["author", "implement"] as const;
+const REQUIREMENTS_TASKS = ["implement"] as const;
 const REVISION_TASKS = ["verify", "fix", "land", "refactor-safely"] as const;
 // The tasks a start label requests on the issue. A start label is the only
 // thing that requests a task: no result or review wakes one.
-const START_TASKS = ["author", "implement", "verify", "fix", "land"] as const;
+const START_TASKS = ["implement", "verify", "fix", "land"] as const;
 // The start tasks that bind the head of the issue's linked PR.
 const HEAD_START_TASKS = ["verify", "fix", "land"] as const;
 // At most this many Fix rounds that Verify's request-changes triggered, per
@@ -91,15 +91,15 @@ const PR_REVIEW = z.strictObject({
   state: REVIEW_STATE,
 });
 
-// A start requests one task for the issue: Author or Implement for the
-// requirements and target read when it was accepted; Verify, Fix or Land for
-// the head of the issue's linked PR read then.
+// A start requests one task for the issue: Implement for the requirements
+// and target read when it was accepted; Verify, Fix or Land for the head of
+// the issue's linked PR read then.
 const START_SIGNAL = z.discriminatedUnion("task", [
   z.strictObject({
     kind: z.literal("start"),
     id: SIGNAL_ID,
     workItem: WORK_ITEM_REF,
-    task: z.enum(["author", "implement"]),
+    task: z.enum(REQUIREMENTS_TASKS),
     requirements: REQUIREMENTS,
     target: TARGET_STATE,
     provenance: HUMAN_PROVENANCE,
@@ -300,10 +300,7 @@ interface TaskView {
 }
 
 interface SessionSpec {
-  agent:
-    | "issue-pipeline-author"
-    | "issue-pipeline-developer"
-    | "issue-pipeline-reviewer";
+  agent: "issue-pipeline-developer" | "issue-pipeline-reviewer";
   model: string;
   task: string;
   schema: z.ZodType;

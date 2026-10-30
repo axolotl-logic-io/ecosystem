@@ -6,6 +6,8 @@
 // its binding, the action run (its id and the run it follows), the buddy run
 // that produced it and the signal that caused it. Any other version, a
 // malformed record or records that contradict each other hold the item.
+// Migration (#249): a record of the retired Author task, which the Gherkin
+// task app replaced, is skipped.
 
 import { z } from "zod";
 import { assertCommentAuthority } from "../comment-authority.ts";
@@ -52,6 +54,9 @@ const RESULT = z.strictObject({
 });
 const RECORD = z.discriminatedUnion("kind", [ATTEMPT, RESULT]);
 const VERSIONED = z.looseObject({ version: z.unknown() });
+const RETIRED = z.looseObject({
+  binding: z.looseObject({ task: z.literal("author") }),
+});
 
 type Attempt = z.infer<typeof ATTEMPT>;
 type Result = z.infer<typeof RESULT>;
@@ -132,6 +137,9 @@ function parsedComment(
   const version = versioned.data?.version;
   if (version !== VERSION) {
     hold(`comment ${comment.id} has unknown record version ${String(version)}`);
+  }
+  if (RETIRED.safeParse(raw).success) {
+    return null;
   }
   const parsed = RECORD.safeParse(raw);
   if (!parsed.success) {

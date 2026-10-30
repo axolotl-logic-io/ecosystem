@@ -36,7 +36,7 @@ test("buddy --check validates a Developer against its repository's pinned pool",
     const checked = checkBuddy(box.buddy({}), box.root);
     assert.equal(checked.status, 0, checked.stderr);
     const summary = CHECKED.parse(JSON.parse(checked.stdout));
-    assert.deepEqual(summary.tasks, ["author", "implement", "fix"]);
+    assert.deepEqual(summary.tasks, ["implement", "fix"]);
     assert.deepEqual(
       summary.repositories.map(({ repo, modelSessions }) => ({
         repo,
@@ -60,7 +60,7 @@ test("retired repository controls change nothing about a buddy's grant", () => {
       takeNewWork: false,
       skipLabels: ["deploy"],
       maxJobs: 1,
-      stageCaps: { author: 1 },
+      stageCaps: { implement: 1 },
       orchestratorIntervalSeconds: 1,
       maxCiFixes: 0,
       maxSyncs: 0,
@@ -73,7 +73,7 @@ test("retired repository controls change nothing about a buddy's grant", () => {
     const checked = checkBuddy(file, box.root);
     assert.equal(checked.status, 0, checked.stderr);
     const summary = CHECKED.parse(JSON.parse(checked.stdout));
-    assert.deepEqual(summary.tasks, ["author", "implement", "fix"]);
+    assert.deepEqual(summary.tasks, ["implement", "fix"]);
     assert.equal(summary.repositories.at(0)?.authorization, before);
   } finally {
     box.cleanup();
@@ -190,7 +190,7 @@ test("SIGTERM stops a polling buddy cooperatively and records the canonical run"
         polled: polledAt !== null,
         unreadable: (reason ?? "").includes("unreadable"),
       })),
-      ["author", "implement", "fix"].map((task) => ({
+      ["implement", "fix"].map((task) => ({
         task,
         state: "held",
         polled: true,

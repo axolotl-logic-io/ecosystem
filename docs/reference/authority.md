@@ -28,9 +28,9 @@ A safe login read can retry transient failures; the operation it guards is not r
 
 ## Human controls
 
-A qualified issue-label application event can request `start:author`, `start:implement`, `start:verify`, `start:fix`, `start:land` or `agents:stop`. A qualified person's submitted review on the issue's linked PR is a signal too. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal don't supply equivalent authority.
+A qualified issue-label application event can request `start:implement`, `start:verify`, `start:fix`, `start:land` or `agents:stop`. A qualified person's submitted review on the issue's linked PR is a signal too. Qualification checks the producer's human identity and current policy/membership evidence. Assignment, a PR label, an App, a bot, a machine account and label removal don't supply equivalent authority.
 
-An accepted Author or Implement start binds the work item's trusted requirements. A Verify start binds the linked PR's head. An authenticated attempt spends its start regardless of its result or a later target change. Applying the start label again retries a failed run; a passed or refused run stands. Unknown or conflicting evidence holds work. See [stops and labels](stops-and-labels.md).
+An accepted Implement start binds the work item's trusted requirements. `start:gherkin` starts the Gherkin task app, which needs only GitHub's permission to add the label; see [task app runs](runtime-runs.md#task-app-runs). A Verify start binds the linked PR's head. An authenticated attempt spends its start regardless of its result or a later target change. Applying the start label again retries a failed run; a passed or refused run stands. Unknown or conflicting evidence holds work. See [stops and labels](stops-and-labels.md).
 
 Membership-reader capability must be verified for the installed account. A passing fake transport does not establish that capability. Unavailable membership evidence holds; it does not authorize credential changes or a fallback.
 
@@ -60,7 +60,7 @@ Ownership and capacity are distinct. A model-session reservation grants no issue
 
 Task operations reread the trusted buddy authorization, current cause, relevant stop evidence, ownership and task-specific prerequisites at their controlled effects. The authoritative request envelope overrides payload fields.
 
-The cause is checked by task. Author and Implement need a qualified human start. Every other task's cause is either an authenticated result record, `result:N`, or an accepted human signal that still qualifies when the operation rereads it.
+The cause is checked by task. Implement needs a qualified human start. Every other task's cause is either an authenticated result record, `result:N`, or an accepted human signal that still qualifies when the operation rereads it.
 
 Source pushes, including `pipeline_commit`, require substantive write authority. A new human stop, loss of qualification, unknown stop evidence or work a Land may already have delivered can't grant another code write. A Land that is unsettled or passed fences code writes, because its merge may be on the base. A Land that settled without merging, such as one that found a conflict and marked the PR a draft, leaves code writable for Fix. Evidence-only settlement uses a separate, limited recording authorization; it doesn't hide a substantive mutation.
 
@@ -68,7 +68,7 @@ Land additionally needs explicit trusted permission, an approval standing on the
 
 ## Trusted inputs and sessions
 
-Trusted requirements use the issue and currently qualified human contributions under repository policy. Unqualified and machine contributions do not gain authority by appearing in a session prompt. A changed trusted-input revision invalidates results bound to the old one; it supplies no automatic retry or Author continuation.
+Trusted requirements use the issue and currently qualified human contributions under repository policy. Unqualified and machine contributions do not gain authority by appearing in a session prompt. A changed trusted-input revision invalidates results bound to the old one; it supplies no automatic retry or continuation.
 
 A session receives only its task/profile permissions. Its name and prompt are not authorization. Sessions lose GitHub token variables, configured GitHub credential variables and inherited Git credential/config-injection settings. They run as the operator's OS user, not in a filesystem or network sandbox. A reader's tool declaration alone does not prove an unchanged local checkout. See [sessions](sessions.md) and [runtime](runtime.md).
 

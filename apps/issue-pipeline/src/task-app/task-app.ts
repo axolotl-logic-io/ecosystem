@@ -44,7 +44,7 @@ const USAGE = "usage: TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N";
 // what earlier runs left there, its own marked comments, and the
 // repository config file the buddy file names for the issue's repository,
 // for a task that needs the repository's settings. Every write
-// through `github` or `comment` throws Stopped while `agents:stop` is on
+// through `github`, `comment` or `edit` throws Stopped while `agents:stop` is on
 // the issue; `checkStop` lets long work check between its own steps.
 interface TaskRun {
   task: string;
@@ -60,6 +60,9 @@ interface TaskRun {
   // Posts `text` with this task's hidden marker of `kind`, which
   // `recovery.earlierComments(kind)` finds in later runs.
   comment: (text: string, kind: string, payload: object) => void;
+  // Replaces the body of comment `id`, such as one that
+  // `recovery.earlierComments` found, with `text` and a marker of `kind`.
+  edit: (id: number, text: string, kind: string, payload: object) => void;
 }
 interface TaskApp {
   id: string;
@@ -150,6 +153,8 @@ async function runClaimed(
       checkStop: (): void => github.checkStop(),
       comment: (text: string, kind: string, payload: object): void =>
         github.comment(marked(text, task, kind, payload)),
+      edit: (id: number, text: string, kind: string, payload: object): void =>
+        github.editComment(id, marked(text, task, kind, payload)),
     });
   } catch (error) {
     if (error instanceof Stopped) {

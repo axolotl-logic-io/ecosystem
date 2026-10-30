@@ -4,7 +4,8 @@
 // Closing it saves what it left uncommitted as patches in the issue's run
 // folder, lets a writer push authorized commits, and bundles remaining
 // local code for operator recovery before removal. Recovery failures retain the
-// checkout; a later job never overwrites it.
+// checkout; a later job never overwrites it. A task app's read-only session
+// gets a detached checkout of the base instead, which holds nothing to save.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -111,5 +112,19 @@ function openJobCheckout(
   }
 }
 
+// Makes a detached checkout of the base branch's head at `dir`, from the
+// freshly fetched mirror, for a model session that only reads, and returns
+// its commit.
+function openBaseCheckout(cfg: Config, dir: string): string {
+  const mirror = paths.mirror(cfg);
+  const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
+  withCloneLock(cfg, (): void => syncMirror(cfg, mirror, url));
+  run("git", ["clone", "--quiet", "--no-checkout", mirror, dir]);
+  gitIn(dir, ["checkout", "--quiet", "--detach", `origin/${cfg.baseBranch}`]);
+  gitIn(dir, ["remote", "set-url", "origin", url]);
+  updateSubmodules(cfg, dir);
+  return gitIn(dir, ["rev-parse", "HEAD"]).trim();
+}
+
 export type { JobDirs };
-export { openJobCheckout };
+export { openBaseCheckout, openJobCheckout };

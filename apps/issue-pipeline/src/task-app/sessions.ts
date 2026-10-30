@@ -28,7 +28,7 @@ import { agentEnvOf, rolesOf } from "../job/roles.ts";
 const MINUTE_MS = 60_000;
 // The installed agent each model role runs as.
 const AGENTS: Readonly<Record<ModelRole, string>> = {
-  author: "issue-pipeline-author",
+  gherkin: "issue-pipeline-gherkin",
   developer: "issue-pipeline-developer",
   reviewer: "issue-pipeline-reviewer",
 };

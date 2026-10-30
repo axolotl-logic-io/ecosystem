@@ -249,7 +249,7 @@ function harness(edit: (world: World) => void = () => undefined): Harness {
         `https://github.com/${REPO}.git`,
         { commands: { test: "true" }, resources: { modelSessions: 1 } },
       ),
-      models: { author: "m", developer: "m", reviewer: "m" },
+      models: { gherkin: "m", developer: "m", reviewer: "m" },
     }),
   );
   const initial = baseWorld();

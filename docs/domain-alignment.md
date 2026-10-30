@@ -42,7 +42,7 @@ The local source path, package identity, extension symlink and `--pipeline-dash`
 
 ## Label-started task apps
 
-These mappings move the source from the five task actors onto the model in the [domain runtime contract](domain-runtime-contract.md). Issues #246 and #248 to #254 make the code changes; this page and the glossary changed first, in #247. Nothing here is built or installed yet. Until each code issue lands, the reference pages describe the code as it is.
+These mappings move the source from the five task actors onto the model in the [domain runtime contract](domain-runtime-contract.md). Issues #246 and #248 to #254 make the code changes; this page and the glossary changed first, in #247. Nothing here is installed yet. Until each code issue lands, the reference pages describe the code as it is.
 
 ### Names
 
@@ -61,6 +61,8 @@ These mappings move the source from the five task actors onto the model in the [
 | Landing account, development account | The buddy's own GitHub account | Structure; config impact | #248 |
 
 Renaming the `start:author` label in place on GitHub keeps it on issues that already carry it. Issue #207 carries it today, so Gherkin would start on #207 once the new release is installed.
+
+#249 made the Gherkin rename in the source. The operator renames the GitHub label, the repository config's `models.author` and any buddy file's `identity.models.author` and `author` responsibility when installing it. The buddy runtime skips the retired Author task's records rather than holding the issue: an accepted signal record of `start:author`, and a task ledger record bound to `author`. An Author comment has no task app marker, so Gherkin's first run on an issue posts a new Gherkin comment rather than editing the Author's.
 
 ### Behavior
 

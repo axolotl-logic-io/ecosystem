@@ -204,3 +204,27 @@ test("a record by any account but the landing account holds the item", () => {
   );
   assert.match(outcome.hold ?? "", NOT_LANDING);
 });
+
+test("a record of the retired Author task is skipped rather than held", () => {
+  const first = randomUUID();
+  const retired = {
+    ...attempt(randomUUID(), null),
+    binding: {
+      workItem: { repo: REPO, number: 7 },
+      task: "author",
+      target: { branch: "main", commit: T },
+      requirements: DIGEST,
+    },
+  };
+  const outcome = read(
+    [
+      {
+        body: `<!-- agent-pipeline:task-result\n${JSON.stringify(retired)}\n-->`,
+      },
+      attempt(first, null),
+      result(first, null, "passed"),
+    ],
+    null,
+  );
+  assert.deepEqual(outcome, { hold: null, status: "passed" });
+});
