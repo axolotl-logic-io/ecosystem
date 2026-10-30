@@ -7,22 +7,29 @@
 // made.
 import path from "node:path";
 import process from "node:process";
+import type {
+  SessionPhase,
+  SessionResult,
+} from "@ecosystem/task-runtime/domain";
+import type { LiveHandle } from "@ecosystem/task-runtime/job/control";
+import { openControlSocket } from "@ecosystem/task-runtime/job/control";
+import type { PushReply } from "@ecosystem/task-runtime/job/control-protocol";
+import type { LaunchHooks } from "@ecosystem/task-runtime/job/launch";
+import { commitEnvOf } from "@ecosystem/task-runtime/job/pipeline-commit";
+import { pinPage } from "@ecosystem/task-runtime/job/prompts";
+import type { InvocationBinding } from "@ecosystem/task-runtime/job/session-identity";
+import {
+  resultOf,
+  SESSION_MINUTES,
+} from "@ecosystem/task-runtime/job/session-result";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { SessionProfile } from "../config-schema.ts";
-import type { SessionPhase, SessionResult } from "../domain.ts";
 import { agentEnvOf } from "../job/agent-env.ts";
 import type { JobDirs } from "../job/checkout.ts";
-import type { LiveHandle } from "../job/control.ts";
-import { openControlSocket } from "../job/control.ts";
-import type { PushReply } from "../job/control-protocol.ts";
-import type { LaunchHooks } from "../job/launch.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
-import { commitEnvOf } from "../job/pipeline-commit.ts";
-import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
-import type { InvocationBinding } from "../job/session-identity.ts";
-import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
+import { PROMPTS_DIR } from "../job/prompts.ts";
 
 const MINUTE_MS = 60_000;
 // One session: the model profile it plays, the prompt page it follows, its

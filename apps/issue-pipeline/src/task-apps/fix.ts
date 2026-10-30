@@ -1,7 +1,8 @@
 // Fix's task app: merge the base, answer still-unanswered blocking threads,
 // push, and name Verify as the next explicit start. All recovery is GitHub.
-import { loadConfig } from "../config.ts";
+
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import { loadConfig } from "../config.ts";
 import { main, type TaskRun } from "../task-app/task-app.ts";
 import { FIX_ROUNDS, fixReview, issueText } from "./fix-review.ts";
 import { FIX_REPLY } from "./replies.ts";

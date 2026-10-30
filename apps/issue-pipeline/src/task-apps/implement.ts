@@ -12,11 +12,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import type { PushReply } from "@ecosystem/task-runtime/job/control-protocol";
+import type { InvocationBinding } from "@ecosystem/task-runtime/job/session-identity";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { Config } from "../config.ts";
 import { loadConfig } from "../config.ts";
-import type { PushReply } from "../job/control-protocol.ts";
-import type { InvocationBinding } from "../job/session-identity.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { run as runProcess } from "../process.ts";
 import {
   type BranchCheckout,

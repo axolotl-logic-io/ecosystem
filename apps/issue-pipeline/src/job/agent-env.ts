@@ -1,8 +1,8 @@
 // Model-child isolation. The legacy jobRoles operator key supplies additional
 // credential-variable names to remove; network declarations grant no access.
 import { childEnvironment } from "@ecosystem/task-runtime/child-env";
+import { COMMIT_SCOPE_ENV } from "@ecosystem/task-runtime/job/pipeline-commit";
 import type { LegacyAccessConfig } from "../config-schema.ts";
-import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
 
 type EnvSource = Readonly<Record<string, string | undefined>>;
 

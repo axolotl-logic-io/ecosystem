@@ -9,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import {
   configureClone,
   guardCommits,
@@ -18,7 +19,6 @@ import type { Config } from "../config.ts";
 import { paths, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock } from "../mirror-lock.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { run } from "../process.ts";
 
 // A setup failure retains its checkout for explicit reconciliation.

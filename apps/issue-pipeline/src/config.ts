@@ -5,18 +5,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
-import { z } from "zod";
 import { hideCredentialVariable } from "@ecosystem/task-runtime/child-env";
-import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
-import { JOB_REPO } from "./job/layout.ts";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
-import { expand, ROOT } from "./pipeline-root.ts";
-import type { RunResult } from "./process.ts";
 import {
   computePolicyBinding,
   resolveProjectSettings,
 } from "@ecosystem/task-runtime/project-policy";
 import type { ProjectPolicyBinding } from "@ecosystem/task-runtime/project-policy-schema";
+import { z } from "zod";
+import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
+import { JOB_REPO } from "./job/layout.ts";
+import { expand, ROOT } from "./pipeline-root.ts";
+import type { RunResult } from "./process.ts";
 import type { WriteIntent } from "./write-refusal.ts";
 
 // Branch names that are an option, a ref path, a ref expression or a name

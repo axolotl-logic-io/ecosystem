@@ -6,13 +6,13 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
 import { listComments, pipelineCommentAgent } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { ghJson, isAllowedUser } from "./github.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { trustedInputBytes } from "./trusted-inputs.ts";
 
 // An issue as GitHub's REST API gives it.

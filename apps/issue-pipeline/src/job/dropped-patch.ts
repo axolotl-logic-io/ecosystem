@@ -6,10 +6,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { run } from "../process.ts";
 
 interface PreparedPatch {

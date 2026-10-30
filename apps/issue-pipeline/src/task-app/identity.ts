@@ -4,10 +4,10 @@
 // GitHub before any other call. Every write a buddy or its task apps make
 // goes through this account.
 import { hideCredentialVariable } from "@ecosystem/task-runtime/child-env";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { readCredential } from "../config.ts";
 import { credentialedRun } from "../github-auth.ts";
 import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { type BuddyFile, readBuddyFile } from "./buddy-file.ts";
 
 interface Account {

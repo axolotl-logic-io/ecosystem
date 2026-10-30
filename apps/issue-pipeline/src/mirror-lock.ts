@@ -1,9 +1,9 @@
 // Serialize fetches and Git metadata updates in the shared local mirror.
 import fs from "node:fs";
 import path from "node:path";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { sleepMs } from "./process.ts";
 
 // How long an op waits for a lock: 5 minutes.

@@ -2,6 +2,7 @@
 // GitHub can safely repeat are retried through its transient failures; writes
 // run once, with local paths and addresses redacted.
 
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { Account, Config } from "./config.ts";
 import { assertGitRemote, GIT_ENV, LOCAL_PATH } from "./git-remote.ts";
@@ -11,7 +12,6 @@ import {
   credentialFailure,
 } from "./github-auth.ts";
 import { GH_TIMEOUT_MS, githubRead } from "./github-read.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { redactLocalPaths } from "./pipeline-root.ts";
 import type { RunOptions, RunResult } from "./process.ts";
 import { run, runFailure } from "./process.ts";

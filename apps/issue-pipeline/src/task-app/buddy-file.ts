@@ -11,8 +11,8 @@
 // Files of any other version are refused.
 import fs from "node:fs";
 import path from "node:path";
-import { z } from "zod";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import { z } from "zod";
 import { untrustedFile } from "../trusted-file.ts";
 
 const VERSION = 2;

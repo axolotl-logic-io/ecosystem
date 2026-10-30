@@ -4,6 +4,8 @@
 // Stopped while `agents:stop` is on it, unless the caller says the write is
 // part of ending a run. Reads GitHub can repeat are retried through its
 // transient failures; writes run once.
+
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import { redactGhArgs } from "../github.ts";
 import { credentialedRun } from "../github-auth.ts";
@@ -13,7 +15,6 @@ import {
   unreadable,
 } from "../github-observation.ts";
 import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { RunResult } from "../process.ts";
 import { runFailure } from "../process.ts";
 import { STOP_LABEL, Stopped } from "./stopped.ts";

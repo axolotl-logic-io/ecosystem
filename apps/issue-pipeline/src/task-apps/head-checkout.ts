@@ -6,11 +6,11 @@
 // person can see what it ran on.
 import fs from "node:fs";
 import path from "node:path";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { openJobCheckout } from "../job/checkout.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 
 interface HeadCheckout {
   // The run's folder, its name, which says where it is without a local

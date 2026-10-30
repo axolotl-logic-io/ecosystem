@@ -13,17 +13,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { z } from "zod";
-import { run } from "../process.ts";
-import type { PushReply } from "./control-protocol.ts";
-import { requestPush } from "./control-protocol.ts";
-import type { CommitPlan, CommitScope } from "./pipeline-commit.ts";
+import type { PushReply } from "@ecosystem/task-runtime/job/control-protocol";
+import { requestPush } from "@ecosystem/task-runtime/job/control-protocol";
+import type {
+  CommitPlan,
+  CommitScope,
+} from "@ecosystem/task-runtime/job/pipeline-commit";
 import {
   COMMIT_TOOL,
   commitArgsOf,
   commitScopeIn,
   sessionTrailer,
-} from "./pipeline-commit.ts";
+} from "@ecosystem/task-runtime/job/pipeline-commit";
+import { z } from "zod";
+import { run } from "../process.ts";
 
 const PARAMS = z.object({ args: z.array(z.string()) });
 // git's own words for a commit with nothing in it, in the C locale.

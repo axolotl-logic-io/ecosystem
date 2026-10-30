@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { COMMIT_SCOPE_ENV } from "@ecosystem/task-runtime/job/pipeline-commit";
 import { agentEnvOf } from "../../../src/job/agent-env.ts";
-import { COMMIT_SCOPE_ENV } from "../../../src/job/pipeline-commit.ts";
 
 test("model children strip every legacy access credential and inherited commit scope", () => {
   const env = agentEnvOf(

@@ -19,10 +19,10 @@ import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import { wire } from "../discovery/wire.ts";
 import { observeAll, unreadable } from "../github-observation.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { ROOT } from "../pipeline-root.ts";
 import {
   type BuddyFile,

@@ -1,9 +1,9 @@
 // Shared model-session limits and structured reply validation. Tasks choose
 // their sessions directly.
 import { z } from "zod";
-import type { SessionProfile } from "../config-schema.ts";
 import type { SessionResult } from "../domain.ts";
 import type { SessionRaw } from "./raw-results.ts";
+import type { SessionProfile } from "./session-profile.ts";
 import { isTransientSessionError } from "./transient.ts";
 
 const SESSION_MINUTES: Readonly<Record<SessionProfile, number>> = {

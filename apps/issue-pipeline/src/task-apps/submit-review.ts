@@ -1,9 +1,10 @@
 // Submitting a planned review (ops/verify-review.ts) on a pull request's
 // exact head commit, as the account a task run acts as. The review binds
 // that head through its `commit_id`, so it never judges a later one.
+
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { PlannedReview } from "../ops/verify-review.ts";
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { IssueGitHub } from "../task-app/issue-github.ts";
 
 const SUBMITTED = z.looseObject({

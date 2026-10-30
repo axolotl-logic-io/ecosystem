@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { z } from "zod";
 import { RESOURCE_CAPACITY } from "@ecosystem/task-runtime/project-policy-schema";
+import { z } from "zod";
 
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const OBSERVED = z.strictObject({

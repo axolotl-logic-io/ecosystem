@@ -1,4 +1,4 @@
-import type { SessionProfile } from "../config-schema.ts";
+import type { SessionProfile } from "./session-profile.ts";
 
 // How a session ended as its launch saw it: its result.
 type SessionEnded = "ok" | "failed";

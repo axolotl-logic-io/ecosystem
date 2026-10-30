@@ -15,7 +15,6 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import type { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { z } from "zod";
 import { childEnvironment } from "@ecosystem/task-runtime/child-env";
 import {
   endGroup,
@@ -23,7 +22,8 @@ import {
   groupEnded,
   groupPids,
   within,
-} from "./process-group.ts";
+} from "@ecosystem/task-runtime/process-group";
+import { z } from "zod";
 import type {
   ShellKilled,
   ShellReport,

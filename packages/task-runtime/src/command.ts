@@ -20,7 +20,7 @@ interface RunResult {
 }
 
 const MAX_BUFFER_BYTES = 268_435_456;
-const TIMED_OUT_CODE = 124;
+const TIMED_OUT_CODE: number = 124;
 const MS_PER_SECOND = 1000;
 const FAILURE_LINES = 15;
 const TOKEN_PATTERN = /gh[pousr]_[A-Za-z0-9_]+/gu;
