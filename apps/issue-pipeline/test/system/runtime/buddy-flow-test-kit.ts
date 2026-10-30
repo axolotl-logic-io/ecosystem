@@ -198,7 +198,6 @@ interface Machine {
     app: string,
     buddy: BuddyChoice,
     sessions: PlannedSession[],
-    signal?: AbortSignal,
   ) => Promise<TaskAppEnd>;
   recoverImplement: (
     action: string,
@@ -749,7 +748,7 @@ function machine(
         "--issue",
         `${REPO}#${ISSUE}`,
       ],
-      { cwd: root, env, stdio: ["ignore", "ignore", "pipe"], signal },
+      { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] },
     );
     let stderr = "";
     child.stderr.setEncoding("utf8");

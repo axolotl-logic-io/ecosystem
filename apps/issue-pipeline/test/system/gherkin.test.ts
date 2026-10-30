@@ -170,16 +170,13 @@ function issueFileOf(box: Machine, at: number): string {
   return fs.readFileSync(path.join(launch.cwd, "issue.md"), "utf8");
 }
 
-test("a first run posts the issue's Gherkin from one read-only session", async ({
-  signal,
-}) => {
+test("a first run posts the issue's Gherkin from one read-only session", async () => {
   const box = machine(started);
   try {
     const run = await box.runTaskApp(
       "gherkin",
       { role: "developer", tasks: [] },
       [writes(FIRST)],
-      signal,
     );
     assert.equal(run.status, 0, run.stderr);
     assert.deepEqual(labelsOf(box), []);
@@ -213,16 +210,13 @@ test("a first run posts the issue's Gherkin from one read-only session", async (
   }
 });
 
-test("a rerun edits the issue's Gherkin comment rather than posting another", async ({
-  signal,
-}) => {
+test("a rerun edits the issue's Gherkin comment rather than posting another", async () => {
   const box = machine(started);
   try {
     const first = await box.runTaskApp(
       "gherkin",
       { role: "developer", tasks: [] },
       [writes(FIRST)],
-      signal,
     );
     assert.equal(first.status, 0, first.stderr);
     const [before] = marked(box, GHERKIN_MARK);
@@ -232,7 +226,6 @@ test("a rerun edits the issue's Gherkin comment rather than posting another", as
       "gherkin",
       { role: "developer", tasks: [] },
       [writes(SECOND)],
-      signal,
     );
     assert.equal(second.status, 0, second.stderr);
     const gherkin = marked(box, GHERKIN_MARK);
@@ -259,9 +252,7 @@ test("a rerun edits the issue's Gherkin comment rather than posting another", as
   }
 });
 
-test("a needs-info reply posts the questions in a new comment and leaves the Gherkin comment", async ({
-  signal,
-}) => {
+test("a needs-info reply posts the questions in a new comment and leaves the Gherkin comment", async () => {
   const earlier = `## Behaviour\n\n\`\`\`gherkin\n${FIRST}\n\`\`\`\n\n<!-- task-app:gherkin:gherkin {"run":"${EARLIER_RUN}"} -->`;
   const box = machine((world) => {
     started(world);
@@ -272,7 +263,6 @@ test("a needs-info reply posts the questions in a new comment and leaves the Ghe
       "gherkin",
       { role: "developer", tasks: [] },
       [asks("Do broken widgets count?")],
-      signal,
     );
     assert.equal(run.status, 0, run.stderr);
     const [questions, ...more] = marked(box, QUESTIONS_MARK);
@@ -290,16 +280,13 @@ test("a needs-info reply posts the questions in a new comment and leaves the Ghe
   }
 });
 
-test("a reply that doesn't match its schema fails the run and posts no Gherkin", async ({
-  signal,
-}) => {
+test("a reply that doesn't match its schema fails the run and posts no Gherkin", async () => {
   const box = machine(started);
   try {
     const run = await box.runTaskApp(
       "gherkin",
       { role: "developer", tasks: [] },
       [{ ...writes(FIRST), reply: { outcome: "gherkin" } }],
-      signal,
     );
     assert.equal(run.status, 1);
     assert.equal(marked(box, GHERKIN_MARK).length, 0);
@@ -312,9 +299,7 @@ test("a reply that doesn't match its schema fails the run and posts no Gherkin",
   }
 });
 
-test("an issue by someone the pipeline doesn't trust starts no session", async ({
-  signal,
-}) => {
+test("an issue by someone the pipeline doesn't trust starts no session", async () => {
   const box = machine((world) => {
     started(world);
     const issue = world.issues.find((item) => item.number === ISSUE);
@@ -327,7 +312,6 @@ test("an issue by someone the pipeline doesn't trust starts no session", async (
       "gherkin",
       { role: "developer", tasks: [] },
       [writes(FIRST)],
-      signal,
     );
     assert.equal(run.status, 1);
     assert.equal(box.launches().length, 0);
