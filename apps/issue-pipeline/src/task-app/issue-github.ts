@@ -285,7 +285,6 @@ class IssueGitHub {
     if (result.code !== 0) {
       throw this.failure(args, result);
     }
-
   }
 
   private write(

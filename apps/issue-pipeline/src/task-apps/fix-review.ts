@@ -31,7 +31,7 @@ const PAGE = z.object({
     }),
   }),
 });
-const LIMIT = 3;
+const FIX_ROUNDS = 3;
 
 function same(a: string | null, b: string): boolean {
   return a?.toLowerCase() === b.toLowerCase();
@@ -102,7 +102,7 @@ function fixReview(
     (review) =>
       same(review.author, verify) && review.state === "CHANGES_REQUESTED",
   ).length;
-  if (rounds > LIMIT) {
+  if (rounds > FIX_ROUNDS) {
     return { rounds, limit: true, requests: [], threads: [] };
   }
   const latest = new Map<string, Review>();
@@ -135,7 +135,7 @@ function fixReview(
     );
   });
   // The third requested round is allowed; a fourth needs a person.
-  return { rounds, limit: rounds > LIMIT, requests, threads };
+  return { rounds, limit: rounds > FIX_ROUNDS, requests, threads };
 }
 
 // Include only repository writers' issue text in the model's task.
@@ -151,4 +151,4 @@ function issueText(github: IssueGitHub, verify: string): string {
 }
 
 export type { FixReview };
-export { fixReview, issueText };
+export { FIX_ROUNDS, fixReview, issueText };

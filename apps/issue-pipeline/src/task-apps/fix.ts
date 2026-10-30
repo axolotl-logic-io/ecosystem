@@ -4,7 +4,7 @@ import { loadConfig } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { main, type TaskRun } from "../task-app/task-app.ts";
 import { FIX_REPLY } from "../tasks/replies.ts";
-import { fixReview, issueText } from "./fix-review.ts";
+import { FIX_ROUNDS, fixReview, issueText } from "./fix-review.ts";
 import { openWriter } from "./writer.ts";
 
 async function fix(run: TaskRun): Promise<void> {
@@ -93,7 +93,7 @@ async function fix(run: TaskRun): Promise<void> {
       }
     }
     let roundNotice = "";
-    if (found.rounds === 3) {
+    if (found.rounds === FIX_ROUNDS) {
       roundNotice =
         "\n\nThis completes the third Verify-triggered Fix round. A person needs to step in if more changes are required.";
     }
