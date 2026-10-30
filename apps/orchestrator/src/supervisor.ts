@@ -57,6 +57,14 @@ async function runOrchestrator(
   const live = new Map<ChildProcess, { buddy: string; ended: Promise<void> }>();
   const failed = new Set<string>();
   let draining = false;
+  const signalled = new WeakSet<ChildProcess>();
+
+  function stopChild(child: ChildProcess): void {
+    if (child.pid !== undefined && !signalled.has(child)) {
+      signalled.add(child);
+      child.kill("SIGTERM");
+    }
+  }
 
   function drain(): void {
     if (draining) {
@@ -65,7 +73,7 @@ async function runOrchestrator(
     draining = true;
     for (const [child, { buddy }] of live) {
       supervision.report({ kind: "draining", buddy });
-      child.kill("SIGTERM");
+      stopChild(child);
     }
   }
 
@@ -107,7 +115,7 @@ async function runOrchestrator(
         supervision.report({ kind: "started", buddy, pid: child.pid });
         // An abort during process creation also stops this new launcher.
         if (draining || stop.aborted) {
-          child.kill("SIGTERM");
+          stopChild(child);
         }
         resolve();
       });
