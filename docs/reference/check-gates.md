@@ -10,7 +10,7 @@ From the repository root, run:
 npm run check
 ```
 
-That runs every workspace's `check` script: the issue pipeline's, then the dashboard's. To run the pipeline's gate alone, run `npm run check --workspace @ecosystem/issue-pipeline` or `mise //apps/issue-pipeline:check`; both call the same script in `apps/issue-pipeline/package.json`. It runs:
+That runs every workspace's `check` script, including the issue pipeline, dashboard, shared packages and root tasks. To run the pipeline's gate alone, run `npm run check --workspace @ecosystem/issue-pipeline` or `mise //apps/issue-pipeline:check`; both call the same script in `apps/issue-pipeline/package.json`. It runs:
 
 - TypeScript checks for source, tests and the installer, under one `tsconfig.json`.
 - Biome, with warnings treated as errors.
@@ -29,7 +29,7 @@ To select the expensive suite explicitly, run from the repository root:
 npm run check:full
 ```
 
-It runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, and last the dashboard's `check`:
+It checks the shared database package, runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, followed by the dashboard, task framework and Gherkin workspace checks:
 
 ```bash
 node --test --test-concurrency=8 --test-timeout=180000 'test/{component,component-integration,system,acceptance}/**/*.test.ts'

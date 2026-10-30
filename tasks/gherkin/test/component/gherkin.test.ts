@@ -16,11 +16,13 @@ const INPUTS = {
   baseBranch: "main",
   model: "provider/resolved-model",
 };
+const MODEL_FAILURE = /model unavailable/u;
 const FEATURE = "Feature: Count widgets\n  Scenario: Count intact widgets";
 
 function host(
   reply: unknown,
   controller: AbortController = new AbortController(),
+  beforeReply: () => void = (): void => undefined,
 ): {
   execute: (inputs?: unknown) => Promise<ExecutionResult<GherkinReply>>;
   artifacts: Map<string, string>;
@@ -52,6 +54,7 @@ function host(
               }),
             runModel: (session: GherkinSession): Promise<unknown> => {
               sessions.push(session);
+              beforeReply();
               return Promise.resolve(reply);
             },
           }),
@@ -141,4 +144,30 @@ test("cancellation before execution publishes nothing and still finalizes", asyn
   assert.equal(box.artifacts.size, 0);
   assert.equal(box.cleaned(), true);
   assert.equal(box.reports.length, 1);
+});
+
+test("cancellation during model work suppresses publication and still finalizes", async () => {
+  const controller = new AbortController();
+  const box = host(
+    { outcome: "gherkin", gherkin: FEATURE, assumptions: [] },
+    controller,
+    (): void => controller.abort("stop during model"),
+  );
+  assert.equal((await box.execute()).status, "cancelled");
+  assert.equal(box.sessions.length, 1);
+  assert.equal(box.artifacts.size, 0);
+  assert.equal(box.cleaned(), true);
+  assert.equal(box.reports.length, 1);
+});
+
+test("model failure publishes nothing and leaves cleanup and reporting available", async () => {
+  const box = host(null, new AbortController(), (): never => {
+    throw new Error("model unavailable");
+  });
+  const result = await box.execute();
+  assert.ok(result.status === "failed");
+  assert.match(String(result.error), MODEL_FAILURE);
+  assert.equal(box.artifacts.size, 0);
+  assert.equal(box.cleaned(), true);
+  assert.deepEqual(box.reports, [result]);
 });

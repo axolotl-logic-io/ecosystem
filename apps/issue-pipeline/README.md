@@ -63,7 +63,15 @@ Its work is one read-only session as the `issue-pipeline-gherkin` agent, on the 
 
 The app posts the reply. Gherkin goes in the issue's one Gherkin comment: a later run finds that comment by its hidden marker and edits it, rather than posting a second one. Questions go in a new comment every time. Either way, the issue's author answers on the issue and a person applies `start:gherkin` again.
 
-Gherkin reads the whole repository config, not just its `repo` and `baseBranch`: the session needs its `models.gherkin`, `allowedUsers`, `runtime` and `cloneUrl`. It fetches the base branch into the pipeline's mirror with the config's `devAccount` credential, as the buddy runtime does. Every GitHub write is still the buddy's own account's.
+The compatibility host reads the whole repository config, not just its `repo` and `baseBranch`: the session needs its `models.gherkin`, `allowedUsers`, `runtime` and `cloneUrl`. It fetches the base branch into the pipeline's mirror with the config's `devAccount` credential, as the buddy runtime does. Every GitHub write is still the buddy's own account's.
+
+The task definition, reply schema, prompts and fake-host tests live in the root
+[`tasks/gherkin` workspace](../../tasks/gherkin/README.md). The task receives
+validated trusted issue context and resolved settings, plus explicit repository,
+model and artifact capabilities. It returns `completed` or `needs-input` without
+reading buddy configuration or discovering an installed root. The compatibility
+host owns claim lifecycle, trusted-author filtering, credential isolation and
+comment markers. The installed CLI and prompt paths remain unchanged.
 
 
 ## Standalone tools and shared utilities
