@@ -9,8 +9,9 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import type { ModelRole } from "../config-schema.ts";
-import type { SessionResult } from "../domain.ts";
+import type { SessionProfile } from "../config-schema.ts";
+import type { SessionPhase, SessionResult } from "../domain.ts";
+import { agentEnvOf } from "../job/agent-env.ts";
 import type { JobDirs } from "../job/checkout.ts";
 import type { LiveHandle } from "../job/control.ts";
 import { openControlSocket } from "../job/control.ts";
@@ -20,23 +21,14 @@ import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
 import { commitEnvOf } from "../job/pipeline-commit.ts";
 import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
-import type { SessionPhase } from "../job/role-context.ts";
-import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
-import { agentEnvOf, rolesOf } from "../job/roles.ts";
 import type { InvocationBinding } from "../job/session-identity.ts";
+import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
 
 const MINUTE_MS = 60_000;
-// The installed agent each model role runs as.
-const AGENTS: Readonly<Record<ModelRole, string>> = {
-  gherkin: "issue-pipeline-gherkin",
-  developer: "issue-pipeline-developer",
-  reviewer: "issue-pipeline-reviewer",
-};
-
-// One session: the model role it plays, the prompt page it follows, its
+// One session: the model profile it plays, the prompt page it follows, its
 // phase, its task text, the shape of its reply and whether it commits.
 interface TaskSession {
-  role: ModelRole;
+  profile: SessionProfile;
   page: string;
   phase: SessionPhase | null;
   task: string;
@@ -80,7 +72,7 @@ async function openSessions(
   );
   const startedAt = new Date().toISOString();
   const shared = {
-    ...agentEnvOf(rolesOf(cfg.jobRoles), process.env),
+    ...agentEnvOf(cfg.jobRoles, process.env),
     ...setting.env,
   };
   const hooks: LaunchHooks = {
@@ -126,13 +118,13 @@ async function openSessions(
       const prompt = pinPage(PROMPTS_DIR, session.page);
       const raw = await runSession(
         {
-          key: `${session.phase ?? session.role}-${count}`,
-          role: session.role,
-          agent: AGENTS[session.role],
-          model: cfg.models[session.role],
+          key: `${session.phase ?? session.profile}-${count}`,
+          profile: session.profile,
+          agent: `issue-pipeline-${session.profile}`,
+          model: cfg.models[session.profile],
           task: session.task,
           outputSchema: z.toJSONSchema(session.schema),
-          timeoutMs: SESSION_MINUTES[session.role] * MINUTE_MS,
+          timeoutMs: SESSION_MINUTES[session.profile] * MINUTE_MS,
           commits: session.commits,
           phase: session.phase,
           prompt,

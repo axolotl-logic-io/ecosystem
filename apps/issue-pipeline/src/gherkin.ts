@@ -78,7 +78,7 @@ async function work(run: TaskRun): Promise<void> {
   const reply = await readOnlySession(run, cfg, {
     agent: "issue-pipeline-gherkin",
     page: "gherkin.md",
-    role: "gherkin",
+    profile: "gherkin",
     facts: FACTS,
     schema: REPLY,
   });

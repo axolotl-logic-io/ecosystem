@@ -1,8 +1,7 @@
 // The pipeline's comments on GitHub and the hidden marks they carry.
 //
-// Development owns commits, pushes and PR lifecycle. Review/merge owns all
-// comments. Role signatures describe model work, not authentication: current
-// authorship and editor provenance establish operational authority.
+// Historical role signatures describe model work, not authentication.
+// Authorship and editor provenance establish operational authority.
 
 import { z } from "zod";
 import {
@@ -76,7 +75,7 @@ function listComments(cfg: Config, number: number): IssueComment[] {
   return verifiedComments(cfg, lines.map(commentOf));
 }
 
-function pipelineRole(
+function pipelineCommentAgent(
   cfg: Pick<Config, "landingAccount">,
   item: IssueComment,
 ): string | null {
@@ -93,4 +92,4 @@ function pipelineRole(
 }
 
 export type { IssueComment };
-export { listComments, pipelineRole };
+export { listComments, pipelineCommentAgent };

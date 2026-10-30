@@ -175,7 +175,7 @@ test("a first run posts the issue's Gherkin from one read-only session", async (
   try {
     const run = await box.runTaskApp(
       "gherkin",
-      { role: "developer", tasks: [] },
+      { account: "hippy", tasks: ["gherkin"] },
       [writes(FIRST)],
     );
     assert.equal(run.status, 0, run.stderr);
@@ -215,7 +215,7 @@ test("a rerun edits the issue's Gherkin comment rather than posting another", as
   try {
     const first = await box.runTaskApp(
       "gherkin",
-      { role: "developer", tasks: [] },
+      { account: "hippy", tasks: ["gherkin"] },
       [writes(FIRST)],
     );
     assert.equal(first.status, 0, first.stderr);
@@ -224,7 +224,7 @@ test("a rerun edits the issue's Gherkin comment rather than posting another", as
     applyStart(box, "start:gherkin");
     const second = await box.runTaskApp(
       "gherkin",
-      { role: "developer", tasks: [] },
+      { account: "hippy", tasks: ["gherkin"] },
       [writes(SECOND)],
     );
     assert.equal(second.status, 0, second.stderr);
@@ -261,7 +261,7 @@ test("a needs-info reply posts the questions in a new comment and leaves the Ghe
   try {
     const run = await box.runTaskApp(
       "gherkin",
-      { role: "developer", tasks: [] },
+      { account: "hippy", tasks: ["gherkin"] },
       [asks("Do broken widgets count?")],
     );
     assert.equal(run.status, 0, run.stderr);
@@ -285,7 +285,7 @@ test("a reply that doesn't match its schema fails the run and posts no Gherkin",
   try {
     const run = await box.runTaskApp(
       "gherkin",
-      { role: "developer", tasks: [] },
+      { account: "hippy", tasks: ["gherkin"] },
       [{ ...writes(FIRST), reply: { outcome: "gherkin" } }],
     );
     assert.equal(run.status, 1);
@@ -310,7 +310,7 @@ test("an issue by someone the pipeline doesn't trust starts no session", async (
   try {
     const run = await box.runTaskApp(
       "gherkin",
-      { role: "developer", tasks: [] },
+      { account: "hippy", tasks: ["gherkin"] },
       [writes(FIRST)],
     );
     assert.equal(run.status, 1);
@@ -322,3 +322,36 @@ test("an issue by someone the pipeline doesn't trust starts no session", async (
     box.cleanup();
   }
 });
+
+// #264: every manual task entrypoint enforces configured responsibilities.
+for (const task of ["gherkin", "implement", "verify", "fix", "land"]) {
+  test(`${task} refuses an unassigned task before claiming or writing`, async () => {
+    const box = machine(started);
+    try {
+      box.change((world) => {
+        const [issue] = world.issues;
+        if (issue !== undefined) {
+          issue.labels = [`start:${task}`];
+        }
+      });
+      const before = box.world();
+      let responsibility = "gherkin";
+      if (task === responsibility) {
+        responsibility = "implement";
+      }
+      const run = await box.runTaskApp(
+        task,
+        { account: "hippy", tasks: [responsibility] },
+        [],
+      );
+      assert.equal(run.status, 1);
+      assert.ok(
+        run.stderr.includes(`task ${task} is not in the buddy's tasks`),
+      );
+      assert.deepEqual(box.world(), before);
+      assert.deepEqual(box.launches(), []);
+    } finally {
+      box.cleanup();
+    }
+  });
+}

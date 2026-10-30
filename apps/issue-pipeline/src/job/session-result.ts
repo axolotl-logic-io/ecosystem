@@ -1,12 +1,12 @@
 // Shared model-session limits and structured reply validation. Tasks choose
-// their sessions; no stage driver or role-based continuation runs here.
+// their sessions directly.
 import { z } from "zod";
-import type { ModelRole } from "../config-schema.ts";
+import type { SessionProfile } from "../config-schema.ts";
 import type { SessionResult } from "../domain.ts";
 import type { SessionRaw } from "./raw-results.ts";
 import { isTransientSessionError } from "./transient.ts";
 
-const SESSION_MINUTES: Readonly<Record<ModelRole, number>> = {
+const SESSION_MINUTES: Readonly<Record<SessionProfile, number>> = {
   gherkin: 30,
   developer: 60,
   reviewer: 30,

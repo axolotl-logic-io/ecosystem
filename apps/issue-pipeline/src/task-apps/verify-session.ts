@@ -11,11 +11,11 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { writeIssueContext } from "../issue-context.ts";
+import { agentEnvOf } from "../job/agent-env.ts";
 import type { LaunchHooks } from "../job/launch.ts";
 import { runSession } from "../job/launch.ts";
 import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
-import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
-import { agentEnvOf, rolesOf } from "../job/roles.ts";
+import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
 import { OpsError } from "../ops-error.ts";
 import type { HeadCheckout } from "./head-checkout.ts";
 import type { VerifyReply } from "./verify-reply.ts";
@@ -60,7 +60,7 @@ function taskText(review: Review, issueFile: string): string {
 
 function hooksOf(review: Review): LaunchHooks {
   const { cfg, issue, run, checkout } = review;
-  const env = agentEnvOf(rolesOf(cfg.jobRoles), process.env);
+  const env = agentEnvOf(cfg.jobRoles, process.env);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(
@@ -92,7 +92,7 @@ async function reviewSession(review: Review): Promise<VerifyReply> {
   const raw = await runSession(
     {
       key: `reviewer-${PHASE}-1`,
-      role: "reviewer",
+      profile: "reviewer",
       agent: AGENT,
       model: cfg.models.reviewer,
       task: taskText(review, file),

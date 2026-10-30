@@ -201,7 +201,7 @@ async function written(
     phase = "hardening";
   }
   const session = await sessions.run({
-    role: "developer",
+    profile: "developer",
     page,
     phase,
     task,

@@ -1,5 +1,5 @@
+import type { SessionPhase } from "../domain.ts";
 import type { PathScope } from "./pipeline-commit.ts";
-import type { SessionPhase } from "./role-context.ts";
 
 type StopSignal = "SIGTERM" | "SIGINT";
 

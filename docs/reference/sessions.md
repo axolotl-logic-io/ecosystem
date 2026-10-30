@@ -14,7 +14,7 @@ Each delivery task picks its sessions from this table. The runtime selects the p
 | Verify, review with its Security | `issue-pipeline-reviewer` | `security-review` | No | `verify.md` |
 | Fix | `issue-pipeline-developer` | `fix` | Yes | `fix.md` |
 
-Land starts no model. Verify's full checks and required CI are deterministic; one read-only session reviews the head's diff, its Security included, and its findings become the review. A model name or agent prompt grants neither role nor account authority.
+Land starts no model. Verify's full checks and required CI are deterministic; one read-only session reviews the head's diff, its Security included, and its findings become the review. A model name or agent prompt grants no account authority.
 
 Implement's hardening runs in a fresh session that doesn't read the writing session's conversation. Implement marks its PR ready only after the hardening session ends.
 
@@ -71,3 +71,13 @@ After a local commit, the tool asks its task app over a local control socket to 
 ## Failure evidence
 
 Read the task run's end comment, session transcript, PR and retained checkout. Preserve local commits, untracked files and patches before retrying with a new start label. Recovery comes from GitHub artifacts and retained work.
+
+## Compatibility
+
+`models.gherkin`, `models.developer` and `models.reviewer`, the installed `issue-pipeline-*` agent names, prompt filenames and task CLI entrypoints remain unchanged. They select concrete sessions, not buddy responsibilities. No operator key is renamed in #264, and no private configuration or live record is migrated.
+
+The legacy operator key `jobRoles` retains its `reader`, `writer` and `lander` entries. Every `tokenEnv` in those entries is stripped from model children, regardless of the session. Their `network` lists remain descriptive metadata and grant no access. There is no replacement access hierarchy or implicit mapping of tasks to these entries. Commit permissions still come from each session's explicit scoped commit interface; read-only sessions cannot commit.
+
+Historical session observations retain the wire field `role` for existing readers. Historical pipeline comment markers also retain `role=` parsing. GitHub membership, PostgreSQL and provider message fields named `role` remain external protocol fields. Historical documents and records preserve the vocabulary of the release they describe.
+
+Source delivery requires a later operator-controlled release installation and buddy restart to change running behavior. Keep existing installed interfaces and private operator settings; no install, restart or live migration is part of this change.

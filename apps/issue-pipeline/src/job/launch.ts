@@ -1,7 +1,8 @@
 // Run one fresh model session with pinned prompts and isolated credentials.
 import fs from "node:fs";
 import path from "node:path";
-import type { ModelRole } from "../config-schema.ts";
+import type { SessionProfile } from "../config-schema.ts";
+import type { SessionPhase } from "../domain.ts";
 import { head } from "../git-state.ts";
 import { ROOT } from "../pipeline-root.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
@@ -10,7 +11,6 @@ import type { LiveHandle } from "./control.ts";
 import type { PinnedPrompt } from "./prompts.ts";
 import type { SessionRaw } from "./raw-results.ts";
 import { failedSession, sessionRaw } from "./raw-results.ts";
-import type { SessionPhase } from "./role-context.ts";
 import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { RuntimeConfig } from "./runtime-policy.ts";
@@ -45,14 +45,14 @@ interface LaunchHooks {
   runtime?: RuntimeConfig;
 }
 
-// One model session: its key, the model role it plays, its installed agent
+// One model session: its key, the model profile it plays, its installed agent
 // and model, its task, the JSON Schema of its reply, its timeout, whether it
 // commits (its own write authority), the reviewer phase it is labelled with
 // (null for none) and its behavioral prompt, pinned from the installed
 // prompt pages, which pi appends to its agent's system prompt and which grants it nothing.
 interface SessionLaunch {
   key: string;
-  role: ModelRole;
+  profile: SessionProfile;
   agent: string;
   model: string;
   task: string;
@@ -215,14 +215,14 @@ function recordSessionEnd(
   context: { steers: Steers; reviewedSha: string | null },
 ): void {
   const { steers, reviewedSha } = context;
-  const { key, role, agent, model } = launch;
+  const { key, profile, agent, model } = launch;
   let ended: SessionEnd["ended"] = "failed";
   if (raw.ok) {
     ended = "ok";
   }
   const headSha = checkoutHead(hooks.repo);
   hooks.sessionEnded(key, {
-    role,
+    role: profile,
     agent,
     model,
     ended,

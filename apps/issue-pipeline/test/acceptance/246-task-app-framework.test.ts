@@ -4,49 +4,49 @@
 // Feature: Task apps start only from race-safe start-label claims
 //
 //   Scenario: Two buddies race for one start
-//     Given `start:sample` is on the issue
+//     Given `start:gherkin` is on the issue
 //     When two buddies run the sample task app at once
 //     Then exactly one of them does the work and posts an end comment
 //     And neither label is left on the issue
 //
 //   Scenario: A start applied again during a live run starts a second run
 //     Given a run of the sample task is live
-//     When a person applies `start:sample` again and a buddy runs the app
+//     When a person applies `start:gherkin` again and a buddy runs the app
 //     Then the second run does its work while the first is still live
 //
 //   Scenario: Overlapping runs where the first run ends first
 //     Given two live runs of the sample task
 //     When the first run ends
-//     Then `agent:sample:running` stays until the second run ends too
+//     Then `agent:gherkin:running` stays until the second run ends too
 //
 //   Scenario: Overlapping runs where the second run ends first
 //     Given two live runs of the sample task
 //     When the second run ends
-//     Then `agent:sample:running` stays until the first run ends too
+//     Then `agent:gherkin:running` stays until the first run ends too
 //
 //   Scenario: A crashed run leaves the running label for a person
 //     Given a run of the sample task crashed during its work
 //     When later runs end
-//     Then `agent:sample:running` stays on the issue
+//     Then `agent:gherkin:running` stays on the issue
 //     And once a person removes it, later runs remove it as they end
 //
 //   Scenario: agents:stop before a run holds the start
-//     Given `agents:stop` and `start:sample` are on the issue
+//     Given `agents:stop` and `start:gherkin` are on the issue
 //     When a buddy runs the sample task app
-//     Then it claims nothing and `start:sample` stays
+//     Then it claims nothing and `start:gherkin` stays
 //     And once a person removes `agents:stop`, the next run does the work
 //
 //   Scenario: agents:stop during a run ends it
 //     Given a run of the sample task is live
 //     When a person applies `agents:stop`
 //     Then the run ends before its next write with a stopped comment
-//     And `agent:sample:running` is removed
+//     And `agent:gherkin:running` is removed
 //
 //   Scenario: A failed run's comment says how to retry
 //     Given the sample task's work fails
 //     When a buddy runs the sample task app
 //     Then its comment names the task, the failed step and the error
-//     And it says to apply `start:sample` again, without applying it
+//     And it says to apply `start:gherkin` again, without applying it
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -60,14 +60,14 @@ import {
   remove,
 } from "../support/task-app/task-app-test-kit.ts";
 
-const START = "start:sample";
-const RUNNING = "agent:sample:running";
+const START = "start:gherkin";
+const RUNNING = "agent:gherkin:running";
 const STOP = "agents:stop";
 const STOPPED_AT_WORK = /stopped at its work step/u;
 const STOP_NAMED = /`agents:stop` is on the issue/u;
-const FAILED_AT_WORK = /Task `sample` failed at its work step/u;
+const FAILED_AT_WORK = /Task `gherkin` failed at its work step/u;
 const ERROR_NAMED = /the model went away/u;
-const RETRY = /To retry, apply `start:sample` again\./u;
+const RETRY = /To retry, apply `start:gherkin` again\./u;
 
 // What a person sees after one run of an overlapping pair ends.
 interface Seen {

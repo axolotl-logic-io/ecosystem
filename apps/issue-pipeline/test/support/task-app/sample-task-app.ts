@@ -6,7 +6,7 @@
 //   GATE.ready, then waits until something is written to GATE, so a test
 //   can hold a run live and act while it is.
 // - SAMPLE_TASK_FAIL: an error message the work throws after the gate.
-// - SAMPLE_TASK_ID: the task it runs as, `sample` when unset, so a test can
+// - SAMPLE_TASK_ID: the task it runs as, `gherkin` when unset, so a test can
 //   install it as another task's app.
 import fs from "node:fs";
 import process from "node:process";
@@ -19,7 +19,7 @@ const {
 }: NodeJS.ProcessEnv = process.env;
 
 await main({
-  id: task || "sample",
+  id: task || "gherkin",
   work: (run: TaskRun): void => {
     const earlier = run.recovery.earlierComments("note").length;
     if (gate !== undefined && gate !== "") {

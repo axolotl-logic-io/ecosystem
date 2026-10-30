@@ -17,16 +17,16 @@ A task owns its work: what it reads from GitHub, what it writes and how it conti
 
 Use these task identifiers:
 
-| Task | Role | Start label | Result on GitHub |
-| --- | --- | --- | --- |
-| `gherkin` | Developer | `start:gherkin` | A Gherkin comment on the issue, or a comment with questions |
-| `implement` | Developer | `start:implement` | Commits pushed to `agent/issue-N`, and a PR marked ready |
-| `verify` | Gatekeeper | `start:verify` | One review submitted on the PR's head commit |
-| `fix` | Developer | `start:fix` | A pushed head, thread replies, and a comment naming `start:verify` |
-| `land` | Gatekeeper | `start:land` | The PR's merge commit and the closed issue |
-| `refactor-safely` | Developer | None | Local reports from its standalone entrypoint |
+| Task | Start label | Result on GitHub |
+| --- | --- | --- |
+| `gherkin` | `start:gherkin` | A Gherkin comment on the issue, or a comment with questions |
+| `implement` | `start:implement` | Commits pushed to `agent/issue-N`, and a PR marked ready |
+| `verify` | `start:verify` | One review submitted on the PR's head commit |
+| `fix` | `start:fix` | A pushed head, thread replies, and a comment naming `start:verify` |
+| `land` | `start:land` | The PR's merge commit and the closed issue |
+| `refactor-safely` | None | Local reports from its standalone entrypoint |
 
-A Developer buddy's default responsibilities are Gherkin, Implement and Fix; Safe Refactor is explicitly assigned. A Gatekeeper's are Verify and Land. New task names use verbs or name the method they follow.
+Each buddy lists its task responsibilities explicitly. No task grouping is required. A manually invoked task app refuses a task absent from that list before claiming its start or performing writes. Safe Refactor remains standalone. New task names use verbs or name the method they follow.
 
 ## Accounts
 

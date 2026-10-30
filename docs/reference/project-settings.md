@@ -7,7 +7,7 @@ The pipeline reads reproducible project settings only from the repository's trac
 | Source | Fields |
 |---|---|
 | Committed project document | `commands.setup`, `commands.test`, `commands.lint`, `commands.typecheck`, `commands.teardown`, `commands.prune`; `practices`; `lockfiles`; `migrations`; `resources.modelSessions` |
-| Operator config | Credentials and account identities; `allowedUsers`; `repo`, `cloneUrl`, `baseBranch`, Git identity and paths; `models`, `runtime`, `jobRoles` and network declarations (not enforced isolation); CI requirements and command timeouts |
+| Operator config | Credentials and account identities; `allowedUsers`; `repo`, `cloneUrl`, `baseBranch`, Git identity and paths; `models`, `runtime`, [legacy `jobRoles` access settings](sessions.md#compatibility) and network declarations (not enforced isolation); CI requirements and command timeouts |
 
 The project document accepts only those project fields. Unknown fields, duplicate JSON members and unknown nested keys are errors, not ignored settings. It cannot supply a token, credential path, model registration, allow-list, account, alternate destination or authorization bypass. The operator config must omit **all five** project fields (`commands`, `practices`, `lockfiles`, `migrations`, `resources`), including optional ones the document omits. There is no competing override layer.
 

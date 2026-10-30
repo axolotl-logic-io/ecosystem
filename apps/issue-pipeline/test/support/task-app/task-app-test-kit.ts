@@ -3,7 +3,7 @@
 // file with each buddy's token, a buddy file for each of two buddies with
 // their own accounts, and a task app, by default the sample task app
 // (sample-task-app.ts), run in a fresh process as a buddy runs it.
-// Issue ISSUE starts with `start:sample`
+// Issue ISSUE starts with `start:gherkin`
 // applied by a person. Tests change the world as GitHub or a person would,
 // hold a run live at its gate, and read back what a person sees. The
 // launcher's tests install the sample app as other tasks' apps in the
@@ -148,12 +148,12 @@ function baseWorld(): World {
         body: "Do the sample work.",
         author: PERSON,
         pullRequest: false,
-        labels: ["start:sample"],
+        labels: ["start:gherkin"],
         events: [
           {
             id: FIRST_EVENT,
             event: "labeled",
-            label: "start:sample",
+            label: "start:gherkin",
             actor: PERSON,
             viaApp: false,
             createdAt: "2026-10-25T11:00:00Z",
@@ -254,7 +254,7 @@ function issueOf(world: World): World["issues"][number] {
 }
 
 // `task`'s marked comments of `kind` on the issue.
-function marked(world: World, kind: string, task = "sample"): FakeComment[] {
+function marked(world: World, kind: string, task = "gherkin"): FakeComment[] {
   return issueOf(world).comments.filter((comment) => {
     const { task: by, kind: found } = MARKER.exec(comment.body)?.groups ?? {};
     return by === task && found === kind;
@@ -279,7 +279,7 @@ function appExits(stderr: string): AppExit[] {
 // the task app's program, the sample task app unless given.
 function machine(
   setup: (world: World) => void = (): void => undefined,
-  served: { origin?: string; app?: string } = {},
+  served: { origin?: string; app?: string; task?: string } = {},
 ): Machine {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-task-app-"));
   const bin = path.join(root, "bin");
@@ -361,7 +361,7 @@ function machine(
       [
         served.app ?? SAMPLE,
         "--config",
-        buddyFile(buddy),
+        buddyFile(buddy, [served.task ?? "gherkin"]),
         "--issue",
         `${REPO}#${ISSUE}`,
       ],

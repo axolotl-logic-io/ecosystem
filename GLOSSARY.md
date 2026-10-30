@@ -4,27 +4,13 @@ This draft records the domain language Autumn accepted for ecosystem, the Pi das
 
 These definitions describe the intended domain. They do not claim that existing code, saved records or installed tools already conform. The [domain alignment inventory](docs/domain-alignment.md) identifies known differences and migration decisions. Historical names there are migration references, not permanent synonyms.
 
-## People, roles and buddies
+## People and buddies
 
 ### Operator
 
 The human responsible for installation and operational configuration.
 
 Starting a run does not by itself make someone an operator, and a buddy is not an operator.
-
-### Role
-
-A set of tasks that are its responsibilities: the work that role should do.
-
-A role holds no identity, credentials or authority. It does not establish authorization or available capabilities. A role need not use a model; a role whose tasks are deterministic is still a role. Each buddy has one role.
-
-### Developer
-
-The role responsible for the Gherkin, Implement and Fix tasks, and for Safe Refactor when it is explicitly assigned. Use Developer instead of Implementor wherever they name the same role. Implement is the task, not the role's name.
-
-### Gatekeeper
-
-The role responsible for the Verify and Land tasks. It verifies and lands what the Developer writes.
 
 ### Account
 
@@ -40,11 +26,11 @@ An identity is a capability. It makes an action possible; it does not authorize 
 
 ### Buddy
 
-A thin configuration wrapper pairing scope, responsibilities and identity. Scope identifies where it may work; responsibilities identify its tasks, which a role may group; identity supplies its account and runtime settings. For example, Hippy pairs Developer responsibilities with its own GitHub account and configured repository scope.
+A thin configuration wrapper pairing scope, responsibilities and identity. Scope identifies where it may work; responsibilities identify its explicit tasks; identity supplies its account and runtime settings. For example, Hippy can launch Gherkin, Implement and Fix in its configured repository scope.
 
 A buddy is a launcher. It watches the issues in its scope for start labels of its tasks and runs the matching [task app](#task-app) for each one. It checks no prerequisite first: the task app's [claim](#claim) decides which buddy runs a start. A task stands on its own, and pairing it with a different scope or identity does not redefine it. GitHub issue assignment is not required.
 
-The Developer and the Gatekeeper use different GitHub accounts, because GitHub doesn't let a pull request's author approve or request changes on it.
+Verify must refuse a PR authored by its executing account. GitHub does not let a PR's author approve or request changes on it.
 
 ### Executing buddy
 
@@ -110,7 +96,7 @@ Each run retains its own identity. Establish parent–child links from explicit 
 
 ### Task
 
-A unit of workflow work that only its start label starts, built as a [task app](#task-app) on the shared task framework. A role's tasks are its responsibilities. A task may use a model or run deterministically.
+A unit of workflow work that only its start label starts, built as a [task app](#task-app) on the shared task framework. A buddy's configured tasks are its responsibilities. A task may use a model or run deterministically.
 
 The framework runs four lifecycle steps for every task run:
 
@@ -181,17 +167,17 @@ Land's pull request merge commit and Fix's merge of the base into the head branc
 
 ### Gherkin
 
-The Developer task that writes an issue's behavior as Gherkin scenarios, or asks the questions only the issue's author can answer. It is named after the method it follows. Only `start:gherkin` starts it.
+The task that writes an issue's behavior as Gherkin scenarios, or asks the questions only the issue's author can answer. It is named after the method it follows. Only `start:gherkin` starts it.
 
 Its result is a Gherkin comment on the issue. A rerun edits its own earlier Gherkin comment rather than posting a second one.
 
 ### Implement
 
-The Developer task that writes the change an issue asks for on the branch `agent/issue-N`, hardens it in a fresh session and opens a pull request. Only `start:implement` starts it. Its result is the pushed head of a pull request marked ready for review.
+The task that writes the change an issue asks for on the branch `agent/issue-N`, hardens it in a fresh session and opens a pull request. Only `start:implement` starts it. Its result is the pushed head of a pull request marked ready for review.
 
 ### Verify
 
-The Gatekeeper task that checks one exact pull request head and reports through a GitHub review. Only `start:verify` starts it, and it reviews the head as it is when the run starts. It runs the repository's full checks, the required CI and the Security review of that head. It posts inline and general review comments, then approves when it finds nothing or only nits, and requests changes otherwise. A Security finding always blocks.
+The task that checks one exact pull request head and reports through a GitHub review. Only `start:verify` starts it, and it reviews the head as it is when the run starts. It runs the repository's full checks, the required CI and the Security review of that head. It posts inline and general review comments, then approves when it finds nothing or only nits, and requests changes otherwise. A Security finding always blocks.
 
 Verify's review binds the head's commit, so it covers exactly what Verify checked. A new head needs a new Verify.
 
@@ -201,7 +187,7 @@ A review finding that doesn't affect behavior, safety or maintainability, such a
 
 ### Fix
 
-The Developer task that answers a change that didn't pass review. Only `start:fix` starts it; a request for changes or a conflict doesn't. In one run, Fix merges the pull request's base branch into its head branch and answers every unresolved blocking comment on the current head with a code change and a thread reply. Its result is a new head, which a new `start:verify` checks.
+The task that answers a change that didn't pass review. Only `start:fix` starts it; a request for changes or a conflict doesn't. In one run, Fix merges the pull request's base branch into its head branch and answers every unresolved blocking comment on the current head with a code change and a thread reply. Its result is a new head, which a new `start:verify` checks.
 
 Fix replaces going back to Implement. It is not a rebase: commits that were already reviewed keep their identity.
 
@@ -217,7 +203,7 @@ Land merges through its own buddy's account. The landing order is the order in w
 
 ### Safe Refactor
 
-The Developer task that improves an existing revision's design without changing behavior under its explicitly selected preservation contract. It uses findings, practices and this glossary to choose cohesive changes, not merely reduce metric scores. Unsupported changes are deferred with reasons.
+The task that improves an existing revision's design without changing behavior under its explicitly selected preservation contract. It uses findings, practices and this glossary to choose cohesive changes, not merely reduce metric scores. Unsupported changes are deferred with reasons.
 
 Safe Refactor does not replace Implement's hardening or Verify, and grants no Land authority. Changed source needs a new revision and fresh downstream results. Safe Refactor keeps its standalone entrypoint, has no start label and returns local reports, not workflow results on GitHub; the [Safe Refactor reference](docs/reference/safe-refactor.md) describes its limits.
 
@@ -241,7 +227,7 @@ The workflow that develops and delivers an issue's intended change. Its tasks ar
 
 A task whose prerequisites are missing when it runs ends with a comment that names them. When Fix produces a new head, every earlier review stays bound to the old one, and a new `start:verify` checks the new head; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
 
-The Developer performs Gherkin, Implement and Fix, and Safe Refactor when it is explicitly assigned; Safe Refactor adds no automatic dispatch or fixed workflow position. The Gatekeeper performs Verify and Land. This intended model does not describe every historical or installed version.
+A buddy lists its tasks explicitly. Safe Refactor adds no automatic dispatch or fixed workflow position. Verify must use an account different from the PR author. Historical and installed versions can differ.
 
 ### Run state
 
@@ -309,7 +295,7 @@ Shared guards enforce scope, responsibility and stop controls before each action
 
 Permission to perform a specific action within defined scope and conditions.
 
-A role, an observation or possession of a capability does not by itself establish authorization.
+A task name, an observation or possession of a capability does not by itself establish authorization.
 
 ### Capability
 

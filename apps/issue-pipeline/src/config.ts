@@ -67,9 +67,9 @@ function loadConfig(configPath: string | undefined): Config {
     buddyAuthorization: _buddyAuthorization,
     ...data
   } = parsed.data;
-  for (const role of Object.values(data.jobRoles ?? {})) {
-    if (role?.tokenEnv !== undefined) {
-      hideCredentialVariable(role.tokenEnv);
+  for (const settings of Object.values(data.jobRoles ?? {})) {
+    if (settings?.tokenEnv !== undefined) {
+      hideCredentialVariable(settings.tokenEnv);
     }
   }
   return {
