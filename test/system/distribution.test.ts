@@ -10,6 +10,8 @@ import { PROGRAMS } from "../../programs.ts";
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const DEPENDENCIES = path.resolve(SOURCE, "node_modules");
 const TEST_TIMEOUT_MS = 120_000;
+const RETAINED_BYTES = Buffer.from("00ff01", "hex");
+const SYMLINK_REFUSAL = /refusing symlink destination/u;
 
 function command(cwd: string, program: string, args: string[]): string {
   const result = spawnSync(program, args, {
@@ -87,6 +89,7 @@ test("installer accepts uncommitted source and records its dirty identity", () =
         ...process.env,
         ...Object.fromEntries([
           ["ISSUE_PIPELINE_ROOT", root],
+          ["ECOSYSTEM_INSTALL_ROOT", root],
           ["PI_CODING_AGENT_DIR", agent],
         ]),
       },
@@ -179,6 +182,7 @@ test("installer dry run plans the buddy distribution and preserves operator file
         ...process.env,
         ...Object.fromEntries([
           ["ISSUE_PIPELINE_ROOT", root],
+          ["ECOSYSTEM_INSTALL_ROOT", root],
           ["PI_CODING_AGENT_DIR", agent],
         ]),
       },
@@ -192,6 +196,113 @@ test("installer dry run plans the buddy distribution and preserves operator file
     assert.ok(result.stdout.includes("vendor/node_modules/typescript-"));
     assert.equal(fs.readFileSync(historical, "utf8"), "do not change\n");
     assert.equal(fs.existsSync(agent), false);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test("replacement backs up every managed file and preserves private and historical bytes", () => {
+  const sandbox = fixture();
+  try {
+    const root = path.join(sandbox.root, "operator-root");
+    const agent = path.join(sandbox.root, "agent");
+    const templates = path.join(agent, "agents/issue-pipeline");
+    fs.mkdirSync(root);
+    fs.mkdirSync(templates, { recursive: true });
+    const previous = new Map([
+      [path.join(root, "gherkin.mjs"), "old program\n"],
+      [path.join(root, "README.md"), "previous identity\n"],
+      [path.join(root, "INSTALLED.json"), '{"commit":"old"}\n'],
+      [path.join(templates, "issue-pipeline-developer.md"), "old agent\n"],
+    ]);
+    for (const [file, text] of previous) {
+      fs.writeFileSync(file, text);
+    }
+    const retained = path.join(root, "runs/historical/retained.bin");
+    const privateConfig = path.join(root, "repos/private.json");
+    const privateAgent = path.join(templates, "operator.md");
+    for (const file of [retained, privateConfig, privateAgent]) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, RETAINED_BYTES);
+    }
+    const result = spawnSync(process.execPath, ["install.ts"], {
+      cwd: sandbox.source,
+      encoding: "utf8",
+      timeout: TEST_TIMEOUT_MS,
+      env: {
+        ...process.env,
+        ...Object.fromEntries([
+          ["ECOSYSTEM_INSTALL_ROOT", root],
+          ["PI_CODING_AGENT_DIR", agent],
+        ]),
+      },
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const installed = JSON.parse(
+      fs.readFileSync(path.join(root, "INSTALLED.json"), "utf8"),
+    );
+    for (const [file, text] of previous) {
+      assert.equal(
+        fs.readFileSync(
+          path.join(
+            installed.backup,
+            path.relative(path.parse(file).root, file),
+          ),
+          "utf8",
+        ),
+        text,
+      );
+      assert.ok(installed.files.includes(file));
+    }
+    for (const file of [retained, privateConfig, privateAgent]) {
+      assert.deepEqual(fs.readFileSync(file), RETAINED_BYTES);
+      assert.equal(installed.files.includes(file), false);
+    }
+    assert.equal(installed.dirty, false);
+    assert.ok(
+      fs
+        .readFileSync(path.join(templates, "git-reviewer.md"), "utf8")
+        .includes(path.join(root, "git-review.mjs")),
+    );
+    assert.equal(
+      fs.readFileSync(path.join(root, "prompts/gherkin.md"), "utf8"),
+      fs.readFileSync(
+        path.join(sandbox.source, "tasks/gherkin/prompts/gherkin.md"),
+        "utf8",
+      ),
+    );
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test("a symlink in the installation plan refuses before replacing any operator file", () => {
+  const sandbox = fixture();
+  try {
+    const root = path.join(sandbox.root, "operator-root");
+    const outside = path.join(sandbox.root, "outside");
+    fs.mkdirSync(root);
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, path.join(root, "prompts"), "dir");
+    const program = path.join(root, "fix.mjs");
+    fs.writeFileSync(program, "previous release\n");
+    const result = spawnSync(process.execPath, ["install.ts"], {
+      cwd: sandbox.source,
+      encoding: "utf8",
+      timeout: TEST_TIMEOUT_MS,
+      env: {
+        ...process.env,
+        ...Object.fromEntries([
+          ["ECOSYSTEM_INSTALL_ROOT", root],
+          ["PI_CODING_AGENT_DIR", path.join(sandbox.root, "agent")],
+        ]),
+      },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, SYMLINK_REFUSAL);
+    assert.equal(fs.readFileSync(program, "utf8"), "previous release\n");
+    assert.deepEqual(fs.readdirSync(outside), []);
+    assert.equal(fs.existsSync(path.join(root, "INSTALLED.json")), false);
   } finally {
     sandbox.cleanup();
   }

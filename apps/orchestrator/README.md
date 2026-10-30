@@ -10,8 +10,8 @@ The version 1 operator-owned JSON configuration names absolute paths:
 {
   "version": 1,
   "buddies": ["/private/buddies/first.json", "/private/buddies/second.json"],
-  "manifest": "/installed/issue-pipeline/tasks.json",
-  "launcher": "/installed/issue-pipeline/launcher.mjs"
+  "manifest": "/installed/ecosystem/tasks.json",
+  "launcher": "/installed/ecosystem/launcher.mjs"
 }
 ```
 
@@ -25,7 +25,7 @@ invocation. Failed launchers are reported while healthy launchers keep running.
 After installing the release, validate the complete configuration:
 
 ```sh
-node "$ISSUE_PIPELINE_ROOT/orchestrator.mjs" --config FLEET_FILE --check
+node "$ECOSYSTEM_INSTALL_ROOT/orchestrator.mjs" --config FLEET_FILE --check
 ```
 
 `FLEET_FILE` is the absolute path of the private fleet JSON file. Omit `--check`
@@ -80,7 +80,7 @@ To adopt supervision, drain the existing standalone launchers, preserve retained
 work, install the release, write and validate the fleet file, then start the
 orchestrator. Do not run the old launchers alongside their supervised replacements.
 The installer includes `orchestrator.mjs` without writing private fleet files.
-See [installation and safe upgrades](../issue-pipeline/README.md#install-and-safe-upgrades).
+See [installation and safe upgrades](../../docs/reference/operations.md#install-a-release).
 Standalone launchers remain supported.
 
 ## Validate source

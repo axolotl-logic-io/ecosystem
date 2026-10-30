@@ -111,6 +111,8 @@ interface BuddyChoice {
 // test command otherwise logs the commit it checked (checksRun).
 interface MachineSetup {
   landPermission: boolean;
+  separateData?: boolean;
+  throughLauncher?: boolean;
   laneSlots?: number;
   // Operator CI policy; absence keeps the production default.
   requireCi?: boolean;
@@ -250,33 +252,23 @@ function when(
 // Builds this source into the pipeline root and installs its prompts and
 // agent definitions, as install.ts lays them out.
 function install(pipeline: string, agentDir: string): void {
-  const built = spawnSync(process.execPath, ["build.ts", pipeline], {
-    cwd: SOURCE,
-    encoding: "utf8",
-  });
+  const built = spawnSync(
+    process.execPath,
+    [path.resolve(SOURCE, "../../install.ts")],
+    {
+      cwd: SOURCE,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...Object.fromEntries([
+          ["ECOSYSTEM_INSTALL_ROOT", pipeline],
+          ["PI_CODING_AGENT_DIR", agentDir],
+        ]),
+      },
+    },
+  );
   if (built.status !== 0) {
-    throw new Error(`build failed: ${built.stderr}`);
-  }
-  const agents = path.join(agentDir, "agents", "issue-pipeline");
-  fs.mkdirSync(agents, { recursive: true });
-  fs.mkdirSync(path.join(pipeline, "prompts"), { recursive: true });
-  for (const task of ["gherkin", "implement", "fix", "verify"]) {
-    const folder = path.resolve(SOURCE, "../../tasks", task);
-    for (const file of fs.globSync("prompts/*.md", { cwd: folder })) {
-      fs.copyFileSync(
-        path.join(folder, file),
-        path.join(pipeline, "prompts", path.basename(file)),
-      );
-    }
-    for (const file of fs.globSync("agents/*.md", { cwd: folder })) {
-      fs.copyFileSync(
-        path.join(folder, file),
-        path.join(agents, path.basename(file)),
-      );
-    }
-  }
-  for (const file of fs.readdirSync(path.join(SOURCE, "agents"))) {
-    fs.copyFileSync(path.join(SOURCE, "agents", file), path.join(agents, file));
+    throw new Error(`install failed: ${built.stdout}\n${built.stderr}`);
   }
 }
 
@@ -483,6 +475,10 @@ function machine(
 ): Machine {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "buddy-flow-"));
   const pipeline = path.join(root, "pipeline");
+  let data = pipeline;
+  if (setup.separateData === true) {
+    data = path.join(root, "data");
+  }
   const agentDir = path.join(root, "agent");
   const home = path.join(root, "home");
   const bin = path.join(root, "bin");
@@ -538,6 +534,8 @@ function machine(
       ["PATH", `${bin}${path.delimiter}${inherited}`],
       ["HOME", home],
       ["ISSUE_PIPELINE_ROOT", pipeline],
+      ["ECOSYSTEM_INSTALL_ROOT", pipeline],
+      ["ECOSYSTEM_DATA_ROOT", data],
       ["PI_CODING_AGENT_DIR", agentDir],
       ["FAKE_GH_WORLD", worldFile],
       ["FAKE_GH_LOG", ghLog],
@@ -565,27 +563,54 @@ function machine(
     sessions: PlannedSession[],
     buddy: BuddyChoice = { account: "hippy", tasks: ["implement"] },
   ): TaskAppRun {
-    const buddyConfig = path.join(
-      root,
-      `launcher-${buddy.account}-${app}.json`,
-    );
+    let name = `launcher-${buddy.account}-${app}.json`;
+    if (setup.throughLauncher === true) {
+      name = `launcher-${buddy.account}.json`;
+    }
+    const buddyConfig = path.join(root, name);
     writeLauncherBuddy(buddyConfig, { repositoryConfig, credentials }, buddy);
     fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
-    const child = spawn(
-      process.execPath,
-      [
-        path.join(pipeline, `${app}.mjs`),
-        "--config",
-        buddyConfig,
-        "--issue",
-        `${REPO}#${ISSUE}`,
-      ],
-      { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] },
-    );
+    let args = [
+      path.join(pipeline, `${app}.mjs`),
+      "--config",
+      buddyConfig,
+      "--issue",
+      `${REPO}#${ISSUE}`,
+    ];
+    if (setup.throughLauncher === true) {
+      args = [path.join(pipeline, "launcher.mjs"), "--config", buddyConfig];
+    }
+    const child = spawn(process.execPath, args, {
+      cwd: root,
+      env,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
     let stderr = "";
+    let pending = "";
+    let taskExit: number | null = null;
+    const exitRecord = z.object({
+      task: z.string(),
+      exit: z.number().nullable(),
+    });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
+      if (setup.throughLauncher === true) {
+        pending += chunk;
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        for (const line of lines) {
+          try {
+            const parsed = exitRecord.safeParse(JSON.parse(line));
+            if (parsed.success && parsed.data.task === app) {
+              taskExit = parsed.data.exit;
+              child.kill("SIGTERM");
+            }
+          } catch {
+            // Task stderr is not required to be JSON.
+          }
+        }
+      }
     });
     const exited = new Promise<TaskAppEnd>((resolve, reject) => {
       const deadline = setTimeout(() => {
@@ -594,7 +619,11 @@ function machine(
       }, OVERSTAY_MS);
       child.once("close", (status) => {
         clearTimeout(deadline);
-        resolve({ status, stderr });
+        let result = status;
+        if (setup.throughLauncher === true && status === 0) {
+          result = taskExit;
+        }
+        resolve({ status: result, stderr });
       });
     });
     return {

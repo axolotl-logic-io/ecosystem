@@ -1,5 +1,5 @@
-// Where the pipeline and pi's agent folder live on this machine, and how text posted to GitHub names
-// it without giving away the machine's layout.
+// Host-owned asset, data and agent locations. Packages and tasks receive resolved
+// capabilities instead of reading these process-boundary defaults.
 
 import os from "node:os";
 import path from "node:path";
@@ -16,7 +16,7 @@ const INSTALL_ROOT: string = path.resolve(
   installRoot || legacyRoot || path.join(HOME, ".pi/agent/issue-pipeline"),
 );
 const ROOT: string = path.resolve(dataRoot || legacyRoot || INSTALL_ROOT);
-// pi's own folder, where install.ts puts the pipeline's agent definitions.
+// pi's own folder, where the root installer puts compatible agent definitions.
 const AGENT_DIR: string = path.resolve(
   agentDirVariable || path.join(HOME, ".pi/agent"),
 );
@@ -38,8 +38,7 @@ function expand(file: string): string {
 }
 
 // Text posted to GitHub names local paths by variable, not by this machine's
-// layout: the pipeline root as $ISSUE_PIPELINE_ROOT (default
-// ~/.pi/agent/issue-pipeline), then the home directory as ~. Any other
+// layout: explicit install/data variables, then the home directory as ~. Any other
 // path into a home, temporary or private folder reads `[local path]`.
 function redactLocalPaths(text: string): string {
   return text

@@ -45,11 +45,11 @@ description = "Node tests written from an issue's Gherkin scenarios (test/accept
 run = "npm run test:acceptance"
 
 [tasks.build]
-description = "Build src/ into dist/ with esbuild (build.ts)"
+description = "Build repository distribution into root dist/"
 run = "npm run build"
 
 [tasks.typecheck]
-description = "Typecheck the pipeline's TypeScript, its tests and install.ts included, with tsc"
+description = "Typecheck issue-host source and tests"
 run = "npm run typecheck"
 
 [tasks.lint]
@@ -58,8 +58,8 @@ run = "npm run lint"
 
 [tasks.install]
 description = "Install this checkout's pipeline where pi reads it"
-run = "node install.ts"
+run = "node ../../install.ts"
 
 [tasks."install:dry-run"]
 description = "List what install would change, writing nothing"
-run = "node install.ts --dry-run"
+run = "node ../../install.ts --dry-run"

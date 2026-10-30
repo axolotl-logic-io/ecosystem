@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.ts",
+    "build": "node ../../build.ts",
     "lint": "biome check --error-on-warnings",
     "typecheck": "tsc -p .",
     "check": "npm run typecheck && npm run lint",

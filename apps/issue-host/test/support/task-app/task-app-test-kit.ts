@@ -386,6 +386,8 @@ function machine(
       ...Object.fromEntries([
         ["PATH", `${bin}:${searchPath ?? ""}`],
         ["ISSUE_PIPELINE_ROOT", pipeline],
+        ["ECOSYSTEM_INSTALL_ROOT", pipeline],
+        ["ECOSYSTEM_DATA_ROOT", pipeline],
         ["SAMPLE_TASK_GATE", gated],
         ["SAMPLE_TASK_FAIL", fail ?? ""],
         ["SAMPLE_TASK_ID", ""],

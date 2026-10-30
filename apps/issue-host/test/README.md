@@ -31,3 +31,12 @@ Fake GitHub lives under `support/signals/`; that historical folder name remains 
 ## Acceptance
 
 Name each test after its Gherkin scenario and put it at `acceptance/ISSUE-description.test.ts`. Given prepares observable inputs, When runs the app, and Then checks what a person or caller can observe. Do not substitute a successful mock for the task under test.
+
+## Distribution tests
+
+The root `test/system/distribution.test.ts` runs the real root build and installer
+against isolated operator directories. Root `test/acceptance/272-distribution.test.ts`
+runs all five installed tasks through the launcher with a separate data directory.
+The task-flow kit also uses the real installer, including manifest-owned prompts,
+agent templates and support programs. Run these suites through root
+`npm run check:full`; source gates never install into the operator environment.

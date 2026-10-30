@@ -54,6 +54,5 @@ non-external host tests and distribution tests, with file concurrency 8 and
 per-test timeout 180000 ms. See [gate scope](../../docs/reference/check-gates.md)
 and [test kits](test/README.md).
 
-`build.ts` and `install.ts` here are source compatibility commands that forward
-to the repository root. The earlier `apps/issue-pipeline` source install commands
-also forward there. They do not own a second distribution.
+The earlier `apps/issue-pipeline` source install commands forward to the root
+installer for existing operator automation. They do not own a second distribution.
