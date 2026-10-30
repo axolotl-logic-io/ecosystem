@@ -63,6 +63,8 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Stops and labels](reference/stops-and-labels.md): start, running and stop labels and operator cutover.
 
+## Task workspaces
+
 The [shared task runtime](../packages/task-runtime/README.md) documents service
 ownership, dependency direction and host-provisioned capability interfaces.
 
@@ -70,5 +72,3 @@ Task-owned inputs, capabilities, outcomes and retry behavior are documented in
 [Gherkin](../tasks/gherkin/README.md), [Implement](../tasks/implement/README.md),
 [Fix](../tasks/fix/README.md), [Verify](../tasks/verify/README.md) and
 [Land](../tasks/land/README.md).
-
-The [orchestrator application](../apps/orchestrator/README.md) documents fleet configuration, independent launcher supervision, failure policy and drain shutdown.

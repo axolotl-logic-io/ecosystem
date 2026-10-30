@@ -10,7 +10,7 @@ Tests follow the ISTQB levels in [project practices](../../../docs/project-pract
 | System integration | `system-integration/` | `npm run test:system-integration` | Explicit disposable external services; opt-in |
 | Acceptance | `acceptance/` | `npm run test:acceptance` | One system test for each issue scenario |
 
-The full gate discovers all non-external test levels with file concurrency 8 and a per-test deadline of 180000 ms. The fast gate checks types, lint, build and program syntax without running pipeline tests.
+The full gate discovers all non-external test levels with file concurrency 8 and a per-test deadline of 180000 ms. The root fast gate checks distribution types, lint, build and program syntax, then workspace checks. It does not run the host system suite.
 
 ## Task apps and launcher
 

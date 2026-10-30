@@ -90,8 +90,10 @@ npm run install:dry-run
 npm run install:runtime
 ```
 
-The installer builds the source revision. Dry run writes only source build output,
-with no installed files, agent files or backups changed. Review its complete plan.
+The installer builds the source revision. Each install builds in a private temporary directory and removes it afterward.
+Concurrent installations to different destinations do not share mutable build
+output. Dry run changes no source distribution, installed files, agent files or
+backups. Review its complete plan.
 Installation refuses symlink destinations before replacing any file, writes each
 replacement atomically and backs up every replaced file, including the previous
 README and `INSTALLED.json`. Backups preserve the target's absolute directory tree
