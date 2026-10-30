@@ -257,20 +257,24 @@ function install(pipeline: string, agentDir: string): void {
   if (built.status !== 0) {
     throw new Error(`build failed: ${built.stderr}`);
   }
-  fs.cpSync(path.join(SOURCE, "prompts"), path.join(pipeline, "prompts"), {
-    recursive: true,
-  });
-  const task = path.resolve(SOURCE, "../../tasks/gherkin");
-  fs.copyFileSync(
-    path.join(task, "prompts/gherkin.md"),
-    path.join(pipeline, "prompts/gherkin.md"),
-  );
   const agents = path.join(agentDir, "agents", "issue-pipeline");
   fs.mkdirSync(agents, { recursive: true });
-  fs.copyFileSync(
-    path.join(task, "agents/issue-pipeline-gherkin.md"),
-    path.join(agents, "issue-pipeline-gherkin.md"),
-  );
+  fs.mkdirSync(path.join(pipeline, "prompts"), { recursive: true });
+  for (const task of ["gherkin", "implement", "fix", "verify"]) {
+    const folder = path.resolve(SOURCE, "../../tasks", task);
+    for (const file of fs.globSync("prompts/*.md", { cwd: folder })) {
+      fs.copyFileSync(
+        path.join(folder, file),
+        path.join(pipeline, "prompts", path.basename(file)),
+      );
+    }
+    for (const file of fs.globSync("agents/*.md", { cwd: folder })) {
+      fs.copyFileSync(
+        path.join(folder, file),
+        path.join(agents, path.basename(file)),
+      );
+    }
+  }
   for (const file of fs.readdirSync(path.join(SOURCE, "agents"))) {
     fs.copyFileSync(path.join(SOURCE, "agents", file), path.join(agents, file));
   }

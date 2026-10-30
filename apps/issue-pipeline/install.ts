@@ -37,7 +37,7 @@ const GIT_SUFFIX = /\.git$/u;
 const DATE_PUNCTUATION = /[-:]/gu;
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
-const GHERKIN = "../../tasks/gherkin";
+const TASKS = ["gherkin", "implement", "fix", "verify", "land"];
 const HOME = os.homedir();
 const {
   ISSUE_PIPELINE_ROOT: rootVariable,
@@ -110,14 +110,16 @@ function sources(): Source[] {
       }
       return { from, to, fill: false };
     }),
-    ...[`${GHERKIN}/prompts/gherkin.md`].map((from) => ({
-      from,
-      to: path.join(ROOT, "prompts", path.basename(from)),
-      fill: false,
-    })),
+    ...TASKS.flatMap((task) => mdIn(SRC, `../../tasks/${task}/prompts`)).map(
+      (from) => ({
+        from,
+        to: path.join(ROOT, "prompts", path.basename(from)),
+        fill: false,
+      }),
+    ),
     ...[
       ...mdIn(SRC, "agents"),
-      `${GHERKIN}/agents/issue-pipeline-gherkin.md`,
+      ...TASKS.flatMap((task) => mdIn(SRC, `../../tasks/${task}/agents`)),
     ].map((from) => ({
       from,
       to: path.join(AGENT_DIR, "agents/issue-pipeline", path.basename(from)),

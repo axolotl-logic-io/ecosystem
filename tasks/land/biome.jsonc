@@ -3,6 +3,11 @@
   "extends": "//",
   "overrides": [
     {
+      // GitHub comparison responses use the REST field behind_by.
+      "includes": ["src/index.ts"],
+      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+    },
+    {
       // Behavior tests use the Node test runner and assertions.
       "includes": ["test/**"],
       "linter": { "rules": { "correctness": { "noNodejsModules": "off" } } }

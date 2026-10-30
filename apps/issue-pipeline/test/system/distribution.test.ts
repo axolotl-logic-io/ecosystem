@@ -35,8 +35,8 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
     },
   });
   fs.cpSync(
-    path.resolve(SOURCE, "../../tasks/gherkin"),
-    path.resolve(source, "../../tasks/gherkin"),
+    path.resolve(SOURCE, "../../tasks"),
+    path.resolve(source, "../../tasks"),
     { recursive: true },
   );
   fs.symlinkSync(DEPENDENCIES, path.join(source, "node_modules"), "dir");

@@ -14,6 +14,8 @@ import {
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import type { VerifyReply } from "@ecosystem/verify/reply";
+import { VERIFY_REPLY } from "@ecosystem/verify/reply";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -22,8 +24,6 @@ import { agentEnvOf } from "../job/agent-env.ts";
 import { runSession } from "../job/launch.ts";
 import { PROMPTS_DIR } from "../job/prompts.ts";
 import type { HeadCheckout } from "./head-checkout.ts";
-import type { VerifyReply } from "./verify-reply.ts";
-import { VERIFY_REPLY } from "./verify-reply.ts";
 
 const AGENT = "issue-pipeline-reviewer";
 const PAGE = "verify.md";
