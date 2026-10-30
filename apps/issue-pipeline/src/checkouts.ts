@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import { OpsError } from "./ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { shell } from "./process.ts";
 
 const MS_PER_MINUTE = 60_000;

@@ -1,0 +1,16 @@
+{
+  "extends": "//",
+  "overrides": [
+    {
+      // Runtime services and their tests implement Node filesystem/process boundaries.
+      "includes": ["src/**", "test/**"],
+      "linter": {
+        "rules": {
+          "correctness": { "noNodejsModules": "off", "noProcessGlobal": "off" },
+          "style": { "noProcessEnv": "off" },
+          "suspicious": { "noConsole": "off" }
+        }
+      }
+    }
+  ]
+}

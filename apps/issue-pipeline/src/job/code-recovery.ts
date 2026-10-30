@@ -7,7 +7,7 @@ import process from "node:process";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { git } from "../github.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { run } from "../process.ts";
 import { conflictStages } from "../rebase.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";

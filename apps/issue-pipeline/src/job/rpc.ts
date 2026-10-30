@@ -9,7 +9,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
 import type { Writable } from "node:stream";
-import { childEnvironment } from "../child-env.ts";
+import { childEnvironment } from "@ecosystem/task-runtime/child-env";
 import { endGroup, signalGroup } from "../process-group.ts";
 import { STOP_GRACE_MS } from "./control.ts";
 import type { ProcessExit } from "./raw-results.ts";

@@ -25,7 +25,7 @@ import { loadConfig } from "../config.ts";
 import { changedFiles, runChecks } from "../ops/checks.ts";
 import type { ReviewCounts, ReviewFinding } from "../ops/verify-review.ts";
 import { commentable, planReview } from "../ops/verify-review.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { PullRequest, Review } from "../task-app/recovery.ts";
 import { Stopped } from "../task-app/stopped.ts";
 import type { TaskApp, TaskRun } from "../task-app/task-app.ts";

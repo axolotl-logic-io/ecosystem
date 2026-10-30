@@ -1,8 +1,8 @@
 // Project policy is data from an operator-pinned Git commit, never a candidate
 // checkout. Only reproducible project settings cross this boundary.
 import { createHash } from "node:crypto";
+import { run } from "./command.ts";
 import { OpsError } from "./ops-error.ts";
-import { run } from "./process.ts";
 import type {
   ProjectPolicyBinding,
   ProjectPolicySource,

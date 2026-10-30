@@ -3,7 +3,7 @@
 // that head through its `commit_id`, so it never judges a later one.
 import { z } from "zod";
 import type { PlannedReview } from "../ops/verify-review.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { IssueGitHub } from "../task-app/issue-github.ts";
 
 const SUBMITTED = z.looseObject({

@@ -16,7 +16,7 @@ import type { Config } from "../config.ts";
 import { loadConfig } from "../config.ts";
 import type { PushReply } from "../job/control-protocol.ts";
 import type { InvocationBinding } from "../job/session-identity.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { run as runProcess } from "../process.ts";
 import {
   type BranchCheckout,

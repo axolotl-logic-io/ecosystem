@@ -22,7 +22,7 @@ import process from "node:process";
 import { z } from "zod";
 import { wire } from "../discovery/wire.ts";
 import { observeAll, unreadable } from "../github-observation.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { ROOT } from "../pipeline-root.ts";
 import {
   type BuddyFile,

@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { parseArgs } from "node:util";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { claimStart, type Sleep, startLabel } from "./claims.ts";
 import { loadIdentity } from "./identity.ts";
 import {

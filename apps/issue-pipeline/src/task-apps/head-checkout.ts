@@ -10,7 +10,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { openJobCheckout } from "../job/checkout.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 
 interface HeadCheckout {
   // The run's folder, its name, which says where it is without a local

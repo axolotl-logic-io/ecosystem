@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { childEnvironment } from "../child-env.ts";
+import { childEnvironment } from "@ecosystem/task-runtime/child-env";
 import { queryOf } from "../job/git-review-policy.ts";
 import { executeGit } from "../job/git-review-process.ts";
 import { repositoryOf } from "../job/git-review-repository.ts";

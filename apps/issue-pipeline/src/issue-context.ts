@@ -12,7 +12,7 @@ import { listComments, pipelineCommentAgent } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { ghJson, isAllowedUser } from "./github.ts";
-import { OpsError } from "./ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { trustedInputBytes } from "./trusted-inputs.ts";
 
 // An issue as GitHub's REST API gives it.

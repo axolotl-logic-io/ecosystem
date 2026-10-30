@@ -2,7 +2,7 @@
 import { gherkin } from "@ecosystem/gherkin";
 import { executeTask } from "@ecosystem/task-framework";
 import { loadConfig } from "./config.ts";
-import { OpsError } from "./ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { issueContext } from "./task-app/issue-file.ts";
 import { gherkinSessionHost } from "./task-app/session.ts";
 import { main, type TaskRun } from "./task-app/task-app.ts";

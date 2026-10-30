@@ -8,7 +8,7 @@
 // reach a session.
 import fs from "node:fs";
 import path from "node:path";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { IssueComment, IssueGitHub } from "./issue-github.ts";
 import { markOf } from "./markers.ts";
 

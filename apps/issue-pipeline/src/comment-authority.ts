@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { ghJson } from "./github.ts";
-import { OpsError } from "./ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 
 const COMMENT_FIELDS =
   "databaseId body createdAt updatedAt lastEditedAt author { login } editor { login }";

@@ -16,7 +16,7 @@ import process from "node:process";
 import type { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { childEnvironment } from "./child-env.ts";
+import { childEnvironment } from "@ecosystem/task-runtime/child-env";
 import {
   endGroup,
   groupAlive,

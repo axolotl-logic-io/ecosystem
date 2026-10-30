@@ -7,7 +7,7 @@ import {
   githubRead,
   transientGithubRead,
 } from "./github-read.ts";
-import { OpsError } from "./ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { RunOptions, RunResult } from "./process.ts";
 import { run, runFailure } from "./process.ts";
 

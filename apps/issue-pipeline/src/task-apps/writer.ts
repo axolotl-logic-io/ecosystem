@@ -23,7 +23,7 @@ import { COMMIT_SCOPE_ENV } from "../job/pipeline-commit.ts";
 import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
 import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
 import type { LaunchStart } from "../job/status.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { run } from "../process.ts";
 import { conflictStages } from "../rebase.ts";
 import type { TaskRun } from "../task-app/task-app.ts";

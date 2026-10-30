@@ -15,7 +15,7 @@ import { git } from "../github.ts";
 import type { JobDirs } from "../job/checkout.ts";
 import { openJobCheckout } from "../job/checkout.ts";
 import { closeJobCheckout } from "../job/checkout-close.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { run, runFailure } from "../process.ts";
 
 // What git prints when the branch moved to history the pushed head lacks.

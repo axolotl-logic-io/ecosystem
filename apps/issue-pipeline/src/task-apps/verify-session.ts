@@ -16,7 +16,7 @@ import type { LaunchHooks } from "../job/launch.ts";
 import { runSession } from "../job/launch.ts";
 import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
 import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { HeadCheckout } from "./head-checkout.ts";
 import type { VerifyReply } from "./verify-reply.ts";
 import { VERIFY_REPLY } from "./verify-reply.ts";

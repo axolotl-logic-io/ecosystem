@@ -13,7 +13,7 @@ import {
   unreadable,
 } from "../github-observation.ts";
 import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { RunResult } from "../process.ts";
 import { runFailure } from "../process.ts";
 import { STOP_LABEL, Stopped } from "./stopped.ts";

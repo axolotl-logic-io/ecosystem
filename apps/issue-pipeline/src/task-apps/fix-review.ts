@@ -1,7 +1,7 @@
 // Fix answers standing requests from Verify or repository writers. Replies
 // from its own account and GitHub's resolved threads are the recovery record.
 import { z } from "zod";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { IssueGitHub } from "../task-app/issue-github.ts";
 import type { PullRequest, Review, Thread } from "../task-app/recovery.ts";
 

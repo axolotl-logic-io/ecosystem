@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { untrustedFile } from "../trusted-file.ts";
 
 const VERSION = 2;

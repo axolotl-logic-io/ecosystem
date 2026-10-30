@@ -10,7 +10,7 @@
 // an end comment of X is a person clearing it; claims before that removal
 // count as settled, so a crashed run holds the label only until a person
 // removes it.
-import { OpsError } from "../ops-error.ts";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { IssueGitHub, LabelEvent } from "./issue-github.ts";
 import { type EndMark, endMarkOf } from "./markers.ts";
 import { Stopped } from "./stopped.ts";
