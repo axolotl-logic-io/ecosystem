@@ -8,7 +8,7 @@
 // through structured output. The app posts the reply: Gherkin as the
 // issue's one Gherkin comment, which a later run finds by its hidden marker
 // and edits in place, and questions as a new comment each time.
-import { z } from "zod";
+import { gherkinReply } from "@ecosystem/gherkin/reply";
 import { loadConfig } from "./config.ts";
 import { readOnlySession } from "./task-app/session.ts";
 import { main, type TaskRun } from "./task-app/task-app.ts";
@@ -16,23 +16,6 @@ import { main, type TaskRun } from "./task-app/task-app.ts";
 const TASK = "gherkin";
 const GHERKIN_KIND = "gherkin";
 const QUESTIONS_KIND = "questions";
-// Most questions a session may ask instead of writing Gherkin.
-const MOST_QUESTIONS = 5;
-
-// The session's reply: the behaviour as Gherkin with the calls the session
-// made, or the questions only the issue's author can answer.
-const REPLY = z.discriminatedUnion("outcome", [
-  z.strictObject({
-    outcome: z.literal("gherkin"),
-    gherkin: z.string().min(1),
-    assumptions: z.array(z.string().min(1)),
-  }),
-  z.strictObject({
-    outcome: z.literal("needs-info"),
-    questions: z.array(z.string().min(1)).min(1).max(MOST_QUESTIONS),
-  }),
-]);
-
 // The session's facts beside the issue file: where the current Gherkin is,
 // and the reply's two shapes.
 const FACTS: readonly string[] = [
@@ -43,7 +26,7 @@ const FACTS: readonly string[] = [
   "## Reply",
   "",
   "- `gherkin`: the behaviour as one Feature in `gherkin`, and your calls in `assumptions`.",
-  `- \`needs-info\`: up to ${MOST_QUESTIONS} \`questions\` that only the issue's author can answer.`,
+  `- \`needs-info\`: up to 5 \`questions\` that only the issue's author can answer.`,
   "",
 ];
 
@@ -80,7 +63,7 @@ async function work(run: TaskRun): Promise<void> {
     page: "gherkin.md",
     profile: "gherkin",
     facts: FACTS,
-    schema: REPLY,
+    schema: gherkinReply,
   });
   const payload = { run: run.run };
   if (reply.outcome === "needs-info") {
