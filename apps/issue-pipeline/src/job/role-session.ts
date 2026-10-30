@@ -7,7 +7,7 @@ import type { SessionRaw } from "./raw-results.ts";
 import { isTransientSessionError } from "./transient.ts";
 
 const SESSION_MINUTES: Readonly<Record<ModelRole, number>> = {
-  author: 30,
+  gherkin: 30,
   developer: 60,
   reviewer: 30,
 };

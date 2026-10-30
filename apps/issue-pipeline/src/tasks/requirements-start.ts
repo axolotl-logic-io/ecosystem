@@ -1,5 +1,5 @@
-// Author and Implement run for current trusted requirements after a fresh
-// start of their own task. A new start continues a failed run; the old
+// Implement runs for current trusted requirements after a fresh start of
+// its own task. A new start continues a failed run; the old
 // start is spent. Unsettled work is reconciled before a replacement runs.
 
 import type {
@@ -12,9 +12,8 @@ import type {
 import { held, sameTarget, unsettledRun, waiting } from "./chain.ts";
 import { sensed } from "./sensing.ts";
 
-type RequirementsTask = "author" | "implement";
+type RequirementsTask = "implement";
 const NAMES: Readonly<Record<RequirementsTask, string>> = {
-  author: "Author",
   implement: "Implement",
 };
 

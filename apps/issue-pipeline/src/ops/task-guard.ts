@@ -6,10 +6,10 @@
 //                  (signals/inbox.ts), and the action's cause still
 //                  authoritative: a determined v2 result still in the
 //                  records, or else an accepted human signal (a start or a
-//                  review) requalified now. Author and Implement have
-//                  human causes, except an Implement continuation, whose
-//                  cause is the interrupted Implement result it follows and
-//                  whose original person's start is requalified now too;
+//                  review) requalified now. Implement has a human
+//                  cause, except a continuation, whose cause is the
+//                  interrupted Implement result it follows and whose
+//                  original person's start is requalified now too;
 //   finalization   the buddy's authorization only, for evidence-only
 //                  checkpoints, results and read-only reconciliation, which
 //                  a stop or a revoked source must still let settle.
@@ -47,10 +47,7 @@ interface TaskOpSpec {
 }
 
 // The tasks whose every action a person's accepted signal causes.
-const HUMAN_CAUSED: ReadonlySet<Binding["task"]> = new Set([
-  "author",
-  "implement",
-]);
+const HUMAN_CAUSED: ReadonlySet<Binding["task"]> = new Set(["implement"]);
 const RESULT_SIGNAL = /^result:\d+$/u;
 
 // What the action acts for: its binding and cause, from the attempt it is

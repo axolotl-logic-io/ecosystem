@@ -63,7 +63,7 @@ The runtime releases the issue's execution only when nothing holds it. Each of t
 
 A lane slot is one reusable test environment from a fixed local pool. The optional operator config `laneSlots`, an integer from 1 through 399, sets the pool size. Without `laneSlots` there is no pool, no slot variable and no setup barrier.
 
-Implement, Verify and Fix declare the `test-slot` resource. Author and Land don't. See [reservations](reservations.md) for the other resources.
+Implement, Verify and Fix declare the `test-slot` resource. Land doesn't. See [reservations](reservations.md) for the other resources.
 
 ### Slot allocation
 

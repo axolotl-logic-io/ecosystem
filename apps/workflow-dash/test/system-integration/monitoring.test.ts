@@ -201,7 +201,7 @@ test("GitHub synchronization failures retain work and remain visible between syn
           state: "OPEN",
           updatedAt: new Date().toISOString(),
           closedAt: null,
-          labels: [{ name: "start:author" }],
+          labels: [{ name: "start:gherkin" }],
         },
       ]);
     },

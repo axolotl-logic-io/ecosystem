@@ -19,9 +19,9 @@ Every field must match for a revision result to be current. Missing fields never
 | Field | Meaning |
 |---|---|
 | `workItem` | An object containing the configured `repo` and positive issue `number` |
-| `task` | A canonical task ID: `author`, `implement`, `verify`, `fix`, `land` or `refactor-safely` |
+| `task` | A canonical task ID: `implement`, `verify`, `fix`, `land` or `refactor-safely` |
 | `revision` | The full 40-hex code commit, 64-hex trusted-inputs hash and 64-hex policy digest, for Verify, Fix, Land and Safe Refactor |
-| `requirements` | Instead of `revision`, the `sha256:` requirements digest for Author or Implement |
+| `requirements` | Instead of `revision`, the `sha256:` requirements digest for Implement |
 | `target` | The configured literal target `branch` and its full commit |
 
 For Verify, Fix and Land, the code commit is the head of the item's branch. That branch is the head of the item's pull request (PR), so these tasks bind the PR head.
@@ -56,7 +56,6 @@ Readers parse only the hidden record. The prose is for people and never grants o
 
 | Task | What its pass attests |
 |---|---|
-| Author | Gherkin requirements for the current requirements |
 | Implement | The current requirements, and the hardened head it produced |
 | Verify | An `APPROVE` review submitted on exactly the bound head |
 | Fix | A new head that answers the blocking review and contains the base |
@@ -117,8 +116,6 @@ When a buddy next reads the issue's start, it settles the lost run with `impleme
 When `continues` is true, a person's new `start:implement` continues the run. The result alone requests nothing. The continuation is a new attempt, caused by that new start and linked to the lost run by `run.previous`. Its checkout starts from the pushed branch, it reuses the issue's draft PR, and its writing session is told to finish that work rather than start again. It goes through the same prerequisite, stop and permission checks as any attempt. The original start is never spent twice.
 
 When `continues` is false, the requirements changed. A new start for the current requirements requests new work.
-
-Author has the same read-only settlement, `author-reconcile`. It checks whether the lost run posted its Gherkin or its questions, and records `passed`, `refused` or `failed` to match.
 
 ## Guarded operations
 

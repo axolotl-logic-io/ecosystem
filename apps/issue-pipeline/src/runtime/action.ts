@@ -119,7 +119,6 @@ const PREPARE_GRACE_MINUTES = 1;
 const MODEL_SESSION = "model-session";
 // The model role, and so the session timeout, of each installed agent.
 const AGENT_ROLES: Readonly<Record<SessionSpec["agent"], ModelRole>> = {
-  "issue-pipeline-author": "author",
   "issue-pipeline-developer": "developer",
   "issue-pipeline-reviewer": "reviewer",
 };
@@ -130,7 +129,6 @@ const PROMPT_PAGES: readonly {
   phase: SessionPhase | null;
   page: string;
 }[] = [
-  { task: "author", phase: null, page: "author.md" },
   { task: "implement", phase: null, page: "developer.md" },
   { task: "implement", phase: "hardening", page: "developer-hardening.md" },
   { task: "verify", phase: "security-review", page: "verify.md" },

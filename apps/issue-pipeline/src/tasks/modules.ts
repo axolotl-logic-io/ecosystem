@@ -2,7 +2,6 @@
 // owns beside it (module.ts).
 
 import type { TaskId } from "../domain.ts";
-import { author } from "./author.ts";
 import { fix } from "./fix.ts";
 import { implement } from "./implement.ts";
 import { land } from "./land.ts";
@@ -11,7 +10,6 @@ import { refactorSafely } from "./opt-in.ts";
 import { verify } from "./verify.ts";
 
 const MODULES: Readonly<Record<TaskId, TaskModule>> = {
-  author,
   implement,
   verify,
   fix,

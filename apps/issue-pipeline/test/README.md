@@ -96,7 +96,7 @@ These tests use real GitHub or a real model, so they need credentials and cost m
 
 ## Acceptance
 
-Author writes an issue's requirements as Gherkin. An acceptance test turns each scenario into one test, named after it. It uses the system kit: **Given** sets up the world, **When** runs the buddy, and **Then** asserts on what a person can see.
+The Gherkin task writes an issue's requirements as Gherkin. An acceptance test turns each scenario into one test, named after it. It uses the system kit: **Given** sets up the world, **When** runs the buddy, and **Then** asserts on what a person can see.
 
 ```gherkin
 Scenario: Verify approves a head with only nits

@@ -286,6 +286,18 @@ class IssueGitHub {
     return result.stdout;
   }
 
+  // Replaces the body of the issue's comment `id`.
+  editComment(id: number, body: string, options: WriteOptions = {}): void {
+    this.change([
+      "api",
+      "-X",
+      "PATCH",
+      `repos/${this.issue.repo}/issues/comments/${id}`,
+      "-f",
+      `body=${body}`,
+    ], options);
+  }
+
   private write(
     args: readonly string[],
     options: WriteOptions,

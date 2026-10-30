@@ -7,7 +7,7 @@
   "allowedUsers": ["MAINTAINER"],
   "permissions": { "land": false },
   "models": {
-    "author": "openai/gpt-6.1-sol",
+    "gherkin": "openai/gpt-6.1-sol",
     "developer": "openai/gpt-6.1-sol",
     "reviewer": "openai/gpt-6.1-sol"
   },

@@ -91,7 +91,7 @@ const BUDDY_CONFIG = z.strictObject({
     profiles: z.array(ACCESS_PROFILE).min(1),
     models: z
       .strictObject({
-        author: MODEL.optional(),
+        gherkin: MODEL.optional(),
         developer: MODEL.optional(),
         reviewer: MODEL.optional(),
       })
@@ -376,7 +376,7 @@ function loadBuddy(file: string): LoadedBuddy {
       const cfg: Config = {
         ...loaded,
         models: {
-          author: chosen?.author ?? loaded.models.author,
+          gherkin: chosen?.gherkin ?? loaded.models.gherkin,
           developer: chosen?.developer ?? loaded.models.developer,
           reviewer: chosen?.reviewer ?? loaded.models.reviewer,
         },

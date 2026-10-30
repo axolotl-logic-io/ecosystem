@@ -42,7 +42,7 @@ test("holds log per loop, changed reason and recurrence, without repeating a ste
       log.held(where, "first\\nline");
       log.settled([{ ...loop, state: "idle" }]);
       log.held(where, "changed");
-      log.held({ ...where, task: "author" }, "changed");
+      log.held({ ...where, task: "fix" }, "changed");
     `;
     const result = spawnSync(
       process.execPath,
@@ -95,7 +95,7 @@ test("holds log per loop, changed reason and recurrence, without repeating a ste
         {
           buddyRun: "run",
           repo: "o/r",
-          task: "author",
+          task: "fix",
           state: "held",
           reason: "changed",
         },

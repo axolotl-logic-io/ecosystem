@@ -127,7 +127,7 @@ const TARGET = z.strictObject({ branch: z.string(), commit: z.string() });
 const BINDING = z.union([
   z.strictObject({
     workItem: WORK_ITEM,
-    task: z.enum(["author", "implement"]),
+    task: z.literal("implement"),
     target: TARGET,
     requirements: z.string(),
   }),

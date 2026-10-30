@@ -1,9 +1,10 @@
 // Starts through the real inbox, fake gh and a local bare origin:
-// start:author requests Author for the issue's current requirements;
+// start:implement requests Implement for the issue's current requirements;
 // start:verify, start:fix and start:land request their task for the current
-// head of the issue's linked PR; a fresh start after an earlier attempt
+// head of the issue's linked PR; a fresh start after an interrupted run
 // requests a retry that continues it. Each start is spent only by an attempt
-// of its own task, and Implement never waits for Author.
+// of its own task. start:gherkin belongs to the Gherkin task app, which the
+// buddy runtime doesn't run.
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
@@ -55,10 +56,7 @@ const REVISION: Revision = {
 type Cause = TaskAnswers["causes"][number];
 
 // An attempt of `task` on ISSUE's current requirements, caused by `signal`.
-function requirementsAttempt(
-  task: "author" | "implement",
-  signal: string,
-): Cause {
+function requirementsAttempt(task: "implement", signal: string): Cause {
   return {
     binding: {
       workItem: WORK_ITEM,
@@ -93,9 +91,9 @@ function setCauses(
   });
 }
 
-test("a member's start:author is accepted for the current requirements", () => {
+test("a member's start:implement is accepted for the current requirements", () => {
   const kit = harness((world) => {
-    world.issues.push(labelledIssue(ISSUE, "start:author", "autumn", EVENT));
+    world.issues.push(labelledIssue(ISSUE, "start:implement", "autumn", EVENT));
     world.tasks.push(taskAnswers(ISSUE));
   });
   const id = `github-label:${REPO}#${ISSUE}:${EVENT}`;
@@ -106,7 +104,7 @@ test("a member's start:author is accepted for the current requirements", () => {
       kind: "start",
       id,
       workItem: WORK_ITEM,
-      task: "author",
+      task: "implement",
       requirements: REQUIREMENTS,
       target: TARGET,
       provenance: AUTUMN,
@@ -121,7 +119,7 @@ test("a member's start:author is accepted for the current requirements", () => {
     workItem: WORK_ITEM,
     source: {
       kind: "github-label",
-      label: "start:author",
+      label: "start:implement",
       event: {
         id: EVENT,
         nodeId: `LE_${EVENT}`,
@@ -131,7 +129,7 @@ test("a member's start:author is accepted for the current requirements", () => {
     producer: AUTUMN,
     request: {
       kind: "start",
-      task: "author",
+      task: "implement",
       requirements: REQUIREMENTS,
       target: TARGET,
     },
@@ -147,68 +145,25 @@ test("a member's start:author is accepted for the current requirements", () => {
       reason: "@autumn (user 10) is an active member of acme",
     },
   );
-  setCauses(kit, [requirementsAttempt("author", id)]);
+  setCauses(kit, [requirementsAttempt("implement", id)]);
   const spent = kit.poll();
   assert.deepEqual(spent.signals, []);
   assert.deepEqual(spent.holds, []);
   assert.equal(kit.posts(), 1);
 });
 
-test("a fresh start:author after an earlier attempt is accepted as a retry request", () => {
-  const kit = harness((world) => {
-    world.issues.push(labelledIssue(ISSUE, "start:author", "autumn", EVENT));
-    const answers = taskAnswers(ISSUE);
-    answers.causes = [
-      requirementsAttempt("author", `github-label:${REPO}#${ISSUE}:1`),
-    ];
-    world.tasks.push(answers);
-  });
-  const inbox = kit.poll();
-  assert.deepEqual(inbox.holds, []);
-  assert.partialDeepStrictEqual(inbox.signals, [
-    { id: `github-label:${REPO}#${ISSUE}:${EVENT}`, task: "author" },
-  ]);
-  assert.equal(kit.posts(), 1);
-});
-
-test("Author and Implement starts are independent: Implement never waits for Author", () => {
-  const kit = harness((world) => {
-    const issue = labelledIssue(ISSUE, "start:author", "autumn", EVENT);
-    issue.labels.push("start:implement");
-    issue.events.push({
-      id: SECOND_EVENT,
-      event: "labeled",
-      label: "start:implement",
-      actor: "autumn",
-      viaApp: false,
-      createdAt: "2026-10-25T10:01:00Z",
+for (const label of ["start:gherkin", "start:author"]) {
+  test(`${label} is no start of the buddy runtime: its inbox records, delivers and holds nothing`, () => {
+    const kit = harness((world) => {
+      world.issues.push(labelledIssue(ISSUE, label, "autumn", EVENT));
+      world.tasks.push(taskAnswers(ISSUE));
     });
-    world.issues.push(issue);
-    world.tasks.push(taskAnswers(ISSUE));
+    const inbox = kit.poll();
+    assert.deepEqual(inbox.signals, []);
+    assert.deepEqual(inbox.holds, []);
+    assert.equal(kit.posts(), 0);
   });
-  const authorId = `github-label:${REPO}#${ISSUE}:${EVENT}`;
-  const implementId = `github-label:${REPO}#${ISSUE}:${SECOND_EVENT}`;
-  const both = kit.poll();
-  assert.deepEqual(both.holds, []);
-  assert.partialDeepStrictEqual(both.signals, [
-    { id: implementId, task: "implement" },
-    { id: authorId, task: "author" },
-  ]);
-  // An unsettled Author attempt neither spends nor holds the Implement
-  // start, and an Implement attempt on the same requirements leaves the
-  // Author start pending.
-  setCauses(kit, [requirementsAttempt("author", authorId)]);
-  assert.deepEqual(
-    kit.poll().signals.map((signal) => signal.id),
-    [implementId],
-  );
-  setCauses(kit, [requirementsAttempt("implement", implementId)]);
-  assert.deepEqual(
-    kit.poll().signals.map((signal) => signal.id),
-    [authorId],
-  );
-  assert.equal(kit.posts(), 2);
-});
+}
 
 test("start:verify requests Verify for the linked PR's head when accepted", () => {
   const kit = harness((world) => {

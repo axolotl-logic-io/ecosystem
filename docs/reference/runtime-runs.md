@@ -94,7 +94,7 @@ A buddy file is strict JSON. The runtime refuses unknown keys. The file and ever
 - `responsibilities` is optional. It narrows the buddy to a subset of its role's tasks.
 - `identity.profiles` must equal exactly the access profiles that its tasks need: `reader`, `writer` or `lander`.
 - `identity.account.login` must be the repository config's `devAccount` for a Developer, or its `landingAccount` for a Gatekeeper.
-- `identity.models` is optional. It may override the repository config's `author`, `developer` or `reviewer` model.
+- `identity.models` is optional. It may override the repository config's `gherkin`, `developer` or `reviewer` model. Task apps don't read it.
 - `pollSeconds` (1 to 3600, default 60), `stopPollSeconds` (1 to 600, default 15) and `leaseSeconds` (30 to 3600, default 300) are optional.
 
 The runtime refuses the obsolete scheduler and assignment controls `assignments`, `grant`, `grantor`, `maxJobs`, `stageCaps`, `orchestratorIntervalSeconds`, `takeNewWork`, `stage` and `stages`. It also refuses a buddy-level `modelSessions` or `resources`. Capacity is the repository's shared `resources.modelSessions` pool, which every repository config must supply; see [project settings](project-settings.md).
@@ -331,7 +331,7 @@ Both schemas are exported as `BUDDY_RUN` and `ACTION_RUN` from `src/runtime/obse
 
 ## Task app runs
 
-A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Implement runs as `implement.mjs`; see [Implement](#implement). Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
+A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Gherkin's app is `gherkin.mjs`. Implement runs as `implement.mjs`; see [Implement](#implement). Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
 
 To run a task app, run:
 
@@ -358,6 +358,18 @@ If another buddy removed the label first and a person applied it again before th
 Each run that wins its claim ends by posting an end comment with a hidden marker that names its claim. It then removes `agent:X:running` only when every claim of `X` on the timeline has an end comment from the account that made it. Afterwards it reads the timeline again, and adds the label back if a new claim appeared while it was removing it.
 
 A crashed run posts no end comment, so its claim holds the label. To release it, a person removes `agent:X:running`. The app counts every claim before that removal as ended. It tells a person's removal from a run's by the actor: a run's account has posted an end comment for `X`, and a person's hasn't. A person who removes `start:X` by hand makes a claim that no run ends, which holds the label the same way.
+
+### Model session
+
+A task app's work can run one read-only model session, as Gherkin does. An app with a session reads the whole repository config, which must therefore be one the buddy runtime accepts. The session runs `pi` as an installed agent, on the task's pinned prompt page and the repository config's model for its role, with the repository config's `runtime`. It holds no GitHub token, can't commit and returns one structured reply, which the app checks against its schema and acts on.
+
+The session works in the run's folder, `runs/SLUG/issue-N/task-runs/TASK_RUN_ID/`:
+
+- `issue.md` is the issue file. It holds the issue and the comments the session may treat as input. A person's comment is shown only when the repository config's `allowedUsers` names them and GitHub still lists them as a collaborator. A task app's marked comment is shown when its author claimed that task on the issue; end comments are left out. Every other comment is withheld. If the issue's own author isn't a trusted person, the run fails before the session starts.
+- `repo/` is a detached checkout of the base branch's head, made from the pipeline's mirror of the repository. The mirror is fetched with the repository config's `devAccount` credential, as the buddy runtime fetches it. The app removes the checkout when the session ends.
+- `sessions/` holds the session's JSONL and its reply schema.
+
+A task app's session doesn't take a slot of the repository's `resources.modelSessions` pool, which only the buddy runtime reserves.
 
 ### Task run
 

@@ -17,7 +17,6 @@ const SHORT_SHA = 7;
 const ENDS_SENTENCE = /[.!?]$/u;
 
 const NAMES: Readonly<Record<TaskId, string>> = {
-  author: "Author",
   implement: "Implement",
   verify: "Verify",
   fix: "Fix",
@@ -61,8 +60,6 @@ function headOf(result: Result): string {
 
 function passedLine(result: Result): string {
   switch (result.binding.task) {
-    case "author":
-      return "I wrote the requirements for this issue as Gherkin and posted them in my earlier comment. To build them, add the `start:implement` label.";
     case "implement":
       return `I implemented this issue and opened a pull request for it.${headOf(result)} To review it, add the \`start:verify\` label.`;
     case "verify":
@@ -83,8 +80,6 @@ function passedLine(result: Result): string {
 
 function refusedLine(result: Result): string {
   switch (result.binding.task) {
-    case "author":
-      return "I need answers from the issue's author before I can write the requirements. My questions are in my earlier comment. Answer them on the issue, then add the `start:author` label again.";
     case "verify": {
       const verify = VERIFY_EVIDENCE.safeParse(result.receipt.evidence);
       if (verify.success) {

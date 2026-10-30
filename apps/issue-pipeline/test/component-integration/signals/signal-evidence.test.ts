@@ -274,6 +274,31 @@ test("identical duplicate records merge and conflicting ones hold", () => {
   assert.ok(body.startsWith(MARK));
 });
 
+test("a start record of the retired Author task is skipped, neither delivered nor held", () => {
+  const kit = startWorld();
+  kit.poll();
+  const body = kit.world().issues[0]?.comments[0]?.body ?? "";
+  const retired = body
+    .replace(`"label":"start:implement"`, `"label":"start:author"`)
+    .replace(`"task":"implement"`, `"task":"author"`);
+  assert.notEqual(retired, body);
+  const copy = harness((world) => {
+    const issue = labelledIssue(ISSUE, "bug", "autumn", EVENT);
+    issue.comments.push({
+      id: 600,
+      author: LANDING,
+      body: retired,
+      editor: null,
+      createdAt: "2026-10-25T12:00:00Z",
+    });
+    world.issues.push(issue);
+    world.tasks.push(taskAnswers(ISSUE));
+  });
+  const inbox = copy.poll();
+  assert.deepEqual(inbox.signals, []);
+  assert.deepEqual(inbox.holds, []);
+});
+
 test("an earlier version's record, or a request its source doesn't make, holds", () => {
   const kit = startWorld();
   kit.poll();

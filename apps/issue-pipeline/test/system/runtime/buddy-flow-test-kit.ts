@@ -96,7 +96,7 @@ interface PlannedSession {
     | "events-unreadable"
     | "comments-unreadable"
     | "rival-push"
-    | "reapply-author-start"
+    | "reapply-implement-start"
     | "apply-verify-start"
     | null;
   // Whether `change` comes before the commit rather than after it.
@@ -125,7 +125,7 @@ const HARDENING: PlannedSession = {
 // the landing account, each responsible for `tasks`. Only a Gatekeeper
 // responsible for Land holds the lander profile and `permissions.land`.
 type BuddyChoice =
-  | { role: "developer"; tasks: ("author" | "implement" | "fix")[] }
+  | { role: "developer"; tasks: ("implement" | "fix")[] }
   | { role: "gatekeeper"; tasks: ("verify" | "land")[] };
 
 // The machine's trusted repository configuration, fixed before any action:
@@ -198,6 +198,7 @@ interface Machine {
     app: string,
     buddy: BuddyChoice,
     sessions: PlannedSession[],
+    signal?: AbortSignal,
   ) => Promise<TaskAppEnd>;
   recoverImplement: (
     action: string,
@@ -492,7 +493,6 @@ function actionsOf(pipeline: string): ActionRun[] {
 // The access profile each task the flow buddies run needs (its TASKS
 // definition's `access`).
 const ACCESS: Readonly<Record<BuddyChoice["tasks"][number], string>> = {
-  author: "writer",
   implement: "writer",
   fix: "writer",
   verify: "reader",
@@ -606,7 +606,7 @@ function machine(
     permissions: { land: setup.landPermission },
     requireCi: setup.requireCi,
     ...laneSlotsOf(setup),
-    models: { author: model, developer: model, reviewer: model },
+    models: { gherkin: model, developer: model, reviewer: model },
     runtime: provisionRuntime(root, provider),
     projectPolicy,
   });
@@ -614,6 +614,25 @@ function machine(
   writeBuddyConfig(buddyFile, repositoryConfig, {
     role: "developer",
     tasks: ["implement"],
+  });
+  // The launcher buddy file a task app runs as: the Developer's account, in
+  // a folder of its own.
+  const appBuddyFile = path.join(root, "launcher", "buddy.json");
+  fs.mkdirSync(path.dirname(appBuddyFile));
+  writePrivate(appBuddyFile, {
+    version: 2,
+    name: "hippy",
+    scope: { repositories: [repositoryConfig] },
+    tasks: ["gherkin"],
+    account: {
+      login: DEVELOPER,
+      credentials: {
+        file: credentials,
+        variable: "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
+      },
+    },
+    pollSeconds: 1,
+    claimWaitsMs: [1, 1, 1],
   });
   const worldFile = path.join(root, "world.json");
   const ghLog = path.join(root, "gh.log");
@@ -749,7 +768,7 @@ function machine(
         "--issue",
         `${REPO}#${ISSUE}`,
       ],
-      { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] },
+      { cwd: root, env, stdio: ["ignore", "ignore", "pipe"], signal },
     );
     let stderr = "";
     child.stderr.setEncoding("utf8");
@@ -893,6 +912,7 @@ function applyStart(box: Pick<Machine, "change">, label: string): void {
 
 export type {
   ActionRun,
+  AppOutcome,
   BuddyChoice,
   BuddyOutcome,
   Machine,

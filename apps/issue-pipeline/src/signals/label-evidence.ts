@@ -13,7 +13,6 @@ import type { EventActor } from "./qualification.ts";
 
 const CONTROL_LABELS = [
   "start:implement",
-  "start:author",
   "start:verify",
   "start:fix",
   "start:land",
@@ -26,7 +25,6 @@ const START_LABELS: ReadonlyMap<ControlLabel, StartTask> = new Map<
   ControlLabel,
   StartTask
 >([
-  ["start:author", "author"],
   ["start:implement", "implement"],
   ["start:verify", "verify"],
   ["start:fix", "fix"],

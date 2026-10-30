@@ -74,7 +74,7 @@ test("installer accepts uncommitted source and records its dirty identity", () =
     const root = path.join(sandbox.root, "operator-root");
     const agent = path.join(sandbox.root, "agent");
     const prompt = "# Modified local prompt\n";
-    fs.writeFileSync(path.join(sandbox.source, "prompts/author.md"), prompt);
+    fs.writeFileSync(path.join(sandbox.source, "prompts/gherkin.md"), prompt);
     const commit = command(sandbox.source, "git", ["rev-parse", "HEAD"]).trim();
     const result = spawnSync(process.execPath, ["install.ts"], {
       cwd: sandbox.source,
@@ -90,7 +90,7 @@ test("installer accepts uncommitted source and records its dirty identity", () =
     });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.equal(
-      fs.readFileSync(path.join(root, "prompts/author.md"), "utf8"),
+      fs.readFileSync(path.join(root, "prompts/gherkin.md"), "utf8"),
       prompt,
     );
     const installed = JSON.parse(

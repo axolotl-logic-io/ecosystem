@@ -7,7 +7,9 @@
 // Readers trust only landing-authored, never-edited comments whose author and
 // editor come from one verified read. A forged, edited, malformed or
 // conflicting record holds, as does a record of an earlier version; an
-// incomplete listing is unknown, never "no records".
+// incomplete listing is unknown, never "no records". Migration (#249): a
+// start record of the retired Author task, whose start label is now
+// `start:gherkin` and which a task app runs, is skipped.
 import { z } from "zod";
 import { currentComments } from "../comment-authority.ts";
 import { COMMENT, type IssueComment } from "../comments.ts";
@@ -32,6 +34,14 @@ const MARK_END_PATTERN = /-->/gu;
 const ESCAPED_MARK_END = "--\\u003e";
 const ISSUE_URL = /\/issues\/(?<number>\d+)$/u;
 const POSITIVE = z.number().int().positive();
+const RETIRED_START = z.looseObject({
+  version: z.literal(2),
+  source: z.looseObject({ label: z.literal("start:author") }),
+  request: z.looseObject({
+    kind: z.literal("start"),
+    task: z.literal("author"),
+  }),
+});
 const LABEL_SOURCE = z.strictObject({
   kind: z.literal("github-label"),
   label: z.enum(CONTROL_LABELS),
@@ -48,10 +58,10 @@ const REVIEW_SOURCE = z.strictObject({
   review: z.strictObject({ id: POSITIVE, submittedAt: z.iso.datetime() }),
 });
 const REQUEST = z.union([
-  // Author or Implement for the requirements and target read at acceptance.
+  // Implement for the requirements and target read at acceptance.
   z.strictObject({
     kind: z.literal("start"),
-    task: z.enum(["author", "implement"]),
+    task: z.literal("implement"),
     requirements: REQUIREMENTS,
     target: TARGET_STATE,
   }),
@@ -191,7 +201,7 @@ function rowOf(
   cfg: Config,
   number: number,
   item: IssueComment,
-): AcceptedRow | string {
+): AcceptedRow | string | null {
   const body = item.body ?? "";
   if (item.lastEditedAt !== null) {
     return `signal record ${item.id} was edited`;
@@ -204,6 +214,9 @@ function rowOf(
     raw = JSON.parse(body.slice(MARK.length, -END.length));
   } catch {
     return `signal record ${item.id} is unreadable`;
+  }
+  if (RETIRED_START.safeParse(raw).success) {
+    return null;
   }
   const parsed = RECORD.safeParse(raw);
   if (!parsed.success) {
@@ -279,7 +292,7 @@ function issueRecords(cfg: Config, number: number): IssueRecords {
     });
     if (typeof row === "string") {
       problem ??= row;
-    } else {
+    } else if (row !== null) {
       rows.push(row);
     }
   });

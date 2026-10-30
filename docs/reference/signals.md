@@ -21,14 +21,15 @@ The synchronous forms run the same code as the asynchronous ones. There is one s
 
 ## Control labels
 
-The component reads six issue labels as control labels:
+The component reads five issue labels as control labels:
 
-- `start:author` requests Author for the issue's current requirements.
 - `start:implement` requests Implement for the issue's current requirements.
 - `start:verify` requests Verify for the current head of the issue's linked PR.
 - `start:fix` requests Fix for the current head of the issue's linked PR.
 - `start:land` requests Land for the current head of the issue's linked PR.
 - `agents:stop` stops all work on the issue.
+
+`start:gherkin` isn't a control label of this component. It starts the Gherkin task app, which claims it on the issue timeline; see [task app runs](runtime-runs.md#task-app-runs). Migration (#249): the component skips an accepted record of the retired `start:author` label, and a task ledger record of the retired `author` task, rather than holding the issue.
 
 A start label is the only thing that requests a task. No task result or PR review requests one. A label on a pull request grants nothing. Safe Refactor has no pipeline action and no label.
 
@@ -98,7 +99,7 @@ The record holds these fields:
 
 | Source | Request |
 |---|---|
-| `start:author` or `start:implement` | `start` with the task, the requirements digest and the target, read at acceptance |
+| `start:implement` | `start` with the task, the requirements digest and the target, read at acceptance |
 | `start:verify`, `start:fix` or `start:land` | `start` with the task, the linked PR, its `head` commit and the target, read at acceptance |
 | A PR review | `review` with GitHub's review id, the PR, the `commit` it was submitted against and its `state` |
 | `agents:stop` | `stop` |
@@ -119,7 +120,7 @@ A poll delivers an accepted start only when all of these hold:
 - No attempt of the start's task names the start's id as its cause. Any such attempt spends the start, whatever its verdict and even if the target moved.
 - The producer still qualifies, by retained user id.
 
-A new Author or Implement start event for requirements that task already attempted is accepted as a retry request. The task decides whether it may run: only after the latest run settled `failed`, as [stops and labels](stops-and-labels.md#spent-starts-and-retries) describes. Implement doesn't wait for Author.
+A new Implement start event for requirements that task already attempted is accepted as a retry request. The task decides whether it may run: only after the latest run settled `failed`, as [stops and labels](stops-and-labels.md#spent-starts-and-retries) describes. Implement doesn't wait for Gherkin.
 
 A `start:verify`, `start:fix` or `start:land` records the head of the issue's linked PR when the start is accepted. The linked PR comes from the issue's branch. With no linked PR, or a PR that isn't open, the start holds and nothing is recorded. The recorded head is evidence of what the person saw, not a condition: a later push doesn't make the start stale, and the task runs on the PR's head as it is when the task runs. These starts have no retry gate in the component, because their tasks bind a revision that the component can't compute.
 

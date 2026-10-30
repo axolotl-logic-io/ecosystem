@@ -8,6 +8,7 @@ export const PROGRAMS = [
   { source: "src/database.ts", file: "database.mjs" },
   { source: "src/shell-supervisor.ts", file: "shell-supervisor.mjs" },
   { source: "src/buddy.ts", file: "buddy.mjs" },
+  { source: "src/gherkin.ts", file: "gherkin.mjs" },
   { source: "scripts/recover-implement.ts", file: "recover-implement.mjs" },
   { source: "src/task-apps/implement.ts", file: "implement.mjs" },
   { source: "src/job/structured-output.ts", file: "structured-output.mjs" },
