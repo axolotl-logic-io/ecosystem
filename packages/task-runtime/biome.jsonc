@@ -2,6 +2,11 @@
   "extends": "//",
   "overrides": [
     {
+      // GitHub REST wire schemas retain upstream snake_case keys.
+      "includes": ["src/issue/issue-github.ts", "src/issue/recovery.ts"],
+      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+    },
+    {
       // Runtime services and their tests implement Node filesystem/process boundaries.
       "includes": ["src/**", "test/**"],
       "linter": {

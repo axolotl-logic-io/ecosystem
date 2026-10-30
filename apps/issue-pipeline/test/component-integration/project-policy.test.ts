@@ -15,7 +15,7 @@ const OBSERVED = z.strictObject({
 });
 const LOADER = `
 import { loadConfig } from './src/config.ts';
-import { configPolicyDigest } from './src/project-policy.ts';
+import { configPolicyDigest } from '@ecosystem/task-runtime/project-policy';
 const cfg = loadConfig(process.argv[1]);
 console.log(JSON.stringify({digest: configPolicyDigest(cfg), resources: cfg.resources}));
 `;

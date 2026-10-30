@@ -7,6 +7,7 @@
 // made.
 import path from "node:path";
 import process from "node:process";
+import type { JobDirs } from "@ecosystem/task-runtime/checkout";
 import type {
   SessionPhase,
   SessionResult,
@@ -26,7 +27,6 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { SessionProfile } from "../config-schema.ts";
 import { agentEnvOf } from "../job/agent-env.ts";
-import type { JobDirs } from "../job/checkout.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
 import { PROMPTS_DIR } from "../job/prompts.ts";

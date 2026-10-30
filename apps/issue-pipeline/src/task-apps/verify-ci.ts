@@ -6,8 +6,9 @@
 // again, up to its limit. A head that moved, a PR that's gone and a wait
 // past the limit end the wait with an error, since Verify can then judge
 // nothing.
+
+import type { PullRequest } from "@ecosystem/task-runtime/issue/recovery";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
-import type { PullRequest } from "../task-app/recovery.ts";
 
 const MS_PER_SECOND = 1000;
 const FAILING: ReadonlySet<string> = new Set(["fail", "cancel"]);

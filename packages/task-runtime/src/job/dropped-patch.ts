@@ -8,9 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
-import type { Config } from "../config.ts";
-import { paths } from "../config.ts";
-import { run } from "../process.ts";
+import { run } from "../command.ts";
 
 interface PreparedPatch {
   lost: string[];
@@ -188,14 +186,14 @@ type RecoveryOrigin = z.infer<typeof ORIGIN>;
 type RecoverySnapshot = z.infer<typeof SNAPSHOT>;
 type RecoveryManifest = z.infer<typeof MANIFEST>;
 
-function recoveryDir(cfg: Config, issue: number): string {
-  return path.join(paths.runDir(cfg, issue), "dropped");
+function recoveryDir(artifacts: string): string {
+  return path.join(artifacts, "dropped");
 }
 
 // Exclusive creation is intentional: a collision or write failure must retain
 // the original checkout, just like a failed patch save.
-function saveRecovery(cfg: Config, manifest: RecoveryManifest): void {
-  const dir = recoveryDir(cfg, manifest.issue);
+function saveRecovery(artifacts: string, manifest: RecoveryManifest): void {
+  const dir = recoveryDir(artifacts);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, `${manifest.job}.json`),

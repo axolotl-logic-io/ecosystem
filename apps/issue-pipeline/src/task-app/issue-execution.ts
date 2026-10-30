@@ -1,13 +1,23 @@
 // GitHub issue lifecycle adapter. CLI identity provisioning stays in task-app.ts.
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import { runningLabel, startLabel, unmark } from "./claims.ts";
+import {
+  runningLabel,
+  startLabel,
+  unmark,
+} from "@ecosystem/task-runtime/issue/claims";
+import type {
+  IssueGitHub,
+  IssueRef,
+} from "@ecosystem/task-runtime/issue/issue-github";
+import { marked } from "@ecosystem/task-runtime/issue/markers";
+import {
+  type Recovery,
+  recovery,
+} from "@ecosystem/task-runtime/issue/recovery";
+import { STOP_LABEL, Stopped } from "@ecosystem/task-runtime/issue/stopped";
 import type { Identity } from "./identity.ts";
-import type { IssueGitHub, IssueRef } from "./issue-github.ts";
-import { marked } from "./markers.ts";
-import { type Recovery, recovery } from "./recovery.ts";
 import { type Step, startRunRecord } from "./run-record.ts";
-import { STOP_LABEL, Stopped } from "./stopped.ts";
 
 const ERROR_LIMIT = 2000;
 // What a task's work gets: the issue, GitHub as this buddy, the readers of

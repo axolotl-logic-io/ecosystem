@@ -18,13 +18,14 @@
 // merged only closes the issue if it's still open, so nothing merges
 // twice, and a merge whose response was lost is settled by reading the
 // PR's merged state.
-import { z } from "zod";
+
 import {
   branchName,
   type Check,
   type PullRequest,
   type Review,
-} from "../task-app/recovery.ts";
+} from "@ecosystem/task-runtime/issue/recovery";
+import { z } from "zod";
 import { main, type TaskRun } from "../task-app/task-app.ts";
 
 const PULL = z.looseObject({
