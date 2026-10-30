@@ -62,6 +62,7 @@ const REVIEW = z.strictObject({
 // A comment on a pull request's lines: a thread's first comment names its
 // review; a reply names the comment it answers.
 const REVIEW_COMMENT = z.strictObject({
+  resolved: z.boolean().optional(),
   id: z.number().int().positive(),
   review: z.number().int().positive().nullable(),
   inReplyTo: z.number().int().positive().nullable(),

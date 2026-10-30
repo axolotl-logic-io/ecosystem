@@ -3,6 +3,7 @@
 // selects from the operator's private credential file, checked against
 // GitHub before any other call. Every write a buddy or its task apps make
 // goes through this account.
+import { hideCredentialVariable } from "../child-env.ts";
 import { readCredential } from "../config.ts";
 import { credentialedRun } from "../github-auth.ts";
 import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
@@ -15,7 +16,7 @@ interface Account {
   env: ReadonlyMap<string, string>;
 }
 interface Identity extends Account {
-  // The repository config file the buddy file names for the repository.
+  // The trusted repository settings file selected from this buddy's scope.
   config: string;
   // The repository's base branch, which an issue's branch is compared with.
   base: string;
@@ -46,6 +47,7 @@ function verify(account: string, env: ReadonlyMap<string, string>): void {
 // The account `buddy` acts as, verified with GitHub.
 function accountOf(buddy: BuddyFile): Account {
   const { account, credentials } = buddy;
+  hideCredentialVariable(credentials.variable);
   const token = readCredential(credentials.file, credentials.variable, account);
   const env = new Map([
     ["GH_PROMPT_DISABLED", "1"],

@@ -1,5 +1,6 @@
 // One distribution manifest for the build, installer and syntax gate.
 export const PROGRAMS = [
+  { source: "src/task-apps/fix.ts", file: "fix.mjs" },
   { source: "scripts/safe-refactor.ts", file: "safe-refactor.mjs" },
   { source: "src/safe-refactor/tool.ts", file: "safe-refactor-tool.mjs" },
   { source: "src/job/git-review.ts", file: "git-review.mjs" },

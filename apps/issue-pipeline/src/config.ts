@@ -50,6 +50,8 @@ interface BuddyAuthorization {
 
 type Config = z.infer<typeof CONFIG_SCHEMA> & {
   slug: string;
+  // Verified task app transport, supplied in memory, never from JSON.
+  gitAccount?: { account: string; env: ReadonlyMap<string, string> };
   policyBinding?: ProjectPolicyBinding;
   checkout?: JobCheckout;
   // Internal standalone seam only; never loaded from repository JSON.
@@ -82,6 +84,7 @@ function loadConfig(configPath: string | undefined): Config {
     );
   }
   const {
+    gitAccount: _gitAccount,
     checkout: _fromFile,
     execution: _execution,
     mutation: _mutation,

@@ -85,6 +85,7 @@ const CONFIG_SCHEMA = z.looseObject({
   projectPolicy: PROJECT_POLICY_SOURCE,
   devAccount: z.string(),
   landingAccount: z.string(),
+  verifyAccount: z.string().min(1).optional(),
   credentialsEnvFile: z.string(),
   coordination: COORDINATION_STORE,
   allowedUsers: z.array(z.string()),

@@ -469,8 +469,39 @@ function node(world: World, id: string | undefined): unknown {
   return null;
 }
 
+const THREAD_PULL = /pullRequest\(number:(?<number>\d+)\)/u;
+
 function graphql(world: World, args: readonly string[]): void {
   const fields = fieldsOf(args);
+  const query = fields.get("query") ?? "";
+  if (query.includes("reviewThreads")) {
+    const { number } = THREAD_PULL.exec(query)?.groups ?? {};
+    const pull = world.pulls?.find((item) => String(item.number) === number);
+    if (pull === undefined) {
+      fail("pull not found");
+    }
+    const nodes = (pull.reviewComments ?? [])
+      .filter((comment) => comment.inReplyTo === null)
+      .map((comment) => ({
+        isResolved: comment.resolved ?? false,
+        comments: { nodes: [{ databaseId: comment.id }] },
+      }));
+    print(
+      JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes,
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        },
+      }),
+    );
+    return;
+  }
   if (fields.has("id")) {
     print(JSON.stringify({ data: { node: node(world, fields.get("id")) } }));
     return;
