@@ -1,6 +1,7 @@
 // Reads the buddy runtime's local observations under the pipeline's runs
-// folder: buddy runs at `buddy-runs/ID/run.json` and action runs at
-// `SLUG/issue-N/actions/ID/run.json`. They are observations, never
+// folder: buddy runs at `buddy-runs/ID/run.json`, action runs at
+// `SLUG/issue-N/actions/ID/run.json` and task app runs at
+// `SLUG/issue-N/task-runs/ID/run.json`. They are observations, never
 // authority. Runs link only through their explicit `previous`, `buddyRun`,
 // loop `action` and session `parent` fields; nothing here infers a link
 // from names, times, PIDs or a shared issue. A file that is missing,
@@ -27,6 +28,8 @@ import {
   actionRunSchema,
   type BuddyRunObservation,
   buddyRunSchema,
+  type TaskRunObservation,
+  taskRunSchema,
 } from "./runtime-run-schema.ts";
 import { parse } from "./source-records.ts";
 
@@ -48,7 +51,7 @@ const headerSchema = z.looseObject({
   version: z.unknown(),
 });
 
-type ObservationKind = "buddy-run" | "action-run";
+type ObservationKind = "buddy-run" | "action-run" | "task-run";
 interface Condition<State extends string> {
   state: State;
   reason: string;
@@ -57,6 +60,9 @@ type BuddyRunCondition = Condition<
   "process-observed" | "stale" | "unknown" | "stopped" | "ended"
 >;
 type ActionRunCondition = Condition<"unconfirmed" | "stopped" | "ended">;
+type TaskRunCondition = Condition<
+  "process-observed" | "stale" | "unknown" | "ended"
+>;
 interface BuddyRunEntry {
   path: string;
   run: BuddyRunObservation;
@@ -89,6 +95,11 @@ interface ActionRunEntry {
   sessions: SessionLink[];
   warnings: string[];
 }
+interface TaskRunEntry {
+  path: string;
+  run: TaskRunObservation;
+  condition: TaskRunCondition;
+}
 interface ObservationProblem {
   kind: ObservationKind;
   path: string;
@@ -99,12 +110,14 @@ interface RuntimeRunCoverage {
   repositories: string[];
   buddyRunsOmitted: number;
   actionRunsOmitted: number;
+  taskRunsOmitted: number;
   unlistable: string[];
   note: string;
 }
 interface RuntimeRuns {
   buddyRuns: BuddyRunEntry[];
   actionRuns: ActionRunEntry[];
+  taskRuns: TaskRunEntry[];
   problems: ObservationProblem[];
   coverage: RuntimeRunCoverage;
 }
@@ -132,12 +145,14 @@ const defaultSources: RuntimeRunSources = {
 const emptyRuntimeRuns: RuntimeRuns = {
   buddyRuns: [],
   actionRuns: [],
+  taskRuns: [],
   problems: [],
   coverage: {
     root: "",
     repositories: [],
     buddyRunsOmitted: 0,
     actionRunsOmitted: 0,
+    taskRunsOmitted: 0,
     unlistable: [],
     note: "Not collected yet.",
   },
@@ -470,9 +485,11 @@ async function readBuddyRuns(root: string): Promise<{
   return { reads, omitted: listing.omitted, listed: true };
 }
 
-async function actionLocations(
+/** The run folders under each of `repo`'s issue folders' `folder`. */
+async function runLocations(
   root: string,
   repo: string,
+  runs: "actions" | "task-runs",
 ): Promise<{ locations: ActionLocation[]; omitted: number }> {
   const repoRoot = join(root, repo.replace("/", "__"));
   const issues = (await dirs(repoRoot)).flatMap((name) => {
@@ -483,7 +500,7 @@ async function actionLocations(
     return [{ name, issue: Number(issue) }];
   });
   const listings = await collect(issues, async ({ name, issue }) => {
-    const folder = join(repoRoot, name, "actions");
+    const folder = join(repoRoot, name, runs);
     const listing = await newestDirs(folder, actionRunReadLimit);
     return {
       omitted: listing?.omitted ?? 0,
@@ -529,7 +546,7 @@ async function readActionRuns(
   repositories: string[],
 ): Promise<{ reads: Read<ActionRunObservation>[]; omitted: number }> {
   const found = await collect(repositories, (repo) =>
-    actionLocations(root, repo),
+    runLocations(root, repo, "actions"),
   );
   const locations = found
     .flatMap((item) => item.locations)
@@ -543,6 +560,102 @@ async function readActionRuns(
     omitted:
       found.reduce((sum, item) => sum + item.omitted, 0) +
       Math.max(0, locations.length - actionRunReadLimit),
+  };
+}
+
+async function readTaskRun(
+  location: ActionLocation,
+): Promise<Read<TaskRunObservation>> {
+  const read = await readObservation(
+    join(location.folder, location.name, observationFile),
+    "task-run",
+    taskRunSchema,
+  );
+  if (!read.ok) {
+    return read;
+  }
+  const { run } = read;
+  if (
+    run.id !== location.name ||
+    run.workItem.repo !== location.repo ||
+    run.workItem.number !== location.issue
+  ) {
+    return {
+      ok: false,
+      path: read.path,
+      reason: `records ${run.workItem.repo}#${run.workItem.number} task run ${run.id} under ${location.repo}#${location.issue}/${location.name}`,
+    };
+  }
+  return read;
+}
+
+async function readTaskRuns(
+  root: string,
+  repositories: string[],
+): Promise<{ reads: Read<TaskRunObservation>[]; omitted: number }> {
+  const found = await collect(repositories, (repo) =>
+    runLocations(root, repo, "task-runs"),
+  );
+  const locations = found
+    .flatMap((item) => item.locations)
+    .sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
+  const reads = await collect(
+    locations.slice(0, actionRunReadLimit),
+    readTaskRun,
+  );
+  return {
+    reads,
+    omitted:
+      found.reduce((sum, item) => sum + item.omitted, 0) +
+      Math.max(0, locations.length - actionRunReadLimit),
+  };
+}
+
+/**
+ * A task run recorded running counts as process-observed only when it was
+ * recorded on this host and its pid runs, started with the run. A run whose
+ * process is gone crashed: it never ends its record.
+ */
+async function taskRunCondition(
+  run: TaskRunObservation,
+  sources: RuntimeRunSources,
+): Promise<TaskRunCondition> {
+  if (run.state === "ended") {
+    return {
+      state: "ended",
+      reason: `recorded ended; outcome ${run.outcome ?? "not recorded"}`,
+    };
+  }
+  const { pid, host } = run.process;
+  if (host !== sources.host) {
+    return {
+      state: "unknown",
+      reason: `recorded on host ${host}; this host can't inspect its process`,
+    };
+  }
+  const inspection = await sources.inspect(pid);
+  if (inspection.state === "absent") {
+    return {
+      state: "stale",
+      reason: `recorded running, but process ${pid} is not running`,
+    };
+  }
+  if (inspection.state === "unknown") {
+    return { state: "unknown", reason: `process ${pid}: ${inspection.reason}` };
+  }
+  if (
+    inspection.startedAt !== null &&
+    Math.abs(inspection.startedAt - Date.parse(run.startedAt)) >
+      processStartSlack
+  ) {
+    return {
+      state: "stale",
+      reason: `recorded running, but process ${pid} didn't start with this run; the pid may be reused`,
+    };
+  }
+  return {
+    state: "process-observed",
+    reason: `process ${pid} is running. A matching process isn't proof of the run's identity.`,
   };
 }
 
@@ -572,7 +685,7 @@ function scopedRepositories(
     .sort((a, b) => a.localeCompare(b));
 }
 
-/** Every bounded buddy-run and action-run observation under `config.runs`. */
+/** Every bounded buddy-run, action-run and task-run observation under `config.runs`. */
 async function loadRuntimeRuns(
   config: Config,
   sources: RuntimeRunSources = defaultSources,
@@ -582,6 +695,18 @@ async function loadRuntimeRuns(
   const repositories = scopedRepositories(config, buddyObservations);
   const actions = await readActionRuns(config.runs, repositories);
   const actionObservations = observed(actions.reads);
+  const tasks = await readTaskRuns(config.runs, repositories);
+  const taskRuns = await collect(
+    observed(tasks.reads),
+    async ({ path, run }): Promise<TaskRunEntry> => ({
+      path,
+      run,
+      condition: await taskRunCondition(run, sources),
+    }),
+  );
+  taskRuns.sort(
+    (a, b) => Date.parse(b.run.startedAt) - Date.parse(a.run.startedAt),
+  );
   const actionIds = new Set(actionObservations.map(({ run }) => run.id));
   const buddyIds = new Set(buddyObservations.map(({ run }) => run.id));
   const buddyRuns = await collect(
@@ -624,15 +749,18 @@ async function loadRuntimeRuns(
   return {
     buddyRuns,
     actionRuns,
+    taskRuns,
     problems: [
       ...problems("buddy-run", buddy.reads),
       ...problems("action-run", actions.reads),
+      ...problems("task-run", tasks.reads),
     ],
     coverage: {
       root: config.runs,
       repositories,
       buddyRunsOmitted: buddy.omitted,
       actionRunsOmitted: actions.omitted,
+      taskRunsOmitted: tasks.omitted,
       unlistable,
       note: coverageNote,
     },
@@ -650,5 +778,7 @@ export type {
   RuntimeRunSources,
   RuntimeRuns,
   SessionLink,
+  TaskRunCondition,
+  TaskRunEntry,
 };
 export { emptyRuntimeRuns, loadRuntimeRuns };

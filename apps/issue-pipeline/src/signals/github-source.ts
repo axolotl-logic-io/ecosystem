@@ -1,6 +1,6 @@
-// Strict GitHub GET observations for signal evidence. Each call is one
-// authenticated `gh api --include` request per page, read by the landing
-// account, with its HTTP status kept and no hidden retries. Listings walk
+// Strict GitHub GET observations. Each call is one authenticated `gh api
+// --include` request per page, read by a repository config's landing
+// account or by a given token's environment, with its HTTP status kept and no hidden retries. Listings walk
 // explicit pages and check each page's Link header, so a listing is complete
 // only when every page was read. A failed, partial or malformed read is an
 // unknown observation, never an empty one.
@@ -14,6 +14,10 @@ type Observation<T> =
   // HTTP 404: callers decide what absence means for each endpoint.
   | { status: "absent" }
   | { status: "unknown"; reason: string };
+
+// Who reads: a repository config, through its landing account, or the
+// verified `gh` environment of one account.
+type Reader = Config | ReadonlyMap<string, string>;
 
 interface Response {
   status: number;
@@ -80,10 +84,21 @@ function parseResponse(stdout: string): Response | null {
   return { status: Number(code), link, body };
 }
 
-function request(cfg: Config, path: string): Observation<Response> {
+function isEnv(reader: Reader): reader is ReadonlyMap<string, string> {
+  return reader instanceof Map;
+}
+
+function readerEnv(reader: Reader): ReadonlyMap<string, string> {
+  if (isEnv(reader)) {
+    return reader;
+  }
+  return authenticatedEnv(reader, "landing");
+}
+
+function request(reader: Reader, path: string): Observation<Response> {
   let env: ReadonlyMap<string, string>;
   try {
-    env = authenticatedEnv(cfg, "landing");
+    env = readerEnv(reader);
   } catch (error) {
     return failure(`reader credential unusable: ${errorText(error)}`);
   }
@@ -107,11 +122,11 @@ function request(cfg: Config, path: string): Observation<Response> {
 
 // One GET of `path`: 200 parsed by `schema`, 404 absent, anything else unknown.
 function observeOne<S extends z.ZodType>(
-  cfg: Config,
+  reader: Reader,
   path: string,
   schema: S,
 ): Observation<z.output<S>> {
-  const sent = request(cfg, path);
+  const sent = request(reader, path);
   if (sent.status !== "ok") {
     return sent;
   }
@@ -259,7 +274,7 @@ function continues(
 // contradictory Link header, an oversized page or a row id seen twice makes
 // the whole listing unknown.
 function observeAll<S extends z.ZodType>(
-  cfg: Config,
+  reader: Reader,
   path: string,
   row: S,
 ): Observation<z.output<S>[]> {
@@ -271,7 +286,7 @@ function observeAll<S extends z.ZodType>(
   const ids = new Set<number>();
   for (let page = 1; ; page += 1) {
     const current = `${path}${separator}per_page=${PAGE_SIZE}&page=${page}`;
-    const sent = request(cfg, current);
+    const sent = request(reader, current);
     if (sent.status !== "ok") {
       return sent;
     }
@@ -308,5 +323,5 @@ function observeAll<S extends z.ZodType>(
   }
 }
 
-export type { Observation };
+export type { Observation, Reader };
 export { errorText, observeAll, observeOne, unreadable };

@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import process from "node:process";
 import { type TestContext, test } from "node:test";
@@ -15,6 +15,7 @@ import {
   actionRunSchema,
   type BuddyRunObservation,
   buddyRunSchema,
+  taskRunSchema,
 } from "../runtime-run-schema.ts";
 import {
   type ActionRunEntry,
@@ -32,6 +33,8 @@ import {
   nodeProcess,
   repo,
   slug,
+  taskRun,
+  taskRunPath,
   writeObservation,
   writeText,
 } from "./runtime-run-fixtures.ts";
@@ -55,6 +58,7 @@ const anything = /(?:)/u;
 const schemaMismatch = /schema at state:/u;
 const wrongFolder = /under folder/u;
 const wrongLocation = /under fixture-org\/fixture-repo#7\//u;
+const misplacedTaskRun = /task run .* under fixture-org\/fixture-repo#8\//u;
 
 async function runsRoot(context: TestContext): Promise<Config> {
   const root = await mkdtemp(join(tmpdir(), "workflow-dash-runtime-runs-"));
@@ -84,13 +88,14 @@ function problem(runtime: RuntimeRuns, path: string): string {
 }
 
 test(
-  "the reader schemas equal the pipeline's exported BUDDY_RUN and ACTION_RUN",
+  "the reader schemas equal the pipeline's exported BUDDY_RUN, ACTION_RUN and TASK_RUN",
   options,
   async (context) => {
     const script = [
       'import { z } from "zod";',
       'const m = await import("./src/runtime/observations.ts");',
-      "process.stdout.write(JSON.stringify({ buddyRun: z.toJSONSchema(m.BUDDY_RUN), actionRun: z.toJSONSchema(m.ACTION_RUN) }));",
+      'const t = await import("./src/task-app/run-record.ts");',
+      "process.stdout.write(JSON.stringify({ buddyRun: z.toJSONSchema(m.BUDDY_RUN), actionRun: z.toJSONSchema(m.ACTION_RUN), taskRun: z.toJSONSchema(t.TASK_RUN) }));",
     ].join("\n");
     const { stdout } = await run(
       process.execPath,
@@ -101,6 +106,7 @@ test(
     assert.deepEqual(published, {
       buddyRun: z.toJSONSchema(buddyRunSchema),
       actionRun: z.toJSONSchema(actionRunSchema),
+      taskRun: z.toJSONSchema(taskRunSchema),
     });
   },
 );
@@ -385,5 +391,63 @@ test(
     ]);
     assert.equal(runtime.coverage.root, config.runs);
     assert.equal(slug, repo.replace("/", "__"));
+  },
+);
+
+test(
+  "task runs show their recorded end, or whether their process still runs",
+  options,
+  async (context) => {
+    const config = configure({
+      runs: (await runsRoot(context)).runs,
+      repos: [repo],
+    });
+    const live = await nodeProcess(join(dirname(config.runs), "bin"), "x.mjs");
+    context.after(() => live.kill());
+    const gone = await nodeProcess(join(dirname(config.runs), "bin"), "y.mjs");
+    gone.kill();
+    await once(gone, "exit");
+    const [ended, running, crashed, misplaced] = [
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+    ];
+    await writeObservation(
+      taskRunPath(config.runs, issue, ended),
+      taskRun(ended, issue, {
+        state: "ended",
+        step: "unmark",
+        outcome: "failed",
+        reason: "the model went away",
+        endedAt: new Date().toISOString(),
+      }),
+    );
+    await writeObservation(
+      taskRunPath(config.runs, issue, running),
+      taskRun(running, issue, {
+        process: { pid: live.pid, host: hostname() },
+      }),
+    );
+    await writeObservation(
+      taskRunPath(config.runs, issue, crashed),
+      taskRun(crashed, issue, { process: { pid: gone.pid, host: hostname() } }),
+    );
+    await writeObservation(
+      taskRunPath(config.runs, issue + 1, misplaced),
+      taskRun(misplaced, issue),
+    );
+    const runtime = await loadRuntimeRuns(config);
+    const conditions = new Map(
+      runtime.taskRuns.map((entry) => [entry.run.id, entry.condition.state]),
+    );
+    assert.equal(conditions.get(ended), "ended");
+    assert.equal(conditions.get(running), "process-observed");
+    assert.equal(conditions.get(crashed), "stale");
+    assert.equal(conditions.has(misplaced), false);
+    assert.match(
+      problem(runtime, taskRunPath(config.runs, issue + 1, misplaced)),
+      misplacedTaskRun,
+    );
   },
 );
