@@ -2,11 +2,19 @@
 
 This draft maps inspected differences to the accepted [shared glossary](../GLOSSARY.md). It is an implementation-planning artifact, not a migration tool or claim of completed alignment. The initial inventory changed no implementation. Autumn subsequently authorized dash source-language alignment; its progress is recorded below. No installation, activation, saved authority or pipeline execution policy changed as part of this work.
 
-Tasks replace Stage, and a role is a set of tasks. Buddies, accounts and identities name who acts, and merge means only a Git merge. [Tasks, buddies and landing](#tasks-buddies-and-landing) maps that model onto the installed release, `42a8771`. Older sections keep their original evidence and say where the current model supersedes them.
+Tasks replace Stage. Buddies list their responsibilities as explicit tasks. Buddies, accounts and identities name who acts, and merge means only a Git merge. [Tasks, buddies and landing](#tasks-buddies-and-landing) maps that model onto the installed release, `42a8771`. Older sections keep their original evidence and say where the current model supersedes them.
 
 Five delivery tasks and a review loop on the pull request (PR) replace the separate-duties tasks. [PR review tasks](#pr-review-tasks) maps them onto the source.
 
 Label-started task apps then replace the task actors, their signals and their records. Each task becomes a command-line program that only its start label starts, and GitHub becomes the only record of earlier work. [Label-started task apps](#label-started-task-apps) records that migration, and it supersedes the older sections wherever they disagree.
+
+## Role removal (#264)
+
+Role is no longer a domain entity. Buddies select scope, explicit tasks and one account; repository settings select model sessions and runtime policy. Developer and reviewer remain installed model/agent interface names, not mandatory buddy groupings. Manual task-app invocation enforces the same task responsibility list as launcher dispatch before claiming or writing. Verify refuses a PR authored by its executing account.
+
+The access-settings merge and default network mappings are removed: session isolation directly strips every declared credential variable, and network declarations never enforced access. Existing `jobRoles` operator keys remain readable solely as compatibility access settings, with unchanged credential filtering. See [session compatibility](reference/sessions.md#compatibility).
+
+The sections below retain version-specific evidence and migration history. Their Role, Developer/Gatekeeper grouping and old source paths describe earlier designs, not current requirements.
 
 ## Scope and evidence
 

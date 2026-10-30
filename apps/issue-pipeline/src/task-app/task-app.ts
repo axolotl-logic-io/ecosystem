@@ -215,7 +215,7 @@ async function runTaskApp(
     throw new OpsError(USAGE);
   }
   const issue = parseIssue(values.issue);
-  const identity = loadIdentity(values.config, issue.repo);
+  const identity = loadIdentity(values.config, issue.repo, app.id);
   const github = new IssueGitHub(issue, identity);
   if (github.stopped()) {
     return 0;

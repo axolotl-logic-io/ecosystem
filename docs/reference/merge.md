@@ -1,6 +1,6 @@
 # Land
 
-Land merges the issue's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. It is a Gatekeeper task, and the `land.mjs` task app runs it on the [task app framework](../domain-runtime-contract.md#task-app-contract). Only `start:land` starts it. An approved head doesn't make Land ready on its own.
+Land merges the issue's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. The `land.mjs` task app runs it on the [task app framework](../domain-runtime-contract.md#task-app-contract). Only `start:land` starts it. An approved head doesn't make Land ready on its own.
 
 A launcher buddy configured with the `land` task runs this app when `start:land` is present. An operator can also run it by hand as described in [Run Land](#run-land).
 

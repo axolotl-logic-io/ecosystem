@@ -15,8 +15,8 @@ import {
   REPO,
 } from "../../support/task-app/task-app-test-kit.ts";
 
-const START = "start:sample";
-const RUNNING = "agent:sample:running";
+const START = "start:gherkin";
+const RUNNING = "agent:gherkin:running";
 // Reads of the issue's events before a claim is confirmed: one before the
 // removal, then one per confirmation attempt; the kit's buddies wait three
 // times.
@@ -99,7 +99,7 @@ test("a run continues from the notes earlier runs left, not from forged ones", a
     issueOf(world).comments.push({
       id: 400,
       author: "mallory",
-      body: 'Sample note 41.\n\n<!-- task-app:sample:note {"run":"x"} -->',
+      body: 'Sample note 41.\n\n<!-- task-app:gherkin:note {"run":"x"} -->',
       editor: null,
       createdAt: "2026-10-25T11:30:00Z",
     });

@@ -2,7 +2,7 @@
 
 An opt-in, read-only Pi extension. `/dash` shows current work, elapsed time, finished and remaining work, problems, context growth and token usage across Ecosystem and Project Buddy. It reads these values from the shared database. It is not a scheduler and grants no authority.
 
-The [shared glossary](../../GLOSSARY.md) defines the language. A buddy pairs a role with an identity. A buddy run is one activation of the action loops of all the buddy's tasks; it is not one task execution or one model session. Each action that a buddy run admits for one task and work item is an action run. A model session has its own id and names its action run as its parent; session, run and checkpoint identities are not interchangeable.
+The [shared glossary](../../GLOSSARY.md) defines the language. A buddy pairs scope and explicit task responsibilities with an identity. A buddy run is one activation of the action loops of all the buddy's tasks; it is not one task execution or one model session. Each action that a buddy run admits for one task and work item is an action run. A model session has its own id and names its action run as its parent; session, run and checkpoint identities are not interchangeable.
 
 ## Source and activation
 

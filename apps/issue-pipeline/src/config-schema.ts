@@ -22,22 +22,23 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const OPTIONAL_TEXT = z.string().nullish();
 // Access-profile metadata and credential-variable names to strip from model
-// children (src/job/roles.ts). Declared hosts do not enforce a sandbox.
-const JOB_ROLE = z
+// children (src/job/agent-env.ts). Declared hosts do not enforce a sandbox.
+const ACCESS_SETTINGS = z
   .object({
     tokenEnv: z.string().regex(ENV_NAME, "must be an env var name").optional(),
     network: z.array(z.string().min(1)).optional(),
   })
   .optional();
-const JOB_ROLES = z.object({
-  reader: JOB_ROLE,
-  writer: JOB_ROLE,
-  lander: JOB_ROLE,
+// Legacy operator key shape; keep every tokenEnv restriction readable.
+const LEGACY_ACCESS = z.object({
+  reader: ACCESS_SETTINGS,
+  writer: ACCESS_SETTINGS,
+  lander: ACCESS_SETTINGS,
 });
-// The model a role gets when the config names none for it.
+// The model a session gets when the config names none for it.
 const DEFAULT_MODEL = "openai/gpt-6.1-sol";
 const MODEL = z.string().min(1).default(DEFAULT_MODEL);
-// The model of each of the three model roles (`three-configurable-models`).
+// Session model selectors; developer and reviewer are installed interface names.
 const MODELS = z
   .object({ gherkin: MODEL, developer: MODEL, reviewer: MODEL })
   .default({
@@ -46,7 +47,7 @@ const MODELS = z
     reviewer: DEFAULT_MODEL,
   });
 
-type ModelRole = keyof z.infer<typeof MODELS>;
+type SessionProfile = keyof z.infer<typeof MODELS>;
 
 // What the ops modules read from a config. Every other key passes through as
 // it is.
@@ -69,7 +70,7 @@ const CONFIG_SCHEMA = z.looseObject({
   laneSlots: z.never().optional(),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
-  jobRoles: JOB_ROLES.nullish(),
+  jobRoles: LEGACY_ACCESS.nullish(),
   models: MODELS,
   runtime: RUNTIME_SCHEMA,
   practices: z.array(z.string()),
@@ -175,7 +176,7 @@ function checkRequired(
   checkPractices(configPath, practices);
 }
 
-type JobRolesConfig = z.infer<typeof JOB_ROLES>;
+type LegacyAccessConfig = z.infer<typeof LEGACY_ACCESS>;
 
-export type { JobRolesConfig, ModelRole };
+export type { LegacyAccessConfig, SessionProfile };
 export { CONFIG_SCHEMA, checkRequired, DEFAULTS };

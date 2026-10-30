@@ -10,13 +10,13 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import type { ModelRole } from "../config-schema.ts";
+import type { SessionProfile } from "../config-schema.ts";
+import { agentEnvOf } from "../job/agent-env.ts";
 import { openBaseCheckout } from "../job/checkout.ts";
 import { type LaunchHooks, runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
 import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
-import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
-import { agentEnvOf, rolesOf } from "../job/roles.ts";
+import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
 import { OpsError } from "../ops-error.ts";
 import { writeIssueFile } from "./issue-file.ts";
 import { taskRunFile } from "./run-record.ts";
@@ -25,12 +25,12 @@ import type { TaskRun } from "./task-app.ts";
 const MINUTE_MS = 60_000;
 
 // One session: the installed agent it runs as, its prompt page, the model
-// role whose configured model and timeout it gets, the task's own facts
+// profile whose configured model and timeout it gets, the task's own facts
 // after the issue file and the checkout, and the reply's schema.
 interface SessionSpec<S extends z.ZodType> {
   agent: string;
   page: string;
-  role: ModelRole;
+  profile: SessionProfile;
   facts: readonly string[];
   schema: S;
 }
@@ -40,7 +40,7 @@ function bullets(items: readonly string[]): string[] {
 }
 
 function hooksOf(cfg: Config, dir: string, repo: string): LaunchHooks {
-  const env = agentEnvOf(rolesOf(cfg.jobRoles), process.env);
+  const env = agentEnvOf(cfg.jobRoles, process.env);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(dir, "sessions", `${key}.jsonl`),
@@ -96,13 +96,13 @@ async function readOnlySession<S extends z.ZodType>(
     run.checkStop();
     const raw = await runSession(
       {
-        key: `${spec.role}-1`,
-        role: spec.role,
+        key: `${spec.profile}-1`,
+        profile: spec.profile,
         agent: spec.agent,
-        model: cfg.models[spec.role],
+        model: cfg.models[spec.profile],
         task,
         outputSchema: z.toJSONSchema(spec.schema),
-        timeoutMs: SESSION_MINUTES[spec.role] * MINUTE_MS,
+        timeoutMs: SESSION_MINUTES[spec.profile] * MINUTE_MS,
         commits: false,
         phase: null,
         prompt,

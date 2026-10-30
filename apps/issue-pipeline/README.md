@@ -44,7 +44,7 @@ node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 | Fix | `fix.mjs` | Merge the base and answer unresolved blocking review comments |
 | Land | `land.mjs` | Read prerequisites from GitHub, merge the pinned head and close the issue |
 
-Each app uses `node TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N`. Only its start label starts it. Running labels show activity and never gate starts. Reviews, earlier results and assignments do not start tasks. Retries continue from GitHub comments, pushed commits, PRs and reviews. There is no saved state, task ledger, signal inbox, reservation pool or coordination journal.
+Each app uses `node TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N`. Manual invocation refuses unless the buddy's `tasks` includes that app, before claiming or writing. Only its start label starts it. Running labels show activity and never gate starts. Reviews, earlier results and assignments do not start tasks. Retries continue from GitHub comments, pushed commits, PRs and reviews. There is no saved state, task ledger, signal inbox, reservation pool or coordination journal.
 
 `agents:stop` holds claims while present and ends runs at framework boundaries and before writes. Removing it permits pending starts; nothing is latched. See [stops and labels](../../docs/reference/stops-and-labels.md).
 
@@ -78,7 +78,9 @@ Repository configs retain compatibility credentials for shared readers and stand
 
 Operator config lives in `$ISSUE_PIPELINE_ROOT/repos/`, starting from `repos/example.json`. Every config pins the repository's committed `.issue-pipeline.json` with `projectPolicy`; there is no flat-config mode. `src/config-schema.ts` defines operator shape/defaults. [Project settings](../../docs/reference/project-settings.md) describes the strict tracked `.issue-pipeline.json`, operator-owned identity/safety controls, the trusted full-commit pin and the policy binding. Candidate settings edits never activate policy for the same candidate. Task apps load the pinned project settings. Config keys the pipeline no longer reads are ignored without a warning, and keys renamed in #166 are read only under their new names.
 
-The default and example role models are `openai/gpt-6.1-sol`. Set all three repository roles explicitly rather than relying on old-role aliases:
+Existing operator keys and installed interfaces remain compatible; see [session compatibility](../../docs/reference/sessions.md#compatibility). No private config or live record migration is required.
+
+The default and example session models are `openai/gpt-6.1-sol`. Set all three session models explicitly rather than relying on retired model aliases:
 
 ```json
 {
@@ -92,7 +94,7 @@ The default and example role models are `openai/gpt-6.1-sol`. Set all three repo
 
 All model sessions now require the explicit, separately provisioned [native runtime policy](runtime/README.md): trusted **Pi 1.2.0 + pi-cliproxyapi 0.4.3**, a dedicated model-child HOME, explicit provider extension/profile/cache, declared model credential **names** and reviewed native context-window expectations. The supported starting profile is builtin OpenAI through a distinct proxy endpoint. Set `runtime.modelContextWindows` explicitly; there is no inferred expectation. See `repos/example.json` and the nonsecret `runtime/pi-cliproxyapi-config.example.json`. Model strings pass unchanged to `--model`; unsupported registrations refuse rather than falling back.
 
-Native automatic compaction targets **175000** tokens with **30000** recent-history tokens. For the expected 272000-token window, reserve is **97000**. This is same-session native context management, not a token/spending cap. Private generated agent settings, disabled project/personal resource discovery and correlated pre-prompt native verification enforce policy for every role. Only explicit provider/role/pipeline resources load; inherited extensions are no longer used. This is configuration isolation, **not** an OS/filesystem/keyring/network sandbox. Credentialed operations keep their own HOME. Global/personal provider setup is neither copied nor changed. Tests use fake models and local origins only.
+Native automatic compaction targets **175000** tokens with **30000** recent-history tokens. For the expected 272000-token window, reserve is **97000**. This is same-session native context management, not a token/spending cap. Private generated agent settings, disabled project/personal resource discovery and correlated pre-prompt native verification enforce policy for every session. Only explicit provider/session/pipeline resources load; inherited extensions are no longer used. This is configuration isolation, **not** an OS/filesystem/keyring/network sandbox. Credentialed operations keep their own HOME. Global/personal provider setup is neither copied nor changed. Tests use fake models and local origins only.
 
 ## Programs and observations
 

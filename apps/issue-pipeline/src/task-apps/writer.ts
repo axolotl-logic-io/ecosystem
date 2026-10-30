@@ -10,6 +10,7 @@ import { setUpCheckout } from "../checkouts.ts";
 import { type Config, loadConfig, paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { git } from "../github.ts";
+import { agentEnvOf } from "../job/agent-env.ts";
 import { type JobDirs, openJobCheckout } from "../job/checkout.ts";
 import {
   type LiveHandle,
@@ -20,8 +21,7 @@ import type { PushReply } from "../job/control-protocol.ts";
 import { type LaunchHooks, runSession } from "../job/launch.ts";
 import { COMMIT_SCOPE_ENV } from "../job/pipeline-commit.ts";
 import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
-import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
-import { agentEnvOf, rolesOf } from "../job/roles.ts";
+import { resultOf, SESSION_MINUTES } from "../job/session-result.ts";
 import type { LaunchStart } from "../job/status.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
@@ -179,7 +179,7 @@ async function writeSession<T>(
     },
     execution,
   );
-  const env = agentEnvOf(rolesOf(cfg.jobRoles), process.env);
+  const env = agentEnvOf(cfg.jobRoles, process.env);
   const scope = {
     root: dirs.root,
     repo: { dir: "repo", access: "write" },
@@ -225,7 +225,7 @@ async function writeSession<T>(
     const raw = await runSession(
       {
         key,
-        role: "developer",
+        profile: "developer",
         agent: "issue-pipeline-developer",
         model: cfg.models.developer,
         task,

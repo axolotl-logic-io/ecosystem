@@ -59,8 +59,11 @@ function accountOf(buddy: BuddyFile): Account {
 }
 
 // The identity `buddyFile` gives for work in repository `repo`.
-function loadIdentity(buddyFile: string, repo: string): Identity {
+function loadIdentity(buddyFile: string, repo: string, task: string): Identity {
   const buddy = readBuddyFile(buddyFile);
+  if (!buddy.tasks.some((responsibility) => responsibility === task)) {
+    throw new OpsError(`task ${task} is not in the buddy's tasks`);
+  }
   const repository = buddy.repositories.find((item) => same(item.repo, repo));
   if (repository === undefined) {
     throw new OpsError(`${repo} is not in the buddy's scope`);

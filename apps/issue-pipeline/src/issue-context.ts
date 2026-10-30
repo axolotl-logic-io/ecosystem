@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
-import { listComments, pipelineRole } from "./comments.ts";
+import { listComments, pipelineCommentAgent } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { ghJson, isAllowedUser } from "./github.ts";
@@ -40,13 +40,13 @@ type Shown =
 
 function shownAs(cfg: Config, item: IssueComment): Shown {
   const login = item.user?.login;
-  const role = pipelineRole(cfg, item);
+  const agent = pipelineCommentAgent(cfg, item);
   const at = item.created_at;
-  if (role === "state") {
+  if (agent === "state") {
     return { kind: "hidden" };
   }
-  if (role !== null) {
-    const heading = `Comment by the pipeline's ${role} agent at ${at}:`;
+  if (agent !== null) {
+    const heading = `Comment by the pipeline's ${agent} agent at ${at}:`;
     return { heading, kind: "shown" };
   }
   if (isAllowedUser(cfg, login)) {
@@ -128,7 +128,8 @@ function writeIssueContext(cfg: Config, number: number): IssueContext {
 // such as an answer from their own operating session, stays theirs.
 function isTrustedInput(cfg: Config, item: IssueComment): boolean {
   return (
-    pipelineRole(cfg, item) === null && isAllowedUser(cfg, item.user?.login)
+    pipelineCommentAgent(cfg, item) === null &&
+    isAllowedUser(cfg, item.user?.login)
   );
 }
 

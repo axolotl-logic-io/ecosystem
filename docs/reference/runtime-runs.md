@@ -97,7 +97,9 @@ A crashed run posts no end comment, so its claim holds the label. To release it,
 
 ### Model session
 
-A task app's work can run one read-only model session, as Gherkin does. An app with a session reads the whole repository config, which must therefore include its project pin, runtime settings and compatibility credentials. The session runs `pi` as an installed agent, on the task's pinned prompt page and the repository config's model for its role, with the repository config's `runtime`. It holds no GitHub token, can't commit and returns one structured reply, which the app checks against its schema and acts on.
+Before any claim or write, a task app checks that its task is in the buddy's configured `tasks`, including when invoked manually. Repository scope checks still apply.
+
+A task app's work can run one read-only model session, as Gherkin does. An app with a session reads the whole repository config, which must therefore include its project pin, runtime settings and compatibility credentials. The session runs `pi` as an installed agent, on the task's pinned prompt page and the repository config's model for its session profile, with the repository config's `runtime`. It holds no GitHub token, can't commit and returns one structured reply, which the app checks against its schema and acts on.
 
 The session works in the run's folder, `runs/SLUG/issue-N/task-runs/TASK_RUN_ID/`:
 

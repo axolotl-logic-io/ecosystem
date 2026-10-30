@@ -15,7 +15,7 @@ import {
   type PlannedSession,
 } from "./buddy-flow-test-kit.ts";
 
-const FIXER: BuddyChoice = { role: "developer", tasks: ["fix"] };
+const FIXER: BuddyChoice = { account: "hippy", tasks: ["fix"] };
 const BRANCH = "agent/issue-7";
 const PR = 19;
 const ISSUE = 7;

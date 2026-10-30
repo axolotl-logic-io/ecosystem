@@ -98,13 +98,11 @@ const HARDENING: PlannedSession = {
   reply: { outcome: "done", summary: "Hardened: nothing to change." },
 };
 
-// The buddy one activation runs, as its trusted file names it: the
-// Developer hippy, on the development account, or the Gatekeeper lawd, on
-// the landing account, each responsible for `tasks`. Only a Gatekeeper
-// responsible for Land holds the lander profile and `permissions.land`.
-type BuddyChoice =
-  | { role: "developer"; tasks: ("implement" | "fix")[] }
-  | { role: "gatekeeper"; tasks: ("verify" | "land")[] };
+// Account and task responsibilities are independent selections.
+interface BuddyChoice {
+  account: "hippy" | "lawd";
+  tasks: string[];
+}
 
 // The machine's trusted repository configuration, fixed before any action:
 // whether it grants Land (`permissions.land`), which the shared checking
@@ -429,19 +427,17 @@ function marked(
   });
 }
 
-// Writes `file`, the trusted launcher buddy file (version 2) of a buddy in
-// `buddy`'s role whose one task is `app`, scoped to `repositoryConfig`, with
-// its account's token in `credentials`.
+// Writes a trusted version 2 launcher buddy file with explicit tasks,
+// repository scope and its account token in `credentials`.
 function writeLauncherBuddy(
   file: string,
   setup: { repositoryConfig: string; credentials: string },
   buddy: BuddyChoice,
-  app: string,
 ): void {
   let name = "hippy";
   let login = DEVELOPER;
   let variable = "ISSUE_PIPELINE_DEV_GITHUB_TOKEN";
-  if (buddy.role === "gatekeeper") {
+  if (buddy.account === "lawd") {
     name = "lawd";
     login = LANDING;
     variable = "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN";
@@ -450,7 +446,7 @@ function writeLauncherBuddy(
     version: 2,
     name,
     scope: { repositories: [setup.repositoryConfig] },
-    tasks: [app],
+    tasks: buddy.tasks,
     account: { login, credentials: { file: setup.credentials, variable } },
     pollSeconds: 1,
   });
@@ -554,15 +550,13 @@ function machine(
   function startTaskApp(
     app: string,
     sessions: PlannedSession[],
-    buddy: BuddyChoice = { role: "developer", tasks: ["implement"] },
+    buddy: BuddyChoice = { account: "hippy", tasks: ["implement"] },
   ): TaskAppRun {
-    const buddyConfig = path.join(root, `launcher-${buddy.role}-${app}.json`);
-    writeLauncherBuddy(
-      buddyConfig,
-      { repositoryConfig, credentials },
-      buddy,
-      app,
+    const buddyConfig = path.join(
+      root,
+      `launcher-${buddy.account}-${app}.json`,
     );
+    writeLauncherBuddy(buddyConfig, { repositoryConfig, credentials }, buddy);
     fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
     const child = spawn(
       process.execPath,

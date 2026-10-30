@@ -179,7 +179,7 @@ function landMachine(
       landWorld(world, repo.head, pr);
       edit(world);
     },
-    { origin: repo.origin, app: LAND },
+    { origin: repo.origin, app: LAND, task: "land" },
   );
   return { box, repo };
 }

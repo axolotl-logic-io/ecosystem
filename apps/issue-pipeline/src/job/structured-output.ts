@@ -3,7 +3,7 @@
 // terminating `structured_output` tool whose parameters are the file's JSON
 // Schema; the tool's result `details` are the arguments it was given, which
 // the job reads from the session's tool_execution_end event and parses
-// with the role's reply schema; nothing else checks a reply.
+// with the session's reply schema; nothing else checks a reply.
 // Modelled on pi's examples/extensions/structured-output.ts; it declares the
 // little of pi's extension API it uses, so the repo needs no pi dependency.
 

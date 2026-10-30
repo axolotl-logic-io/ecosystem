@@ -35,7 +35,7 @@ import {
 
 const BRANCH = `agent/issue-${ISSUE}`;
 const PR = 8;
-const VERIFIER: BuddyChoice = { role: "gatekeeper", tasks: ["verify"] };
+const VERIFIER: BuddyChoice = { account: "lawd", tasks: ["verify"] };
 const REVIEW_MARK = /<!-- task-app:verify:review (?<payload>\{.*?\}) -->/u;
 const REPORTED = z.strictObject({
   pr: z.number(),
