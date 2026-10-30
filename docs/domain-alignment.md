@@ -313,6 +313,6 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 - Compatibility for renamed labels, saved state, CLI flags and configuration keys.
 - Observation schemas, freshness bounds and explicit coverage representation. Sources are settled.
 - Configured capacity provenance, and whether any capacity limit survives the launcher. Capacity is counted by resource and released by registered consumers.
-- Whether Land keeps the trusted `permissions.land` grant, which #253 doesn't list among Land's prerequisites.
+- Whether Land should read the trusted `permissions.land` grant again. The Land task app (#253) doesn't: GitHub's permissions on its buddy's account decide whether it can merge.
 - Dash's destination and tooling/install integration inside ecosystem; the decision to add it there is accepted and tracked by `add-pipeline-dash-to-ecosystem`.
 - Whether glossary work should move to its own shared plan; it is currently tracked in `~/brain/plans/stryker-test-assessment.md`.

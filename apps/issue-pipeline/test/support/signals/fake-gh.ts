@@ -562,6 +562,26 @@ function failIssueClose(
   fail("gh: HTTP 502: Bad Gateway");
 }
 
+// Fails a `gh pr merge` that applied with a 502 while the world has merge
+// answers left to lose, spending one, as a dropped connection would.
+function loseMergeResponse(
+  world: World,
+  args: readonly string[],
+  commit: (world: World) => void,
+): void {
+  const losing = world.loseMergeResponses;
+  if (args[0] !== "pr" || args[1] !== "merge" || losing === undefined) {
+    return;
+  }
+  if (losing > 1) {
+    world.loseMergeResponses = losing - 1;
+  } else {
+    Reflect.deleteProperty(world, "loseMergeResponses");
+  }
+  commit(world);
+  fail("gh: HTTP 502: Bad Gateway");
+}
+
 function call(
   world: World,
   args: readonly string[],
@@ -579,6 +599,7 @@ function call(
     if (flow.changed) {
       commit(world);
     }
+    loseMergeResponse(world, args, commit);
     return;
   }
   if (args[0] !== "api") {

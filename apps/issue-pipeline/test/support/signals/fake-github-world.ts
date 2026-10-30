@@ -213,6 +213,9 @@ const WORLD = z.strictObject({
   // How many of the next `gh issue close` calls fail with a 502 before they
   // apply, as a transient GitHub outage would.
   failIssueCloses: z.number().int().positive().optional(),
+  // How many of the next `gh pr merge` calls that apply then lose their
+  // answer to a 502, as a dropped connection would.
+  loseMergeResponses: z.number().int().positive().optional(),
   // The login whose PR thread replies GitHub refuses (HTTP 422).
   refuseRepliesBy: z.string().optional(),
   // Whether GitHub refuses every change to an issue's assignees (HTTP 422).

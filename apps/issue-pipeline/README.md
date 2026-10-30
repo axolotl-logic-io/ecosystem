@@ -46,7 +46,7 @@ Issue delivery has five tasks. The canonical task IDs are `author`, `implement`,
 | Implement | Developer, writer | Requirements | `start:implement` |
 | Verify | Gatekeeper, reader | The PR head | `start:verify` for the current head |
 | Fix | Developer, writer | The PR head | A request for changes on the head, or Land finding a conflict |
-| Land | Gatekeeper, lander | The PR head | An approved head that is ready to merge |
+| Land | Gatekeeper, lander | The PR head | `start:land` |
 
 Safe Refactor retains its explicit standalone entrypoint.
 
@@ -76,11 +76,13 @@ Before removing an owned checkout, preserve staged and working changes as indepe
 
 ## Land through the PR
 
-Land merges the item's PR with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both. It needs a passed Verify of the current head, so the Security review always runs first, an approval standing on that head, from Verify or a qualified person, and no standing request for changes. The head must contain the base, required CI must be green on it, and the trusted repository must grant `permissions.land`.
+Land is the `land.mjs` task app, on the task app framework. Only `start:land` starts it. It merges the issue's PR with a merge commit, pinned to the exact head it checked, and then closes the issue if the merge didn't.
 
-The landing account merges with `gh pr merge PR --merge --match-head-commit HEAD`, so GitHub refuses the merge if the head moved. There is no squash, rebase, direct base push or admin bypass. A conflicting PR isn't merged: Land marks it a draft and records why, and Fix becomes ready. To stop the base moving between Land's checks and its merge, require branches to be up to date before merging on the base.
+Land reads every prerequisite from GitHub on the PR's current head when it runs: an approval from Verify's account or a person with write access, no standing request for changes, green required CI and a head that contains the base. If one is missing, the run merges nothing and its end comment names what's missing. It uses no task records, approval records or integration turn.
 
-Before the merge, the authenticated attempt records Land's intent. A lost acknowledgement doesn't permit another merge. Reconciliation reads the PR's merged state and the issue's state. It closes an issue that a merged PR left open, and never merges or closes twice. No suite, code repair or second Land runs after Land. See [Land](../../docs/reference/merge.md).
+The run merges with `gh pr merge PR --merge --match-head-commit HEAD`, so GitHub refuses the merge if the head moved. There is no squash, rebase, direct base push or admin bypass. A conflicting PR isn't merged: Land marks it as a draft and posts a comment naming `start:fix`. To stop the base moving between Land's checks and its merge, require branches to be up to date before merging on the base.
+
+A run that finds the PR already merged only closes the issue if it's still open, so Land never merges twice. It settles a lost merge response by reading the PR's merged state. A launcher buddy configured with `land` runs this app. Buddies with earlier version 1 configurations still run the earlier Land action, which also needs a passed Verify task record and takes the target's integration turn. See [Land](../../docs/reference/merge.md).
 
 External actors can still change PRs, inputs, permissions and refs. These guards are not an atomic transaction over GitHub and Git, an operating-system sandbox or permission to deploy a repository whose source base is named `main`.
 
@@ -209,7 +211,7 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 ## Programs and observations
 
-`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs`, `standards-upgrade.mjs` and the Verify task app, `verify.mjs`.
+`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs`, `standards-upgrade.mjs` and the task apps `verify.mjs` and `land.mjs`.
 
 Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json` for the earlier runtime and, for [task app runs](../../docs/reference/runtime-runs.md#task-app-runs), `runs/SLUG/issue-N/task-runs/ID/run.json`. A launcher buddy writes no observation file of its own. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
@@ -278,7 +280,7 @@ npm run check:full   # database static gate, pipeline non-external tests, dashbo
 
 From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The pipeline fast gate checks source/test types, Biome, build, installer syntax and all eleven built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and every built program. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
 
 Tests are sorted by ISTQB test level, as the [project practices](../../docs/project-practices.md#tests) define them. Each level has its own folder and script, with the full gate's flags:
 

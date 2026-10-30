@@ -17,6 +17,7 @@ Programs run from `$ISSUE_PIPELINE_ROOT`, which defaults to `~/.pi/agent/issue-p
 | `git-review.mjs` | Read-only Git queries for review sessions |
 | `safe-refactor.mjs` | Explicit standalone Safe Refactor |
 | `standards-upgrade.mjs` | Read-only assessment and human-start handoff |
+| `land.mjs` | The [Land](merge.md) task app: merge an issue's PR and close the issue |
 
 `apps/issue-pipeline/programs.ts` is the shared build, install and syntax-check manifest. `ops.mjs` accepts only the canonical task operations that buddy actions send; it has no standalone operations.
 

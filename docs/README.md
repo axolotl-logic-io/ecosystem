@@ -38,7 +38,7 @@ Issue delivery has five tasks: Author, Implement, Verify, Fix and Land. The refe
 
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
-[Land](reference/merge.md): Land's prerequisites, its merge of the PR pinned to the checked head, closing the issue, conflicts and read-only recovery.
+[Land](reference/merge.md): Land's prerequisites, its merge of the PR pinned to the checked head, closing the issue, conflicts and recovery from GitHub.
 
 [Signals](reference/signals.md): how the signal component reads control labels, accepts qualified events as records and delivers starts, reviews, stops and results.
 
