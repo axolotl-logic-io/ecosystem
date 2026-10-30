@@ -10,6 +10,11 @@ import type {
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 
+type FixGitHub = Pick<
+  IssueGitHub,
+  "issue" | "account" | "readJson" | "issueNow" | "comments"
+>;
+
 const NIT = /^\W*(?:nit|non-blocking)\b/iu;
 const PERMISSION = z.looseObject({ permission: z.string() });
 const PAGE = z.object({
@@ -43,7 +48,7 @@ function same(a: string | null, b: string): boolean {
 }
 
 function canDirect(
-  github: IssueGitHub,
+  github: FixGitHub,
   author: string | null,
   verify: string,
 ): boolean {
@@ -64,7 +69,7 @@ function canDirect(
   return ["admin", "maintain", "write"].includes(found.permission);
 }
 
-function unresolved(github: IssueGitHub, pull: number): Set<number> {
+function unresolved(github: FixGitHub, pull: number): Set<number> {
   const [owner, repo] = github.issue.repo.split("/");
   const ids = new Set<number>();
   const cursors = new Set<string>();
@@ -99,7 +104,7 @@ interface FixReview {
 }
 
 function fixReview(
-  github: IssueGitHub,
+  github: FixGitHub,
   pull: PullRequest,
   verify: string,
 ): FixReview {
@@ -144,7 +149,7 @@ function fixReview(
 }
 
 // Include only repository writers' issue text in the model's task.
-function issueText(github: IssueGitHub, verify: string): string {
+function issueText(github: FixGitHub, verify: string): string {
   const issue = github.issueNow();
   if (!canDirect(github, issue.author, verify)) {
     throw new OpsError("cannot establish the issue author's write access");
@@ -155,5 +160,5 @@ function issueText(github: IssueGitHub, verify: string): string {
   return JSON.stringify({ title: issue.title, body: issue.body, comments });
 }
 
-export type { FixReview };
+export type { FixGitHub, FixReview };
 export { FIX_ROUNDS, fixReview, issueText };

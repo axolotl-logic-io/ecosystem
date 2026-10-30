@@ -5,6 +5,7 @@
 // contribution. The session holds no token and no commit scope. Its reply
 // is the review's summary and findings; it grants nothing. The session's
 // JSONL goes in the task run's folder beside its run record.
+
 import path from "node:path";
 import process from "node:process";
 import type { LaunchHooks } from "@ecosystem/task-runtime/job/launch";
@@ -14,6 +15,9 @@ import {
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import type { VerifyReply } from "@ecosystem/verify/reply";
+import { VERIFY_REPLY } from "@ecosystem/verify/reply";
+import { taskText } from "@ecosystem/verify/session";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -22,8 +26,6 @@ import { agentEnvOf } from "../job/agent-env.ts";
 import { runSession } from "../job/launch.ts";
 import { PROMPTS_DIR } from "../job/prompts.ts";
 import type { HeadCheckout } from "./head-checkout.ts";
-import type { VerifyReply } from "./verify-reply.ts";
-import { VERIFY_REPLY } from "./verify-reply.ts";
 
 const AGENT = "issue-pipeline-reviewer";
 const PAGE = "verify.md";
@@ -39,27 +41,6 @@ interface Review {
   run: string;
   checkout: HeadCheckout;
   base: string;
-}
-
-function taskText(review: Review, issueFile: string): string {
-  const { cfg, issue, checkout, base } = review;
-  return [
-    `# Issue #${issue} in ${cfg.repo}: \`${PHASE}\``,
-    "",
-    `- Task: \`${PHASE}\``,
-    `- Issue file: \`${issueFile}\``,
-    `- Code checkout: \`${checkout.repo}\`, detached at the reviewed head \`${checkout.head}\``,
-    `- Target: \`${cfg.baseBranch}\` at \`${base}\``,
-    "",
-    "## Configured full check",
-    "",
-    `commands.test: ${JSON.stringify(cfg.commands.test)}`,
-    "",
-    "## The change under review",
-    "",
-    `The PR's whole contribution is \`git diff ${base}...${checkout.head}\` in the checkout.`,
-    "",
-  ].join("\n");
 }
 
 function hooksOf(review: Review): LaunchHooks {
@@ -99,7 +80,17 @@ async function reviewSession(review: Review): Promise<VerifyReply> {
       profile: "reviewer",
       agent: AGENT,
       model: cfg.models.reviewer,
-      task: taskText(review, file),
+      task: taskText(
+        {
+          repository: cfg.repo,
+          baseBranch: cfg.baseBranch,
+          testCommand: cfg.commands.test,
+          issue,
+          checkout: review.checkout,
+          base: review.base,
+        },
+        file,
+      ),
       outputSchema: z.toJSONSchema(VERIFY_REPLY),
       timeoutMs: SESSION_MINUTES.reviewer * MINUTE_MS,
       commits: false,

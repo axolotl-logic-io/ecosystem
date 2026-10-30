@@ -34,6 +34,25 @@ node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 
 `BUDDY_FILE` is an absolute path to the buddy file. Omit `--check` to start the buddy. The [runtime reference](../../docs/reference/runtime-runs.md#launcher-buddies) defines the exact keys, the trust checks, how the buddy launches each app and what it logs. Each task in `tasks` needs its installed task app, `$ISSUE_PIPELINE_ROOT/TASK.mjs`; the buddy refuses to start without it.
 
+## Task workspaces
+
+All five task definitions live under root `tasks/` workspaces. Each owns its
+validated inputs, task-specific capabilities, prompts, reply schemas and domain
+decisions. Tasks import packages and other task-owned types, never applications.
+They read no buddy files, credential maps or implicit pipeline root.
+
+The compatibility entrypoints below still run one task subprocess per claim.
+They resolve trusted policy, verify identities and provision runtime capabilities.
+The host owns label claims, running labels, stop guards and final lifecycle reports.
+Task domain writes still create drafts, submit reviews and merge pinned heads.
+
+Public contracts and retry behavior: [Gherkin](../../tasks/gherkin/README.md),
+[Implement](../../tasks/implement/README.md), [Fix](../../tasks/fix/README.md),
+[Verify](../../tasks/verify/README.md) and [Land](../../tasks/land/README.md).
+The [shared runtime](../../packages/task-runtime/README.md) owns checkout,
+model-process, recovery and trusted-policy services. Installed executable names
+and prompt locations remain unchanged until the host cutover.
+
 ## Tasks
 
 | Task | Program | Work |

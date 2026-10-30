@@ -1,0 +1,11 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "extends": "//",
+  "overrides": [
+    {
+      // Behavior tests use the Node test runner and assertions.
+      "includes": ["test/**"],
+      "linter": { "rules": { "correctness": { "noNodejsModules": "off" } } }
+    }
+  ]
+}

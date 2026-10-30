@@ -57,3 +57,8 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 The [shared task runtime](../packages/task-runtime/README.md) documents service
 ownership, dependency direction and host-provisioned capability interfaces.
+
+Task-owned inputs, capabilities, outcomes and retry behavior are documented in
+[Gherkin](../tasks/gherkin/README.md), [Implement](../tasks/implement/README.md),
+[Fix](../tasks/fix/README.md), [Verify](../tasks/verify/README.md) and
+[Land](../tasks/land/README.md).

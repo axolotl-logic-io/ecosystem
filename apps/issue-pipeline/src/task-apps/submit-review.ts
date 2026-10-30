@@ -4,8 +4,8 @@
 
 import type { IssueGitHub } from "@ecosystem/task-runtime/issue/issue-github";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import type { PlannedReview } from "@ecosystem/verify/review";
 import { z } from "zod";
-import type { PlannedReview } from "../ops/verify-review.ts";
 
 const SUBMITTED = z.looseObject({
   id: z.number().int().positive(),

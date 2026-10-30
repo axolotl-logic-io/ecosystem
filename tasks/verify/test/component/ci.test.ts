@@ -6,8 +6,8 @@ import type {
   Check,
   PullRequest,
 } from "@ecosystem/task-runtime/issue/recovery";
-import type { CiWait } from "../../../src/task-apps/verify-ci.ts";
-import { requiredCi } from "../../../src/task-apps/verify-ci.ts";
+import type { CiWait } from "../../src/ci.ts";
+import { requiredCi } from "../../src/ci.ts";
 
 const SHA_LENGTH = 40;
 const HEAD = "a".repeat(SHA_LENGTH);
