@@ -1,20 +1,40 @@
 # Issue pipeline
 
-The pipeline runs configured buddies. Each buddy activation is a buddy run; each admitted task execution is an action run. Tasks own sensors, matching, prerequisites, effects and recovery. The runtime activates every configured task loop and may execute its actions sequentially. It has no saved stage cursor, assignment scheduler or caller-selected next job.
+The pipeline runs configured buddies. A buddy is a launcher of task apps: it watches the repositories in its scope for `start:X` labels of its tasks and runs task X's app for each one it sees. The task app framework claims the start, marks the issue, does the work and reports. The buddy does nothing else.
+
+Until #254 removes it, `buddy.mjs` still runs the earlier buddy runtime for a version 1 buddy file. That runtime activates task loops, admits actions and records buddy runs and action runs; the sections after [Tasks and signals](#tasks-and-signals) describe it. Don't run a launcher buddy and an earlier buddy on the same repository: the earlier runtime doesn't claim starts, so both could act on one start.
 
 Landing a change doesn't install it. To make it take effect, drain the buddies, install and restart them; see [install and safe upgrades](#install-and-safe-upgrades). Start with the [pipeline reference](../../docs/README.md), [domain contract](../../docs/domain-runtime-contract.md), [runtime configuration and run records](../../docs/reference/runtime-runs.md) and [operations](../../docs/reference/operations.md).
 
 ## Configure a buddy
 
-Repository operator configuration, pinned project policy and buddy configuration are separate boundaries. A private buddy file names its organization, repository config paths, role, responsibilities, identity and access profiles. Required repository `resources.modelSessions` defines the shared cap; there is no buddy capacity override or inferred default.
+A launcher buddy file is private operator-owned JSON, version 2. It names the buddy's scope (the repository configs it covers), its tasks, its single GitHub account and the entry of the operator's private credential file that holds that account's token:
 
-To validate an installed buddy configuration without activating it:
+```json
+{
+  "version": 2,
+  "name": "hippy",
+  "scope": { "repositories": ["/absolute/path/to/repository-config.json"] },
+  "tasks": ["gherkin", "implement", "fix"],
+  "account": {
+    "login": "DEVELOPER_ACCOUNT",
+    "credentials": {
+      "file": "/absolute/path/to/credentials.env",
+      "variable": "HIPPY_GITHUB_TOKEN"
+    }
+  }
+}
+```
+
+The buddy makes every GitHub write through its own account, and so do the task apps it launches. Each buddy needs its own account: keep a machine's buddy files in one folder, and a buddy refuses to start when another buddy file there names its account. The repository config's `devAccount` and `landingAccount` pairing plays no part in a launcher buddy.
+
+To validate a buddy file without starting the buddy:
 
 ```bash
 node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 ```
 
-`BUDDY_FILE` is an absolute path to the operator-owned JSON file. Omit `--check` to activate the buddy. The [runtime reference](../../docs/reference/runtime-runs.md#buddy-configuration) defines the exact keys and trust checks. Merely configuring a task does not supply a causal signal.
+`BUDDY_FILE` is an absolute path to the buddy file. Omit `--check` to start the buddy. The [runtime reference](../../docs/reference/runtime-runs.md#launcher-buddies) defines the exact keys, the trust checks, how the buddy launches each app and what it logs. Each task in `tasks` needs its installed task app, `$ISSUE_PIPELINE_ROOT/TASK.mjs`; the buddy refuses to start without it.
 
 ## Tasks and signals
 
@@ -101,6 +121,8 @@ For chunked reviews, assign the root and exact query, not generated diff files. 
 This is the **Git execution boundary**, not an OS/filesystem/keyring/network sandbox. The retained read tools can read same-user files and are not confined by this root allowlist. Do not promise universal credential-file isolation. Optional macOS sandboxing, writer shell isolation, credential rotation and production deployment are outside this feature. Landing does not install or activate it.
 
 ## Two GitHub identities and operator credentials
+
+This section describes the earlier buddy runtime. A launcher buddy has one account of its own, as [Configure a buddy](#configure-a-buddy) describes.
 
 Development (`devAccount`) owns code/docs
 commits, source branch pushes, PR create/edit/reopen/close/ready and Fix's
@@ -189,9 +211,11 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 `programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
 
-Canonical observation files are `runs/buddy-runs/ID/run.json`, `runs/SLUG/issue-N/actions/ID/run.json` and, for [task app runs](../../docs/reference/runtime-runs.md#task-app-runs), `runs/SLUG/issue-N/task-runs/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
+Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json` for the earlier runtime and, for [task app runs](../../docs/reference/runtime-runs.md#task-app-runs), `runs/SLUG/issue-N/task-runs/ID/run.json`. A launcher buddy writes no observation file of its own. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
-Buddies also write one JSON line to stderr for each new or changed loop hold,
+A launcher buddy writes one JSON line to stderr for each task app that ends, with its task, issue and exit status, and one for each listing of start labels it can't read. Its task apps' own output joins its stderr. See [the launcher log](../../docs/reference/runtime-runs.md#launcher-log).
+
+Earlier buddies write one JSON line to stderr for each new or changed loop hold,
 each action that ends without success and each failure an action goes on past,
 such as a failed issue assignment. Hold lines include the timestamp, buddy run,
 repository, task and reason. Action lines also include the action ID and

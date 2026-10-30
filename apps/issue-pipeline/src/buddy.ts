@@ -4,7 +4,15 @@
 //   node buddy.mjs --config <buddy.json>
 //   node buddy.mjs --config <buddy.json> --check
 //
-// It loads the trusted buddy file and every repository config in its scope
+// A version 2 buddy file is a launcher of task apps
+// (src/task-app/launcher.ts). With --check it prints what it validated, one
+// JSON object with the buddy, its account, tasks, repositories and task app
+// programs, and exits. Otherwise it launches a task app for every start
+// label of its tasks it sees, until SIGTERM or SIGINT ends the polling; it
+// then waits for the apps it launched, prints one JSON line,
+// {buddy, kind, reason}, and exits 0.
+//
+// A version 1 file is the earlier runtime's, which #254 removes. It loads the trusted buddy file and every repository config in its scope
 // (src/runtime/buddy-config.ts) and refuses, before any effect, a file that
 // isn't trusted, an obsolete scheduler or assignment control, a role,
 // responsibility, profile or account that doesn't agree, or a repository
@@ -24,6 +32,8 @@ import { parseArgs } from "node:util";
 import { activate } from "./runtime/activation.ts";
 import { loadBuddy } from "./runtime/buddy-config.ts";
 import { openStop } from "./runtime/stop.ts";
+import { isLauncherFile } from "./task-app/buddy-file.ts";
+import { checkLauncher, runLauncher } from "./task-app/launcher.ts";
 
 const USAGE = "usage: buddy.mjs --config <buddy.json> [--check]";
 
@@ -51,6 +61,10 @@ function argsOf(argv: readonly string[]): { config: string; check: boolean } {
 }
 
 function check(config: string): void {
+  if (isLauncherFile(config)) {
+    process.stdout.write(`${JSON.stringify(checkLauncher(config))}\n`);
+    return;
+  }
   const buddy = loadBuddy(config);
   const summary = {
     buddy: buddy.config.name,
@@ -87,6 +101,11 @@ async function main(): Promise<0 | 1> {
   }
   const stop = openStop();
   try {
+    if (isLauncherFile(args.config)) {
+      const ended = await runLauncher(args.config, stop.buddy);
+      process.stdout.write(`${JSON.stringify(ended)}\n`);
+      return 0;
+    }
     const end = await activate(args.config, stop);
     process.stdout.write(
       `${JSON.stringify({ buddyRun: end.id, kind: end.kind, reason: end.reason })}\n`,

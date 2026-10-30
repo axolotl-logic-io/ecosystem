@@ -8,7 +8,7 @@ Programs run from `$ISSUE_PIPELINE_ROOT`, which defaults to `~/.pi/agent/issue-p
 
 | Program | Purpose |
 | --- | --- |
-| `buddy.mjs` | Validate a buddy file or activate its task loops |
+| `buddy.mjs` | Validate a buddy file, or start a buddy: a launcher of task apps, or the earlier runtime's task loops |
 | `recover-implement.mjs` | Explicit operator settlement of an interrupted pre-effect Implement; never starts work |
 | `database.mjs` | Private bounded PostgreSQL coordination transport; no migration or activation |
 | `ops.mjs` | Guarded deterministic operations through framed JSON requests |
@@ -53,9 +53,9 @@ To validate a private buddy file without activating a run:
 node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 ```
 
-`BUDDY_FILE` is an absolute path to the operator-owned buddy JSON file. The command reports configured tasks, trusted model-session capacity and authorization digests.
+`BUDDY_FILE` is an absolute path to the operator-owned buddy JSON file. For a [launcher buddy](runtime-runs.md#launcher-buddies), the command reports its account, tasks, repositories and each task's app. For an earlier buddy, it reports configured tasks, trusted model-session capacity and authorization digests.
 
-To activate the accepted configuration, omit `--check`. That is a separate operator action, not a source acceptance test. Each task loop senses its own work; there is no stage cursor or caller-selected next job. See [runtime runs](runtime-runs.md).
+To start the buddy, omit `--check`. That is a separate operator action, not a source acceptance test. A launcher buddy runs a task app for each start label of its tasks it sees. An earlier buddy's task loops each sense their own work; there is no stage cursor or caller-selected next job. See [runtime runs](runtime-runs.md).
 
 Initial human signals are qualified issue-label application events for `start:implement` and `agents:stop`. Removing a label creates no continuation. A failed, stopped or uncertain attempt is not automatically retried.
 
