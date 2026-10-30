@@ -166,7 +166,6 @@ function baseWorld(): World {
     pageSize: 100,
     post: "ok",
     nextId: 500,
-    tasks: [],
   };
 }
 

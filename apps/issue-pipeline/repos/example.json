@@ -5,7 +5,6 @@
   "landingAccount": "REVIEW-MERGE-BOT",
   "credentialsEnvFile": "/absolute/operator-checkout/project/.env",
   "allowedUsers": ["MAINTAINER"],
-  "permissions": { "land": false },
   "models": {
     "gherkin": "openai/gpt-6.1-sol",
     "developer": "openai/gpt-6.1-sol",
@@ -25,12 +24,7 @@
   },
   "requireCi": true,
   "ciWaitMinutes": 30,
-  "landingConfirmation": {
-    "deadlineSeconds": 90,
-    "backoffSeconds": [1, 2, 4, 8, 10]
-  },
   "commandTimeoutMinutes": 20,
-  "leaseHours": 3,
   "projectPolicy": {
     "repository": "/absolute/trusted/checkout",
     "revision": "0000000000000000000000000000000000000000"

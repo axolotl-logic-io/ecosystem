@@ -3,8 +3,8 @@
 import { loadConfig } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { main, type TaskRun } from "../task-app/task-app.ts";
-import { FIX_REPLY } from "../tasks/replies.ts";
 import { FIX_ROUNDS, fixReview, issueText } from "./fix-review.ts";
+import { FIX_REPLY } from "./replies.ts";
 import { openWriter } from "./writer.ts";
 
 async function fix(run: TaskRun): Promise<void> {

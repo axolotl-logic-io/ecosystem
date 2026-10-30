@@ -110,12 +110,7 @@ function gitHelper(cfg: Config): readonly string[] {
   ];
 }
 
-// The config's mutation hook sees every credentialed write: a stage job's
-// fresh ownership read and journal (execution.ts), or an unbound ops
-// request's refusal (ops/execution-envelope.ts). Callers with neither, such
-// as the coordination transport itself, write directly. The hook gets the
-// write's whole result, so a refusal can be told from a lost response; a
-// failure throws after it unless the caller allows one.
+// Task app writes pass through their stop check before reaching GitHub.
 function controlledWrite(
   cfg: Config,
   intent: WriteIntent,
@@ -126,12 +121,10 @@ function controlledWrite(
   },
 ): RunResult {
   let result: RunResult;
-  if (cfg.mutation !== undefined) {
-    result = cfg.mutation(write, intent);
-  } else if (cfg.execution === undefined) {
+  if (cfg.mutation === undefined) {
     result = write();
   } else {
-    throw new OpsError("execution mutation boundary is not bound");
+    result = cfg.mutation(write, intent);
   }
   if (result.code !== 0 && failure.allowFail !== true) {
     throw failure.fail(result);
@@ -222,11 +215,8 @@ function git(
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {
-  if (
-    args.includes("push") &&
-    (cfg.execution !== undefined || cfg.mutation !== undefined)
-  ) {
-    const { execution: _execution, mutation: _mutation, ...transport } = cfg;
+  if (args.includes("push") && cfg.mutation !== undefined) {
+    const { mutation: _mutation, ...transport } = cfg;
     const { reconciles = false, ...given } = options;
     return controlledWrite(
       cfg,

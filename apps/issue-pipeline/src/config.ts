@@ -33,38 +33,13 @@ interface JobCheckout {
   branch: string;
 }
 
-// The trusted buddy authorization an ops request runs under, once
-// src/runtime/buddy-config.ts's bindBuddyAuthorization validated it: the
-// buddy file and the repository config it was matched against, the buddy
-// run and task, the organization whose active members qualify as people,
-// and the authorization digest, which is the action's own and never part
-// of the shared checking policy. Internal, never loaded from JSON.
-interface BuddyAuthorization {
-  config: string;
-  repository: string;
-  organization: string;
-  run: string;
-  task: string;
-  digest: string;
-}
-
 type Config = z.infer<typeof CONFIG_SCHEMA> & {
   slug: string;
   // Verified task app transport, supplied in memory, never from JSON.
   gitAccount?: { account: string; env: ReadonlyMap<string, string> };
   policyBinding?: ProjectPolicyBinding;
   checkout?: JobCheckout;
-  // Internal standalone seam only; never loaded from repository JSON.
-  execution?: {
-    instance: string;
-    lane: string;
-    issue: number;
-    branch: string;
-    repo: string;
-    base: string;
-  };
   mutation?: (write: () => RunResult, intent: WriteIntent) => RunResult;
-  buddyAuthorization?: BuddyAuthorization;
 };
 
 const RAW = z.record(z.string(), z.unknown());
@@ -222,5 +197,5 @@ function readCredential(file: string, variable: string, name: string): string {
   return selected;
 }
 
-export type { Account, BuddyAuthorization, Config, JobCheckout };
+export type { Account, Config, JobCheckout };
 export { credential, loadConfig, paths, readCredential, withCheckout };

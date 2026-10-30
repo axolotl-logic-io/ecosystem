@@ -63,21 +63,3 @@ Land settles a merge by reading the PR afterwards, whatever `gh` answered. A mer
 | Open, with a missing prerequisite | Fails, naming each missing prerequisite |
 | Open, with every prerequisite | Merges at the checked head, then closes the issue if the merge didn't |
 | Closed without a merge, or no PR | Fails; nothing is merged |
-
-## Earlier Land action
-
-A buddy with the earlier version 1 configuration still runs Land as an action of the earlier runtime. #254 removes it. The action has the same merge, conflict and close behavior, with these differences:
-
-- It needs a passed Verify task record of the head, an approval from the landing account or a qualified person, and the repository's `permissions.land` grant.
-- It records an authenticated attempt before the merge, and its result names the merge commit.
-- It takes the target's integration turn before it records its attempt.
-
-### The target's integration turn
-
-A target-write reservation serializes participating Lands for one repository and literal base branch. If Land can't take the turn, it spends no attempt and makes no change. An unsettled Land keeps the turn. A process exit, an expired lease or a deleted local run directory doesn't release it. The turn excludes only participants in this protocol, so outside accounts can still move the base.
-
-### Uncertain effects
-
-The `land-reconcile` operation settles an unsettled attempt from reads of the PR and the issue. It never merges or marks a draft. When the PR merged at the checked head but the issue still reads open, it closes the issue, once. If it can't read the PR, the attempt stays unknown and keeps the turn.
-
-To investigate uncertainty, stop new dispatch for the affected issue. Preserve its attempts, results, checkpoints, coordination records, checkout and consumers, and read the actual PR and issue on GitHub. Don't erase intent, release another invocation's turn or restart an old stage.

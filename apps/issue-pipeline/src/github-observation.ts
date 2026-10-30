@@ -5,9 +5,9 @@
 // only when every page was read. A failed, partial or malformed read is an
 // unknown observation, never an empty one.
 import { z } from "zod";
-import type { Config } from "../config.ts";
-import { authenticatedEnv, credentialedRun } from "../github-auth.ts";
-import { GH_TIMEOUT_MS } from "../github-read.ts";
+import type { Config } from "./config.ts";
+import { authenticatedEnv, credentialedRun } from "./github-auth.ts";
+import { GH_TIMEOUT_MS } from "./github-read.ts";
 
 type Observation<T> =
   | { status: "ok"; value: T }

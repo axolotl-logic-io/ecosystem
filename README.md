@@ -1,8 +1,7 @@
 # Ecosystem
 
 Ecosystem is the home of the issue pipeline. Configured buddies run tasks
-against GitHub issues. Qualified human label events authorize initial work;
-later effects need their own prerequisites and standing permissions. Its source,
+against GitHub issues. Start labels launch task apps; each app claims its start and reads its prerequisites from GitHub. Its source,
 operator instructions and tests live in
 [`apps/issue-pipeline/`](apps/issue-pipeline/README.md).
 It runs from an operator-installed copy; landing source does not install it.
@@ -16,11 +15,7 @@ pipeline's.
 
 `packages/db/` provides `@ecosystem/db`: a shared native PostgreSQL client,
 Drizzle schema and migrations for ecosystem apps. Root Compose files separate
-the persistent operational service from disposable tests. The issue pipeline
-can opt into database ownership and resource coordination; the default remains
-GitHub until the repository's buddies are drained and cut over. Read the
-[database reference](docs/reference/database.md) for setup, constraints,
-credentials, tests, backups and cutover.
+the persistent operational service from disposable tests. The dashboard uses independent monitoring tables, shared with Project Buddy. The issue pipeline no longer uses database coordination. Read the [database reference](docs/reference/database.md) for setup and tests.
 
 ## Check
 
@@ -38,7 +33,7 @@ uses the same setup and gate, from `commands` in `.issue-pipeline.json`.
 
 The pipeline's fast gate typechecks source and tests, lints, builds and checks
 syntax. Its full gate runs pipeline tests outside `test/system-integration/`, including
-real public-entrypoint delivery, authority, recovery and resource flows. New
+real public-entrypoint task apps, claims and recovery. New
 test files are picked up with no change to the scripts. The fast gate does not
 run that suite or prove runtime authority, recovery, isolation or landing behavior.
 The separate `npm run test:database` suite requires the isolated PostgreSQL test
@@ -73,4 +68,4 @@ operator coordinates installation separately from landing them.
 The [pipeline docs](docs/README.md) hold its reference. The sessions'
 behavioral prompts ship with the pipeline in
 `apps/issue-pipeline/prompts/`. The operator configures each buddy's scope,
-role, identity and task responsibilities; there is no shared stage cursor.
+tasks and its own account; there is no shared stage cursor.

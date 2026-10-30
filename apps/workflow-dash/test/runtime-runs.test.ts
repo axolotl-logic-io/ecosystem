@@ -12,9 +12,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import { type Config, configure } from "../config.ts";
 import {
-  actionRunSchema,
   type BuddyRunObservation,
-  buddyRunSchema,
   taskRunSchema,
 } from "../runtime-run-schema.ts";
 import {
@@ -88,14 +86,13 @@ function problem(runtime: RuntimeRuns, path: string): string {
 }
 
 test(
-  "the reader schemas equal the pipeline's exported BUDDY_RUN, ACTION_RUN and TASK_RUN",
+  "the task run reader schema equals the task framework's exported schema",
   options,
   async (context) => {
     const script = [
       'import { z } from "zod";',
-      'const m = await import("./src/runtime/observations.ts");',
       'const t = await import("./src/task-app/run-record.ts");',
-      "process.stdout.write(JSON.stringify({ buddyRun: z.toJSONSchema(m.BUDDY_RUN), actionRun: z.toJSONSchema(m.ACTION_RUN), taskRun: z.toJSONSchema(t.TASK_RUN) }));",
+      "process.stdout.write(JSON.stringify({ taskRun: z.toJSONSchema(t.TASK_RUN) }));",
     ].join("\n");
     const { stdout } = await run(
       process.execPath,
@@ -104,8 +101,6 @@ test(
     );
     const published: unknown = JSON.parse(stdout);
     assert.deepEqual(published, {
-      buddyRun: z.toJSONSchema(buddyRunSchema),
-      actionRun: z.toJSONSchema(actionRunSchema),
       taskRun: z.toJSONSchema(taskRunSchema),
     });
   },

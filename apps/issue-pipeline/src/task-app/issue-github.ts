@@ -7,15 +7,15 @@
 import { z } from "zod";
 import { redactGhArgs } from "../github.ts";
 import { credentialedRun } from "../github-auth.ts";
-import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
-import { OpsError } from "../ops-error.ts";
-import type { RunResult } from "../process.ts";
-import { runFailure } from "../process.ts";
 import {
   type Observation,
   observeAll,
   unreadable,
-} from "../signals/github-source.ts";
+} from "../github-observation.ts";
+import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
+import { OpsError } from "../ops-error.ts";
+import type { RunResult } from "../process.ts";
+import { runFailure } from "../process.ts";
 import { STOP_LABEL, Stopped } from "./stopped.ts";
 
 const NOT_FOUND = /\bHTTP 404\b/u;

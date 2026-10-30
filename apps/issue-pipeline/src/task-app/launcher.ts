@@ -21,10 +21,9 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import { wire } from "../discovery/wire.ts";
+import { observeAll, unreadable } from "../github-observation.ts";
 import { OpsError } from "../ops-error.ts";
 import { ROOT } from "../pipeline-root.ts";
-import { pause } from "../runtime/stop.ts";
-import { observeAll, unreadable } from "../signals/github-source.ts";
 import {
   type BuddyFile,
   type LaunchedTask,
@@ -32,6 +31,7 @@ import {
   sharingAccount,
 } from "./buddy-file.ts";
 import { accountOf } from "./identity.ts";
+import { pause } from "./stop.ts";
 
 const MS_PER_SECOND = 1000;
 const STDERR = 2;

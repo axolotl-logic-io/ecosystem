@@ -10,7 +10,6 @@ import process from "node:process";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { ModelRole } from "../config-schema.ts";
-import type { InvocationBinding } from "../coordination.ts";
 import type { SessionResult } from "../domain.ts";
 import type { JobDirs } from "../job/checkout.ts";
 import type { LiveHandle } from "../job/control.ts";
@@ -24,6 +23,7 @@ import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
 import type { SessionPhase } from "../job/role-context.ts";
 import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
 import { agentEnvOf, rolesOf } from "../job/roles.ts";
+import type { InvocationBinding } from "../job/session-identity.ts";
 
 const MINUTE_MS = 60_000;
 // The installed agent each model role runs as.

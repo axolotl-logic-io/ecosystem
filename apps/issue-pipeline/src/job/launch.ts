@@ -1,13 +1,4 @@
-// One launch of a stage job, run as a child process: an ops request runs the
-// installed ops.mjs with no model (src/job/ops-process.ts), and a model
-// session runs `pi` in RPC mode (src/job/rpc.ts) as the launch's installed
-// agent (src/job/agent-definition.ts), always fresh, with the write authority
-// the launch itself carries. Either way the launch
-// resolves to its raw result (src/job/raw-results.ts); it never rejects. The
-// job's hooks hear of each launch's start, records and end. Nothing here
-// limits a session's context or spend (`no-session-budgets`): the wall-clock
-// timeout is the only bound.
-
+// Run one fresh model session with pinned prompts and isolated credentials.
 import fs from "node:fs";
 import path from "node:path";
 import type { ModelRole } from "../config-schema.ts";
@@ -16,11 +7,9 @@ import { ROOT } from "../pipeline-root.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
 import type { SessionEnd, Steers } from "./context-log.ts";
 import type { LiveHandle } from "./control.ts";
-import type { OpsProcess } from "./ops-process.ts";
-import { runOps } from "./ops-process.ts";
 import type { PinnedPrompt } from "./prompts.ts";
-import type { OpsRaw, SessionRaw } from "./raw-results.ts";
-import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
+import type { SessionRaw } from "./raw-results.ts";
+import { failedSession, sessionRaw } from "./raw-results.ts";
 import type { SessionPhase } from "./role-context.ts";
 import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
@@ -28,7 +17,6 @@ import type { RuntimeConfig } from "./runtime-policy.ts";
 import { runtimeProfile } from "./runtime-profile.ts";
 import type { LaunchStart } from "./status.ts";
 
-const OPS_CLI = path.join(ROOT, "ops.mjs");
 const OUTPUT_EXTENSION = path.join(ROOT, "structured-output.mjs");
 const COMMIT_EXTENSION = path.join(ROOT, "pipeline-commit.mjs");
 const TIME_RADIX = 36;
@@ -55,13 +43,6 @@ interface LaunchHooks {
   // The job's code checkout, in its folder.
   repo: string;
   runtime?: RuntimeConfig;
-}
-
-// One ops request: its key in job.json, its framed request and its timeout.
-interface OpsLaunch {
-  key: string;
-  request: string;
-  timeoutMs: number;
 }
 
 // One model session: its key, the model role it plays, its installed agent
@@ -251,30 +232,5 @@ function recordSessionEnd(
   });
 }
 
-// Runs ops request `launch` and resolves to its raw result.
-async function runOpsLaunch(
-  launch: OpsLaunch,
-  hooks: LaunchHooks,
-): Promise<OpsRaw> {
-  const { key } = launch;
-  const exit = await runOps({
-    key,
-    args: [OPS_CLI],
-    input: launch.request,
-    timeoutMs: launch.timeoutMs,
-    started: (ops: OpsProcess): void => {
-      const start: LaunchStart = {
-        key,
-        kind: "ops",
-        pid: ops.pid,
-        session: null,
-      };
-      hooks.started(start, { kind: "ops", ops });
-    },
-  });
-  hooks.ended(key);
-  return opsRaw(exit);
-}
-
-export type { LaunchHooks, OpsLaunch, SessionLaunch };
-export { OUTPUT_EXTENSION, runOpsLaunch, runSession };
+export type { LaunchHooks, SessionLaunch };
+export { OUTPUT_EXTENSION, runSession };

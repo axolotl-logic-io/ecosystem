@@ -10,36 +10,19 @@
 // review and never submits a second one.
 
 import { z } from "zod";
-import type { Config } from "../config.ts";
-import { wire } from "../discovery/wire.ts";
-import type { PrReview } from "../domain.ts";
-import { REVIEW_STATE, SHA, UUID } from "../domain.ts";
-import { gh } from "../github.ts";
-import { OpsError } from "../ops-error.ts";
 import { redactLocalPaths } from "../pipeline-root.ts";
-import type { SubmittedReview } from "../pr-reviews.ts";
-import { listReviews } from "../pr-reviews.ts";
 import { run as runCommand } from "../process.ts";
 import { redactAddresses } from "../redact-addresses.ts";
-import type { Observation } from "../signals/github-source.ts";
 
 const MARK = "<!-- agent-pipeline:verify-review\n";
 const MARK_END = "\n-->";
 const COUNT = z.number().int().nonnegative();
 const MARKED = z.strictObject({
-  run: UUID,
+  run: z.uuid(),
   blocking: COUNT,
   nits: COUNT,
   security: z.boolean(),
 });
-const SUBMITTED = wire(
-  z.looseObject({
-    id: z.number().int().positive(),
-    state: REVIEW_STATE,
-    commitId: SHA,
-  }),
-);
-const CAPITAL = /(?<letter>[A-Z])/gu;
 const DIFF_FILE = /^\+\+\+ b\/(?<path>.+)$/u;
 const DIFF_HUNK = /^@@ -\d+(?:,\d+)? \+(?<start>\d+)(?:,(?<count>\d+))? @@/u;
 // GitHub refuses a review body or comment over 65536 characters.
@@ -64,13 +47,6 @@ interface PlannedReview {
   event: "APPROVE" | "REQUEST_CHANGES";
   body: string;
   comments: { path: string; line: number; body: string }[];
-  counts: ReviewCounts;
-}
-
-// A review the landing account submitted for a Verify run, as GitHub
-// reports it now, with the counts its mark keeps.
-interface PostedReview {
-  review: SubmittedReview;
   counts: ReviewCounts;
 }
 
@@ -195,118 +171,5 @@ function planReview(
   };
 }
 
-// `value` with GitHub REST's snake_case keys: the inverse of wire.ts, at the
-// same boundary.
-function snakeKeys(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(snakeKeys);
-  }
-  const record = z.record(z.string(), z.unknown()).safeParse(value);
-  if (!record.success) {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(record.data).map(([key, item]) => [
-      key.replace(
-        CAPITAL,
-        (_match: string, letter: string) => `_${letter.toLowerCase()}`,
-      ),
-      snakeKeys(item),
-    ]),
-  );
-}
-
-// Submits `planned` on PR `pr` against exactly `code`, through the landing
-// account. An answer that doesn't confirm that review on that head throws,
-// leaving the run for reconciliation.
-function submitReview(
-  cfg: Config,
-  pr: number,
-  code: string,
-  planned: PlannedReview,
-): PrReview {
-  const input = JSON.stringify(
-    snakeKeys({
-      commitId: code,
-      event: planned.event,
-      body: planned.body,
-      comments: planned.comments,
-    }),
-  );
-  const answer = gh(
-    cfg,
-    "landing",
-    [
-      "api",
-      "-X",
-      "POST",
-      `repos/${cfg.repo}/pulls/${String(pr)}/reviews`,
-      "--input",
-      "-",
-    ],
-    { input, reconciles: true },
-  );
-  const submitted = SUBMITTED.safeParse(JSON.parse(answer.stdout));
-  let expected: PrReview["state"] = "CHANGES_REQUESTED";
-  if (planned.event === "APPROVE") {
-    expected = "APPROVED";
-  }
-  if (
-    !submitted.success ||
-    submitted.data.commitId !== code ||
-    submitted.data.state !== expected
-  ) {
-    throw new OpsError(
-      `GitHub's answer doesn't confirm a ${expected} review of ${code} on PR #${String(pr)}`,
-    );
-  }
-  return {
-    id: submitted.data.id,
-    pr,
-    commit: code,
-    state: submitted.data.state,
-  };
-}
-
-function markOf(body: string): z.infer<typeof MARKED> | null {
-  const start = body.lastIndexOf(MARK);
-  if (start === -1) {
-    return null;
-  }
-  const [json = ""] = body.slice(start + MARK.length).split(MARK_END);
-  try {
-    return MARKED.parse(JSON.parse(json));
-  } catch {
-    return null;
-  }
-}
-
-// The review the landing account submitted on PR `pr` for Verify run
-// `run` against exactly `code`, or null when it submitted none.
-function postedReview(
-  cfg: Config,
-  pr: number,
-  run: string,
-  code: string,
-): Observation<PostedReview | null> {
-  const reviews = listReviews(cfg, pr);
-  if (reviews.status !== "ok") {
-    return reviews;
-  }
-  const landing = cfg.landingAccount.toLowerCase();
-  for (const review of reviews.value) {
-    const mark = markOf(review.body);
-    if (
-      review.author?.login.toLowerCase() === landing &&
-      review.commit === code &&
-      mark?.run === run
-    ) {
-      const { run: _run, ...counts } = mark;
-      return { status: "ok", value: { review, counts } };
-    }
-  }
-  return { status: "ok", value: null };
-}
-
-export type { PlannedReview, PostedReview, ReviewCounts, ReviewFinding };
-export { commentable, planReview, postedReview, submitReview };
+export type { PlannedReview, ReviewCounts, ReviewFinding };
+export { commentable, planReview };

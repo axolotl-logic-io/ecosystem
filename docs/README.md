@@ -20,7 +20,7 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 ## Reference
 
-[Authority](reference/authority.md): the two accounts, authority records, saved state, write authority and trusted input.
+[Authority](reference/authority.md): buddy accounts, label claims and trusted input.
 
 [Hardening, Verify and Fix](reference/review.md): Implement's hardening, Verify's review of the exact PR head, Fix's answers to blocking reviews and the review loop's limit.
 
@@ -30,19 +30,16 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Execution fencing audit](reference/execution-fencing-audit.md): the #132 audit of every credentialed and cleanup write, a dated snapshot at `ea483b5` that predates the buddy runtime.
 
-[Runtime runs](reference/runtime-runs.md): strict buddy configuration, CLI, admission, scoped stops and canonical buddy/action observation files.
+[Runtime runs](reference/runtime-runs.md): launcher configuration, CLI, label claims and task-run observations.
 
-[Coordination](reference/coordination.md): task admission, fenced execution, shared resources, observations and preservation.
 
-[Shared database](reference/database.md): PostgreSQL, shared Drizzle schema, database coordination, constraints, isolated tests, backups and drained cutover.
+[Shared database](reference/database.md): PostgreSQL monitoring tables, shared Drizzle migrations and isolated tests.
 
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
 [Land](reference/merge.md): Land's prerequisites, its merge of the PR pinned to the checked head, closing the issue, conflicts and recovery from GitHub.
 
-[Signals](reference/signals.md): how the signal component reads control labels, accepts qualified events as records and delivers starts, reviews, stops and results.
 
-[Task results](reference/task-results.md): exact-binding attempts, authenticated results, Verify and Land evidence, causes and holds.
 
 [Project settings](reference/project-settings.md): tracked project policy, operator-owned controls and trusted committed revisions.
 
@@ -56,4 +53,4 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Checkouts](reference/checkouts.md): where clones, checkouts and run files live, and what an action preserves when it ends.
 
-[Stops and labels](reference/stops-and-labels.md): start and stop labels, human PR reviews, durable latches, scoped interruption and unsupported continuation.
+[Stops and labels](reference/stops-and-labels.md): start, running and stop labels and operator cutover.

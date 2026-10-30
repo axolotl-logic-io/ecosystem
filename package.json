@@ -11,7 +11,7 @@
   "scripts": {
     "check": "npm run check --workspaces",
     "check:full": "npm run check --workspace @ecosystem/db && npm run check:full --workspace @ecosystem/issue-pipeline && npm run check --workspace @ecosystem/workflow-dash",
-    "test:database": "npm run test:database --workspace @ecosystem/db && npm run build --workspace @ecosystem/issue-pipeline && npm run test:database --workspace @ecosystem/issue-pipeline && npm run test:database --workspace @ecosystem/workflow-dash",
+    "test:database": "npm run test:database --workspace @ecosystem/db && npm run test:database --workspace @ecosystem/workflow-dash",
     "db:up": "docker compose up --detach --wait database",
     "db:down": "docker compose down",
     "db:generate": "npm run db:generate --workspace @ecosystem/db",

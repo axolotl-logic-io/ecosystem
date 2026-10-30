@@ -14,8 +14,8 @@ import path from "node:path";
 import process from "node:process";
 import type { Config } from "../config.ts";
 import { loadConfig } from "../config.ts";
-import type { InvocationBinding } from "../coordination.ts";
 import type { PushReply } from "../job/control-protocol.ts";
+import type { InvocationBinding } from "../job/session-identity.ts";
 import { OpsError } from "../ops-error.ts";
 import { run as runProcess } from "../process.ts";
 import {
@@ -28,7 +28,7 @@ import type { PullRequest } from "../task-app/recovery.ts";
 import { taskRunFile } from "../task-app/run-record.ts";
 import { openSessions, type Sessions } from "../task-app/sessions.ts";
 import { main, type TaskRun } from "../task-app/task-app.ts";
-import { WRITER_REPLY } from "../tasks/replies.ts";
+import { WRITER_REPLY } from "./replies.ts";
 
 const TASK = "implement";
 const COMMIT_ENV: ReadonlyMap<string, string> = new Map([

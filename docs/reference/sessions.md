@@ -1,6 +1,6 @@
 # Sessions
 
-A session is one model invocation inside an action. It is not a task, a buddy, an account or a workflow stage. Tasks choose their session specifications; the runtime owns credential isolation, launch records, interruption and guarded commit requests. See the [domain runtime contract](../domain-runtime-contract.md).
+A session is one model invocation inside a task run. It is not a task, a buddy, an account or a workflow stage. Tasks choose their sessions; shared session utilities isolate credentials and handle model processes and commit requests. See the [domain runtime contract](../domain-runtime-contract.md).
 
 ## Task sessions
 
@@ -16,17 +16,15 @@ Each delivery task picks its sessions from this table. The runtime selects the p
 
 Land starts no model. Verify's full checks and required CI are deterministic; one read-only session reviews the head's diff, its Security included, and its findings become the review. A model name or agent prompt grants neither role nor account authority.
 
-**Note:** These are the source's sessions for the five delivery tasks. The installed pipeline still runs the older Harden, Sync and Review Security sessions until this source is installed.
+Implement's hardening runs in a fresh session that doesn't read the writing session's conversation. Implement marks its PR ready only after the hardening session ends.
 
-Implement's hardening runs in a fresh session that doesn't read the writing session's conversation. Implement records its result only after the hardening session ends.
+`start:gherkin` starts the Gherkin task app, and `start:implement` starts Implement. Implement doesn't wait for Gherkin. Safe Refactor uses its [standalone tool](safe-refactor.md), whose reports grant no Verify or Land result.
 
-`start:gherkin` starts the Gherkin task app, and a qualified `start:implement` requests Implement. Implement doesn't wait for Gherkin. Safe Refactor uses its [standalone tool](safe-refactor.md), whose reports grant no Verify or Land result.
-
-Implement reads the trusted issue title, body and qualified collaborator comments. It needs no substitute Gherkin document, doesn't merge the base and doesn't own final verification. A changed requirement needs a newly accepted start; ending a session doesn't grant a retry.
+Implement reads the trusted issue title, body and trusted collaborator comments. It needs no substitute Gherkin document, doesn't merge the base and doesn't own final verification. A changed requirement needs a new start label; ending a session doesn't grant a retry.
 
 ## Gherkin session
 
-Gherkin is a task app, so its session isn't an action's. It runs in the task run's folder, on the issue file and a detached checkout of the base branch, as [runtime runs](runtime-runs.md#model-session) describes. It uses the repository config's `models.gherkin` and times out after 30 minutes. It replies with one of two shapes:
+Gherkin runs in the task run's folder, on the issue file and a detached checkout of the base branch, as [runtime runs](runtime-runs.md#model-session) describes. It uses the repository config's `models.gherkin` and times out after 30 minutes. It replies with one of two shapes:
 
 - `gherkin`: the behaviour as one Feature in `gherkin`, and the session's own calls in `assumptions`.
 - `needs-info`: one to five `questions` that only the issue's author can answer.
@@ -37,7 +35,7 @@ The app posts Gherkin as the issue's one Gherkin comment, with the hidden marker
 
 Behavioral pages live in `apps/issue-pipeline/prompts/` and are installed under the pipeline root's `prompts/`. Source publication does not replace installed prompts or activate a buddy. A candidate cannot replace the installed prompt that reviews it.
 
-Before the corresponding launch, the runtime pins and validates the selected page's exact bytes and retains the pinned page for that action. A page must be a plain file, not a symlink, valid UTF-8 without NUL bytes, nonblank, more than one line and at most 131,071 bytes. Missing or malformed pages fail closed; there is no prompt fallback.
+Before the corresponding launch, the runtime pins and validates the selected page's exact bytes and uses those bytes for that session. A page must be a plain file, not a symlink, valid UTF-8 without NUL bytes, nonblank, more than one line and at most 131,071 bytes. Missing or malformed pages fail closed; there is no prompt fallback.
 
 Pinned provenance names the page, path and SHA-256. Launch records preserve session observations. A prompt grants no tool, token, writable path or authority.
 
@@ -49,7 +47,7 @@ The runtime strips configured account-token variables and inherited commit scope
 
 Writers change only their granted checkout scope. Verify's Security session is read-only. No session may deploy, push a target branch, retrieve secrets, expose credentials or leave unregistered background work. Delivery to a configured base is not a production release.
 
-A qualified stop or unreadable stop evidence cooperatively interrupts the affected local work item. Unknown evidence creates no authenticated human stop and grants no continuation when readability returns. In-flight credentialed writes are not killed or replayed. Retained checkout and resource obligations survive the model's exit.
+Task apps check `agents:stop` at lifecycle boundaries and before writes. A session already running may finish before the next check. Failed or stopped writers preserve their checkout for recovery.
 
 ## `pipeline_commit`
 
@@ -68,10 +66,8 @@ The tool accepts Git commit arguments, for example:
 - `--amend`, `--no-verify` (`-n`), `--author`, `--date`, `--reset-author`, `--pathspec-from-file` and `-F -`, including long-option abbreviations, are refused.
 - The commit carries a `Pipeline-Session` trailer identifying its recorded launch.
 
-After a local commit, the tool asks the controlled push server over its socket to publish it. The model receives neither token. The server rechecks substantive task authority at the mutation, including human qualification, stop evidence, buddy grant, ownership and write fences. A refused push leaves the commit local. A successful local commit is not proof of publication.
-
-The reply reports `pushed`, `deferred` during a rebase, or a `pushError`. A later request rechecks authority; it cannot turn a spent start or ended process into new permission. Pushes target only the assigned work branch, with an exact lease, never the configured base.
+After a local commit, the tool asks its task app over a local control socket to push it. The request carries the session's run identity. The model receives no GitHub token. The app checks stop and pushes only its assigned branch without overwriting competing commits. A failed push leaves the commit recoverable; a local commit is not proof of publication.
 
 ## Failure evidence
 
-To inspect a failed session, read its [action and launch observations](runtime-runs.md), authenticated attempt, checkpoint and retained checkout. Preserve local commits, untracked files, patches and consumers before recovery. Do not restart a saved stage or delete ownership records. An uncertain effect requires reconciliation of the original action, not another model pass.
+Read the task run's end comment, session transcript, PR and retained checkout. Preserve local commits, untracked files and patches before retrying with a new start label. Recovery comes from GitHub artifacts and retained work.

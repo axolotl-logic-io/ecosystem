@@ -119,7 +119,6 @@ test("fresh Fix preserves the reviewed head, merges the base, replies and names 
         .issues.find((item) => item.number === ISSUE)
         ?.comments.some((comment) => comment.body.includes("`start:verify`")),
     );
-    assert.deepEqual(box.world().tasks, []);
   } finally {
     box.cleanup();
   }

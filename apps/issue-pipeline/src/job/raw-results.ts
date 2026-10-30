@@ -22,12 +22,6 @@ interface ProcessExit {
   timedOut: boolean;
 }
 
-interface OpsRaw {
-  ok: boolean;
-  output: string;
-  error: string;
-}
-
 interface SessionRaw {
   ok: boolean;
   structuredOutput: Record<string, unknown> | null;
@@ -112,15 +106,6 @@ function tail(text: string): string {
 
 function exitedClean(exit: ProcessExit): boolean {
   return exit.code === 0 && !exit.timedOut;
-}
-
-// An ops child's result: ok only when it exited 0 within its timeout.
-function opsRaw(exit: ProcessExit): OpsRaw {
-  let error = tail(exit.stderr);
-  if (exit.timedOut) {
-    error = TIMED_OUT;
-  }
-  return { ok: exitedClean(exit), output: exit.stdout, error };
 }
 
 // The line as a session event the result reads, or null for any other line.
@@ -251,5 +236,5 @@ function failedSession(launch: SessionLaunch, error: string): SessionRaw {
   });
 }
 
-export type { OpsRaw, ProcessExit, SessionLaunch, SessionRaw, ToolFailure };
-export { failedSession, opsRaw, recordFacts, sessionRaw };
+export type { ProcessExit, SessionLaunch, SessionRaw, ToolFailure };
+export { failedSession, recordFacts, sessionRaw };

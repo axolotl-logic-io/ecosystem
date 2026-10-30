@@ -10,8 +10,8 @@
 // the argv it returns.
 
 import { z } from "zod";
-import { INVOCATION_BINDING } from "../coordination-record-schema.ts";
 import { matchAny } from "../globs.ts";
+import { INVOCATION_BINDING } from "../job/session-identity.ts";
 import type { ReadArgs } from "./commit-options.ts";
 import { Refusal, readArgs, refuse } from "./commit-options.ts";
 

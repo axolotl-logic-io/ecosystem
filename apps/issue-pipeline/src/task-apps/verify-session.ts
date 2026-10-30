@@ -17,9 +17,9 @@ import { PROMPTS_DIR, pinPage } from "../job/prompts.ts";
 import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
 import { agentEnvOf, rolesOf } from "../job/roles.ts";
 import { OpsError } from "../ops-error.ts";
-import type { VerifyReply } from "../tasks/verify.ts";
-import { VERIFY_REPLY } from "../tasks/verify.ts";
 import type { HeadCheckout } from "./head-checkout.ts";
+import type { VerifyReply } from "./verify-reply.ts";
+import { VERIFY_REPLY } from "./verify-reply.ts";
 
 const AGENT = "issue-pipeline-reviewer";
 const PAGE = "verify.md";

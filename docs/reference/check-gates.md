@@ -37,7 +37,7 @@ node --test --test-concurrency=8 --test-timeout=180000 'test/{component,componen
 
 `mise //apps/issue-pipeline:check:full` runs only the pipeline's part.
 
-The suite isn't empty. `test/` holds component, component-integration and system tests, one folder per level, for buddy runs, task delivery, setup and resource release, stops, the Gherkin task app, Implement's hardening, Verify, Fix, Land's merge and its recovery, signals, the task ledger, project policy, model-session reservations, the distribution and standards upgrade. `npm run test:<level>` in `apps/issue-pipeline/` runs one level. They run real files, subprocesses and Git in temporary HOME and pipeline roots, against local Git origins; the buddy-flow tests run the built `buddy.mjs`. GitHub and the model are fake processes. A new `test/**/*.test.ts` file runs with no change to the scripts.
+The suite covers framework claims and overlapping runs, launcher behavior, Gherkin, Implement and hardening, Verify, Fix, Land and recovery, project policy, standalone tools and installed artifacts. Tests run real files, subprocesses and local Git against fake GitHub and models. New test files are discovered automatically.
 
 File concurrency stays at 8. `test/system-integration/` stays out, since it needs real credentials; run it with `npm run test:system-integration`. The per-test timeout stays at 180000 ms. Fix or remove a slow test rather than raise its deadline or move its work into a hook. A failure or flake blocks acceptance; fix its cause instead of rerunning for a pass.
 
@@ -65,9 +65,7 @@ Capture a command's exit status before any output filter, so a filter can't hide
 
 Installation is a separate, operator-authorized action. Landing source installs nothing and changes no operator configuration, wrapper or credential.
 
-Before installation, confirm the exact-source gate result and independent, read-only pre-Land Security result that the effective policy required. Record both against the same full source commit, trusted-input revision, checking policy and pre-Land target branch and commit. A fast pass alone is not full-gate evidence.
-
-After Land, confirm only the existing identity, receipt, ancestry, pre-Land verification and saved clearance. Run no check suite, fresh Security model, repair writer or second Land. To make the change take effect, [install it](operations.md#upgrade-safely).
+Before installation, confirm the required source checks against the merged revision. Preserve evidence and retained work. To make the change take effect, [install it](operations.md#upgrade-safely); no source gate installs or restarts the pipeline.
 
 A change to the repository's scripts doesn't rewrite an operator's `commands.test` or test wrapper. A wrapper that calls the full suite directly still runs it. To change a live wrapper, prepare the smallest proposal outside live configuration, keep its isolation and fake-transport boundaries, and get source review and operator approval first.
 

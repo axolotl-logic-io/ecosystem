@@ -1,7 +1,7 @@
 // The structured replies of the writer sessions: each session ends by
 // calling its `structured_output` tool with one of these, and the tool
-// checks the reply against the schema. A reply grants nothing: the task's
-// ops decide every verdict from fresh reads. A task whose session replies
+// checks the reply against the schema. A reply grants nothing: the task app
+// decides what to publish from fresh reads. A task whose session replies
 // in another shape, such as Verify's review, keeps that schema with it.
 
 import { z } from "zod";

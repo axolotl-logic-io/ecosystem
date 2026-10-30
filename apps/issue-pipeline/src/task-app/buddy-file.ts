@@ -8,8 +8,7 @@
 // account makes every write, so the repository's account pairing plays no
 // part.
 //
-// A file of another version is the earlier buddy runtime's
-// (src/runtime/buddy-config.ts), which still runs until #254 removes it.
+// Files of any other version are refused.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -84,7 +83,6 @@ const ANY_BUDDY = z.union([
     .looseObject({ identity: z.looseObject({ account: ACCOUNT }) })
     .transform(({ identity }) => identity.account),
 ]);
-const VERSIONED = z.looseObject({ version: z.unknown() });
 
 type LaunchedTask = z.infer<typeof TASK>;
 interface BuddyRepository {
@@ -149,20 +147,6 @@ function repositoryOf(owner: string, config: string): BuddyRepository {
     );
   }
   return { config, repo: parsed.data.repo, base: parsed.data.baseBranch };
-}
-
-// Whether `file` is a launcher buddy file rather than an earlier buddy
-// runtime's. A file that can't be read or parsed isn't one; the loader of
-// either kind refuses it with its own reason.
-function isLauncherFile(file: string): boolean {
-  try {
-    const parsed = VERSIONED.safeParse(
-      JSON.parse(fs.readFileSync(file, "utf8")),
-    );
-    return parsed.success && parsed.data.version === VERSION;
-  } catch {
-    return false;
-  }
 }
 
 // The launcher buddy file at `file`, validated, with each repository in its
@@ -238,4 +222,4 @@ function sharingAccount(buddy: BuddyFile): string | null {
 }
 
 export type { BuddyFile, BuddyRepository, LaunchedTask };
-export { isLauncherFile, readBuddyFile, sharingAccount };
+export { readBuddyFile, sharingAccount };
