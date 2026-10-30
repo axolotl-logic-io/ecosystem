@@ -1,0 +1,15 @@
+{
+  "extends": "//",
+  "overrides": [
+    {
+      // The orchestrator is the operator configuration and subprocess boundary.
+      "includes": ["src/**", "test/**"],
+      "linter": {
+        "rules": {
+          "correctness": { "noNodejsModules": "off", "noProcessGlobal": "off" },
+          "style": { "noProcessEnv": "off" }
+        }
+      }
+    }
+  ]
+}
