@@ -61,4 +61,4 @@ Never print a `.env*` file. Never copy a secret into code, docs, logs, issues or
 
 ## Issue pipeline tests
 
-In `apps/issue-pipeline/`, `test/system/task-apps/implement.test.ts` is a system test of the Implement app. System tests run built task apps against fake GitHub and fake pi, exercise public CLI entrypoints and check built and distributed artifacts. `check:full` runs every level except system integration. [Writing a test](../apps/issue-pipeline/test/README.md) says what each level fakes, which kit to start from and how to run it.
+In `apps/issue-host/`, `test/system/task-apps/implement.test.ts` is a system test of the Implement app. System tests run built task apps against fake GitHub and fake pi, exercise public CLI entrypoints and check built and distributed artifacts. `check:full` runs every level except system integration. [Writing a test](../apps/issue-host/test/README.md) says what each level fakes, which kit to start from and how to run it.

@@ -1,7 +1,7 @@
 // The buddy runtime's local run observations, exactly as published in
 // docs/reference/runtime-runs.md and exported as BUDDY_RUN and ACTION_RUN by
-// apps/issue-pipeline/src/runtime/observations.ts, and the task app runs
-// exported as TASK_RUN by apps/issue-pipeline/src/task-app/run-record.ts. Dash keeps this reader
+// apps/issue-host/src/runtime/observations.ts, and the task app runs
+// exported as TASK_RUN by apps/issue-host/src/task-app/run-record.ts. Dash keeps this reader
 // copy instead of importing the pipeline's writer module, whose imports read
 // the pipeline's environment and configuration. test/runtime-runs.test.ts
 // compares both copies' JSON Schemas through a pipeline subprocess, so a

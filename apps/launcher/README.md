@@ -11,7 +11,7 @@ capabilities from their bootstrap.
 After installing the release, validate a buddy and its task registrations:
 
 ```sh
-node "$ISSUE_PIPELINE_ROOT/launcher.mjs" --config BUDDY_FILE --check
+node "$ECOSYSTEM_INSTALL_ROOT/launcher.mjs" --config BUDDY_FILE --check
 ```
 
 `BUDDY_FILE` is an absolute path to an operator-owned version 2 buddy file.
@@ -20,8 +20,10 @@ for the same launcher, with the same arguments and exit behavior. Existing buddy
 files need no edits. See the [buddy file reference](../../docs/reference/runtime-runs.md#launcher-buddy-file).
 
 `--manifest MANIFEST_FILE` selects an explicit installed task manifest. The
-default is `$ISSUE_PIPELINE_ROOT/tasks.json`, with the existing installation-root
-default when that variable is absent. The library functions
+default is `$ECOSYSTEM_INSTALL_ROOT/tasks.json`. `ISSUE_PIPELINE_ROOT` and the
+historical `~/.pi/agent/issue-pipeline` directory remain compatibility fallbacks.
+The host uses `ECOSYSTEM_DATA_ROOT` for writable runtime data; see
+[host paths](../../docs/reference/operations.md#host-paths). The library functions
 `checkLauncher(buddyFile, manifestFile)` and
 `runLauncher(buddyFile, manifestFile, stop)` require explicit paths; importing
 those modules starts no process and discovers no installation root.
@@ -86,7 +88,7 @@ prints its final JSON line. It writes child exits and discovery warnings to stde
 ## Migrate an installation
 
 1. Drain the running buddies and preserve retained checkouts and run folders.
-2. Install the merged release using the [pipeline installation procedure](../issue-pipeline/README.md#install-and-safe-upgrades).
+2. Install the merged release using the [installation procedure](../../docs/reference/operations.md#install-a-release).
 3. Confirm `launcher.mjs`, `buddy.mjs`, `tasks.json` and every registered executable are installed together.
 4. Validate each existing buddy file with `launcher.mjs --config BUDDY_FILE --check`.
 5. Restart one launcher per buddy with the existing private configuration.

@@ -85,8 +85,8 @@ The caller, not the model, supplies the assignment. Assignment, operation and pr
   "behavior": "js-values-effects-v1",
   "requirements": "Preserve public behavior and clarify the subtotal calculation.",
   "prompt": "Improve the assigned design using the glossary and explain deferred findings.",
-  "project": "apps/issue-pipeline/tsconfig.json",
-  "files": ["apps/issue-pipeline/src/example.ts"],
+  "project": "apps/issue-host/tsconfig.json",
+  "files": ["apps/issue-host/src/example.ts"],
   "biome": "/absolute/ecosystem/node_modules/@biomejs/biome/bin/biome",
   "profile": "biome.safe-refactor.jsonc",
   "model": "openai/gpt-6.1-sol",
@@ -98,7 +98,7 @@ Replace `COMMIT_SHA` with the full assigned Git object ID and `PROFILE_SHA256` w
 
 The empty runtime object is sufficient for a non-mutating check. A model run requires the separately provisioned, approved [native runtime and identity configuration](runtime.md). This feature provisions no provider, credentials or accounts. The model receives no general `read`, `edit`, `write`, `bash`, commit, subagent or arbitrary-code tool. The native extension activates only `safe_refactor` and `safe_refactor_finish`, and blocks other tool calls.
 
-Before a task or standalone mutation, read-only Git verifies the assigned HEAD, a clean index/worktree and no untracked non-ignored files. It also compares the actual bytes of assigned sources and consulted in-project source/config/glossary inputs with the assigned tree. Ignored generated compiler inputs cannot substitute for tracked revision inputs. The existing [read-only Git boundary](../../apps/issue-pipeline/README.md#read-only-git-subagent) supports plain clones, not linked worktrees, initialized submodules or alternate object stores. Paths that Git quotes, including some non-ASCII filenames, currently defer exact-tree validation.
+Before a task or standalone mutation, read-only Git verifies the assigned HEAD, a clean index/worktree and no untracked non-ignored files. It also compares the actual bytes of assigned sources and consulted in-project source/config/glossary inputs with the assigned tree. Ignored generated compiler inputs cannot substitute for tracked revision inputs. The existing [read-only Git boundary](runtime.md) supports plain clones, not linked worktrees, initialized submodules or alternate object stores. Paths that Git quotes, including some non-ASCII filenames, currently defer exact-tree validation.
 
 Project text is limited to 1 MiB per file; compiler inputs are limited to 4 MiB. Inputs must be canonical, regular, singly-linked UTF-8 files. Symlinked workspace/package inputs and external non-package compiler inputs need separate adapters. The caller must supply a reviewed, tracked metric profile in another target repository; the model cannot create or modify one.
 
@@ -107,13 +107,13 @@ Project text is limited to 1 MiB per file; compiler inputs are limited to 4 MiB.
 To build the source programs without installation, run from the repository root:
 
 ```bash
-npm run build --workspace @ecosystem/issue-pipeline
+npm run build --workspace @ecosystem/issue-host
 ```
 
 To collect non-mutating codebase evidence, run:
 
 ```bash
-node apps/issue-pipeline/dist/safe-refactor.mjs check --request REQUEST_JSON
+node apps/issue-host/dist/safe-refactor.mjs check --request REQUEST_JSON
 ```
 
 `REQUEST_JSON` is the external assignment file. This command makes no model call and may inspect a changed working tree. Exit code 1 means a finding, unknown evidence or a refused request; inspect the structured evidence or error instead of interpreting it as a metric waiver.
@@ -121,7 +121,7 @@ node apps/issue-pipeline/dist/safe-refactor.mjs check --request REQUEST_JSON
 After separate operator authorization, runtime provisioning and exclusive checkout allocation, the standalone task interface is:
 
 ```bash
-node apps/issue-pipeline/dist/safe-refactor.mjs run --request REQUEST_JSON --artifacts ARTIFACT_PARENT
+node apps/issue-host/dist/safe-refactor.mjs run --request REQUEST_JSON --artifacts ARTIFACT_PARENT
 ```
 
 `ARTIFACT_PARENT` is an existing external directory. The launcher creates a fresh run directory and session, retains the existing runtime preflight and enforces a one-hour session deadline. No existing job or caller entry point invokes this task automatically.
@@ -129,7 +129,7 @@ node apps/issue-pipeline/dist/safe-refactor.mjs run --request REQUEST_JSON --art
 For an authorized single-operation diagnostic, the interface is:
 
 ```bash
-node apps/issue-pipeline/dist/safe-refactor.mjs operation --request REQUEST_JSON --artifacts OPERATION_ARTIFACTS --operation OPERATION_JSON
+node apps/issue-host/dist/safe-refactor.mjs operation --request REQUEST_JSON --artifacts OPERATION_ARTIFACTS --operation OPERATION_JSON
 ```
 
 `OPERATION_ARTIFACTS` is an existing external directory. `OPERATION_JSON` contains one catalog request, for example:
@@ -190,7 +190,7 @@ The restricted tool API, not prompt compliance, prevents model-directed general 
 
 `test/system/safe-refactor-types.test.ts` exercises the built CLI's exact-revision path and the restricted extension's generated schema, execution and tool boundary. These tests use disposable projects, not models or live credentials. Historical `test/safe-refactor/` tests and its native proof are no longer in the repository; do not report those old paths as current coverage.
 
-Run the focused tests from `apps/issue-pipeline/` after building:
+Run the focused tests from `apps/issue-host/` after building:
 
 ```bash
 npm run build

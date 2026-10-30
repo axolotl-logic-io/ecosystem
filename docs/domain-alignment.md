@@ -22,7 +22,7 @@ The inventory covers ecosystem's issue pipeline, the local Pi dash extension, th
 
 | Source | Inspected location | Evidence boundary |
 | --- | --- | --- |
-| Ecosystem | `apps/issue-pipeline/`, root practices and `docs/` | Checkout at `3b163fbee47e27ed431bc832f5ee2ebfad5f9db1`; this is not a live-installation observation. The tasks-and-buddies section rechecked `42a8771774c7ab95c0f151debc4bf55cf2fe9098`, the release installed on 2026-10-22. |
+| Ecosystem | `apps/issue-host/`, root practices and `docs/` | Checkout at `3b163fbee47e27ed431bc832f5ee2ebfad5f9db1`; this is not a live-installation observation. The tasks-and-buddies section rechecked `42a8771774c7ab95c0f151debc4bf55cf2fe9098`, the release installed on 2026-10-22. |
 | Dash | `~/workspace/tools/pipeline-dash/`, including `data.ts`, `index.ts`, `ui.ts`, `messages.ts`, `language.ts`, `tools.ts` and tests | The installed extension path links to this unversioned directory. No copy was found in ecosystem. Validation uses fixtures, not an active dashboard. |
 | Status-report | `~/brain/skills/status-report/SKILL.md`, `references/sources.md`, `assets/report-template.md` | Instruction and template inspection only, not a collected live status report. |
 | Issue-pipeline plan | `~/brain/plans/issue-pipeline.md` | Read in full. Accepted intent and historical records are not proof of installed behavior. The plan is maintained by another session; it was not edited. |
@@ -208,7 +208,7 @@ A terminology change can still affect a public interface or saved record. Classi
 | Plan owner/task owner and status-report Assigned to | Assignee where the meaning is work assignment | Terminology; mapping | Preserve explicit plan assignment versus GitHub assignment as separate source observations when they conflict. Do not rename resource owners or policy authority to assignee. |
 | Pipeline caller versus legacy `src/orchestrator/` scheduler | Caller only where semantics match | Structure review | The retained autonomous scheduler is not automatically the caller. Inspect and classify each use; do not mechanically replace all orchestrator symbols. |
 
-Evidence includes `apps/issue-pipeline/src/config-schema.ts`, `src/config-legacy.ts`, `src/job/roles.ts`, `src/job/role-context.ts`, dash's `messages.ts`, and the status-report reconciliation rules.
+Evidence includes `apps/issue-host/src/config-schema.ts`, `src/config-legacy.ts`, `src/job/roles.ts`, `src/job/role-context.ts`, dash's `messages.ts`, and the status-report reconciliation rules.
 
 ## Work and execution identity
 

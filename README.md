@@ -1,71 +1,65 @@
 # Ecosystem
 
-Ecosystem is the home of the issue pipeline. Configured buddies run tasks
-against GitHub issues. Start labels launch task apps; each app claims its start and reads its prerequisites from GitHub. Its source,
-operator instructions and tests live in
-[`apps/issue-pipeline/`](apps/issue-pipeline/README.md).
-It runs from an operator-installed copy; landing source does not install it.
+Ecosystem runs independent tasks against GitHub issues. Root `tasks/` workspaces
+own validated inputs, task-specific capabilities, prompts and domain behavior.
+`packages/task-framework` owns execution and `packages/task-runtime` owns shared
+checkout, model, trusted-policy, recovery and issue-trigger services. Neither
+tasks nor packages import applications, read buddy files or discover an implicit
+installation root.
 
-The opt-in Pi [workflow dashboard](apps/workflow-dash/README.md) lives in
-`apps/workflow-dash/`. It observes source records and composes editable requests;
-it does not schedule work. Its installation and checks are separate from the
-pipeline's.
+The [launcher](apps/launcher/README.md) runs one configured buddy. The optional
+[orchestrator](apps/orchestrator/README.md) supervises several launchers. The
+[issue host](apps/issue-host/README.md) provisions task capabilities and preserves
+per-task subprocesses, GitHub claims, stop guards, credential-free model sessions,
+pinned-head checks and recoverable work. The repository root owns the build,
+installation manifest and distribution. Merging source activates nothing.
 
-## Shared database
+The [reference index](docs/README.md) documents the architecture and tasks.
+[Operations](docs/reference/operations.md) covers host-owned paths, compatibility,
+drain, install, restart and rollback. Historical observations and persisted
+`.issue-pipeline.json` policy names remain compatible.
 
-`packages/db/` provides `@ecosystem/db`: a shared native PostgreSQL client,
-Drizzle schema and migrations for ecosystem apps. Root Compose files separate
-the persistent operational service from disposable tests. The dashboard uses independent monitoring tables, shared with Project Buddy. The issue pipeline no longer uses database coordination. Read the [database reference](docs/reference/database.md) for setup and tests.
+The separate [workflow dashboard](apps/workflow-dash/README.md) observes current
+task runs and historical buddy/action records. Its monitoring database and
+standalone installation remain independent of task execution.
 
 ## Check
 
-You need Node 24, npm and Git. The root `package.json` declares the
-Node major in `engines`. From the root of a fresh clone:
+Use Node 24, npm and Git. From a fresh clone:
 
-```bash
-npm ci --ignore-scripts --no-audit --no-fund   # setup
-npm run check                                  # fast gate, both apps and shared database
-npm run check:full                             # fast gate plus non-external pipeline Node tests
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm run check
+npm run check:full
 ```
 
-The commands need no file under `$HOME` and no absolute path. The pipeline
-uses the same setup and gate, from `commands` in `.issue-pipeline.json`.
+The fast gate checks distribution types, lint, build and program syntax, then
+every workspace's gate. Workspace component tests include tasks, shared runtime,
+launcher, orchestrator and dashboard behavior. The full gate additionally runs
+all non-external host and distribution tests. It is required before landing the
+modular distribution cutover. See [gate scope](docs/reference/check-gates.md).
 
-The pipeline's fast gate typechecks source and tests, lints, builds and checks
-syntax. Its full gate runs pipeline tests outside `test/system-integration/`, including
-real public-entrypoint task apps, claims and recovery. New
-test files are picked up with no change to the scripts. The fast gate does not
-run that suite or prove runtime authority, recovery, isolation or landing behavior.
-The separate `npm run test:database` suite requires the isolated PostgreSQL test
-service and `TEST_DATABASE_URL`; see [database tests](docs/reference/database.md#test-the-database-contract).
-Both default gates typecheck and lint the shared database without connecting to it.
+The separate `npm run test:database` needs disposable PostgreSQL and
+`TEST_DATABASE_URL`; see [database tests](docs/reference/database.md#test-the-database-contract).
+Default source gates never connect to PostgreSQL. `packages/db` owns the shared
+client, Drizzle schema and migrations; task execution uses no shared database.
 
-Read the
-[check gates](docs/reference/check-gates.md) before selecting
-the expensive full suite. Both root scripts also run the dashboard's gates,
-which you can run alone:
+## Build and install
 
-```bash
-npm run check --workspace @ecosystem/workflow-dash
+```sh
+npm run build
+npm run install:dry-run
+npm run install:runtime
 ```
 
-mise is optional. If you use it, `mise.toml` pins Node 24, and
-`mise //apps/issue-pipeline:check`, `:check:full` and
-`mise //apps/workflow-dash:check` call the same npm scripts. Each step list
-lives only in `apps/*/package.json`. An operator's per-machine setup script in
-`$ISSUE_PIPELINE_ROOT/repos/` is no longer needed once the operator config
-takes `commands` from this repository's `.issue-pipeline.json`.
+`programs.ts` lists programs and assets from their owning workspaces. `build.ts`
+bundles them into root `dist/`, including task registrations, prompts, agent
+templates, standalone-tool assets and the vendored TypeScript compiler. The
+installer replaces only manifest-owned files, backs up replaced bytes and records
+installed identity and ownership. Drain the old release before installing.
 
-The dashboard's source gates do not replace operator acceptance before
-cutover. Read [AGENTS.md](AGENTS.md) before changing code.
-
-`main` is the only long-lived branch. The GitHub Check workflow defines fast
-gates; source changes do not enable repository workflows or deploy either app.
-The operator can configure the pipeline to work on ecosystem's own issues as
-well as other repositories. Tasks develop and review pipeline fixes; the
-operator coordinates installation separately from landing them.
-
-The [pipeline docs](docs/README.md) hold its reference. The sessions'
-behavioral prompts ship with the pipeline in
-`apps/issue-pipeline/prompts/`. The operator configures each buddy's scope,
-tasks and its own account; there is no shared stage cursor.
+mise is optional and pins Node 24. Existing
+`mise //apps/issue-pipeline:install` commands remain forwarding compatibility
+commands; new automation should use the root npm scripts. Read
+[AGENTS.md](AGENTS.md) and the [project practices](docs/project-practices.md)
+before changing code.

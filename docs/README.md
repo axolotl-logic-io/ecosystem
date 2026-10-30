@@ -1,8 +1,10 @@
 # Ecosystem docs
 
-These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Reference pages describe how the code behaves today and how to recover when something goes wrong.
+These docs describe the repository's practices and modular task execution. They are ordinary files, reviewed and landed with the code they describe. Reference pages describe how the code behaves today and how to recover when something goes wrong.
 
-Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The reference pages describe that source. Where the installed pipeline still behaves the old way, the page says so in a note.
+The repository root owns build and installation. The issue host provisions GitHub adapters; the launcher runs one buddy and the orchestrator supervises launchers. Tasks receive explicit validated inputs and task-specific capabilities.
+
+Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The reference pages describe that source. Installed releases retain their recorded behavior until the operator installs the source change.
 
 ## Practices
 
@@ -18,7 +20,11 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Domain runtime contract](domain-runtime-contract.md): the source contract for label-started task apps: claims, running labels, stops, recovery from GitHub and results.
 
+[Issue host](../apps/issue-host/README.md): trusted settings, credentials, lifecycle and explicit runtime paths.
+
 [Launcher](../apps/launcher/README.md): one buddy, installed task registrations, explicit subprocess invocations and migration.
+
+[Orchestrator](../apps/orchestrator/README.md): fleet validation, launcher supervision and drain shutdown.
 
 ## Reference
 
@@ -57,6 +63,8 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Stops and labels](reference/stops-and-labels.md): start, running and stop labels and operator cutover.
 
+## Task workspaces
+
 The [shared task runtime](../packages/task-runtime/README.md) documents service
 ownership, dependency direction and host-provisioned capability interfaces.
 
@@ -64,5 +72,3 @@ Task-owned inputs, capabilities, outcomes and retry behavior are documented in
 [Gherkin](../tasks/gherkin/README.md), [Implement](../tasks/implement/README.md),
 [Fix](../tasks/fix/README.md), [Verify](../tasks/verify/README.md) and
 [Land](../tasks/land/README.md).
-
-The [orchestrator application](../apps/orchestrator/README.md) documents fleet configuration, independent launcher supervision, failure policy and drain shutdown.

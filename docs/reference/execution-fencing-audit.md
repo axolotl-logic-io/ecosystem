@@ -8,7 +8,7 @@ Each row is checked against one rule: a run reads ownership immediately before e
 
 ## How a write is fenced
 
-Every credentialed write in `apps/issue-pipeline/src` goes through two functions in `src/github.ts`. `gh()` handles each `gh` call that isn't a read, and `git()` handles each `git push`. Both hand the write to `controlledWrite`, which calls the config's `mutation` hook when the config carries an execution binding. No other module runs `gh` or a credentialed `git` itself.
+Every credentialed write in `apps/issue-host/src` goes through two functions in `src/github.ts`. `gh()` handles each `gh` call that isn't a read, and `git()` handles each `git push`. Both hand the write to `controlledWrite`, which calls the config's `mutation` hook when the config carries an execution binding. No other module runs `gh` or a credentialed `git` itself.
 
 What the hook does depends on the process the write runs in:
 

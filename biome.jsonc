@@ -74,6 +74,17 @@
   // A rule group can be a severity or a rule map, not both, so rule-level
   // settings live in an override that applies to every file.
   "overrides": [
+    // Repository distribution and system tests are process boundaries.
+    {
+      "includes": ["build.ts", "install.ts", "scripts/**", "test/**"],
+      "linter": {
+        "rules": {
+          "correctness": { "noNodejsModules": "off", "noProcessGlobal": "off" },
+          "style": { "noProcessEnv": "off" },
+          "suspicious": { "noConsole": "off" }
+        }
+      }
+    },
     {
       "includes": ["**"],
       "linter": {

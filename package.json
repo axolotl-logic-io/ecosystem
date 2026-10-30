@@ -10,22 +10,33 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "check": "npm run check --workspaces",
-    "check:full": "npm run check --workspace @ecosystem/orchestrator && npm run check --workspace @ecosystem/launcher && npm run check --workspace @ecosystem/task-runtime && npm run check --workspace @ecosystem/task-framework && npm run check --workspace @ecosystem/db && npm run check:full --workspace @ecosystem/issue-pipeline && npm run check --workspace @ecosystem/workflow-dash && npm run check --workspace @ecosystem/gherkin && npm run check --workspace @ecosystem/implement && npm run check --workspace @ecosystem/fix && npm run check --workspace @ecosystem/verify && npm run check --workspace @ecosystem/land",
+    "check": "npm run check:distribution && npm run check --workspaces",
+    "check:full": "npm run check && npm run test:runtime",
     "test:database": "npm run test:database --workspace @ecosystem/db && npm run test:database --workspace @ecosystem/workflow-dash",
     "db:up": "docker compose up --detach --wait database",
     "db:down": "docker compose down",
     "db:generate": "npm run db:generate --workspace @ecosystem/db",
     "db:migrate": "npm run db:migrate --workspace @ecosystem/db",
     "db:test:up": "docker compose --file compose.test.yml up --detach --wait",
-    "db:test:down": "docker compose --file compose.test.yml down"
+    "db:test:down": "docker compose --file compose.test.yml down",
+    "build": "node build.ts",
+    "install:runtime": "node install.ts",
+    "install:dry-run": "node install.ts --dry-run",
+    "check:distribution": "tsc -p . && biome check --error-on-warnings build.ts install.ts programs.ts scripts test && node --check install.ts && npm run build && node scripts/check-built.ts",
+    "test:runtime": "node --test --test-concurrency=8 --test-timeout=180000 'apps/issue-host/test/{component,component-integration,system,acceptance}/**/*.test.ts' 'test/{component,component-integration,system,acceptance}/**/*.test.ts'"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15"
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "^24.19.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^5",
+    "yaml": "2.9.0",
+    "zod": "^4.6.7"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {
       "esbuild": "^0.25.12"
     }
-  }
+  },
+  "type": "module"
 }
