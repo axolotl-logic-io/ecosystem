@@ -1,7 +1,7 @@
 // The parts of gh that the buddy flow tests' runtime, tasks and ops use
 // beyond the signal reads fake-gh.ts answers: whole paginated comment
 // listings (`--paginate --jq '.[] | @json'`), comment edits, plain resource
-// reads (issues, collaborators), issue assignee changes, the repository's
+// reads (issues, collaborators), issue assignee and label changes, the repository's
 // git database, which is the real local bare origin in FAKE_GH_ORIGIN, and
 // `gh pr` for the item's pull request: its view, checks, creation, draft
 // and ready changes, merge commit, submitted reviews and thread replies.
@@ -28,6 +28,8 @@ const ISSUE = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)$/u;
 const ASSIGNEES = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/assignees$/u;
 const LABEL =
   /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/labels\/(?<label>[^/]+)$/u;
+const LABELS = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/labels$/u;
+const LABEL_FIELD = /^labels\[\]=(?<label>.+)$/u;
 const COLLABORATOR = /^repos\/[^/]+\/[^/]+\/collaborators\/(?<login>[^/]+)$/u;
 const REF = /^repos\/[^/]+\/[^/]+\/git\/ref\/(?<ref>.+)$/u;
 const GIT_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits\/(?<sha>[0-9a-f]{40})$/u;
@@ -276,7 +278,19 @@ function gitGet(endpoint: string): boolean {
       return fail("gh: Not Found (HTTP 404)");
     }
     const names = diff.out.split("\n").filter((name) => name !== "");
-    print({ files: names.map((filename) => ({ filename })) });
+    const listed = git([
+      "rev-list",
+      "--reverse",
+      `refs/heads/${base}..refs/heads/${head}`,
+    ]);
+    const commits = listed.out
+      .split("\n")
+      .filter((id) => id !== "")
+      .map((id) => ({
+        sha: id,
+        commit: { message: git(["log", "-1", "--format=%B", id]).out },
+      }));
+    print({ files: names.map((filename) => ({ filename })), commits });
     return true;
   }
   return false;
@@ -424,6 +438,41 @@ function labelDelete(
     createdAt: postedAt(world.nextId),
   });
   world.nextId += 1;
+  print(issue.labels.map((present) => ({ name: present })));
+  return true;
+}
+
+// `gh api -X POST repos/O/R/issues/N/labels -f labels[]=NAME`: GitHub adds
+// each named label that isn't on the issue and records who added it.
+function labelAdd(
+  world: World,
+  args: readonly string[],
+  login: string,
+): boolean {
+  const { number } = LABELS.exec(endpointOf(args))?.groups ?? {};
+  if (number === undefined || flagValue(args, "-X") !== "POST") {
+    return false;
+  }
+  const issue = world.issues.find((item) => String(item.number) === number);
+  if (issue === undefined) {
+    return fail("gh: Not Found (HTTP 404)");
+  }
+  const names = args.flatMap((arg) => {
+    const { label } = LABEL_FIELD.exec(arg)?.groups ?? {};
+    return label ?? [];
+  });
+  for (const name of names.filter((item) => !issue.labels.includes(item))) {
+    issue.labels.push(name);
+    issue.events.push({
+      id: world.nextId,
+      event: "labeled",
+      label: name,
+      actor: login,
+      viaApp: false,
+      createdAt: postedAt(world.nextId),
+    });
+    world.nextId += 1;
+  }
   print(issue.labels.map((present) => ({ name: present })));
   return true;
 }
@@ -915,7 +964,7 @@ function flowCall(
   if (commentEdit(world, args)) {
     return { handled: true, changed: true };
   }
-  if (labelDelete(world, args, login)) {
+  if (labelDelete(world, args, login) || labelAdd(world, args, login)) {
     return { handled: true, changed: true };
   }
   if (assigneesWrite(world, args, login)) {

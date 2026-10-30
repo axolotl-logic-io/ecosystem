@@ -27,7 +27,6 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { z } from "zod";
 import type { BuddyAuthorization, Config } from "../config.ts";
 import { loadConfig } from "../config.ts";
@@ -36,15 +35,11 @@ import { ACCESS_PROFILE, ROLE_ID, TASK_ID } from "../domain.ts";
 import { OpsError } from "../ops-error.ts";
 import { RESOURCE_CAPACITY } from "../project-policy-schema.ts";
 import { TASKS } from "../tasks/index.ts";
+import { untrustedFile } from "../trusted-file.ts";
 
 const GITHUB_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
 const BUDDY_NAME = /^[a-z][a-z0-9-]{0,62}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
-// The group and other write bits: a trusted file is writable by its owner
-// only.
-const GROUP_WRITE = 0o20;
-const OTHER_WRITE = 0o2;
-const SHARED_WRITE_BITS: readonly number[] = [GROUP_WRITE, OTHER_WRITE];
 const MIN_POLL_SECONDS = 1;
 const MAX_POLL_SECONDS = 3600;
 const DEFAULT_POLL_SECONDS = 60;
@@ -52,6 +47,8 @@ const MAX_STOP_POLL_SECONDS = 600;
 const DEFAULT_STOP_POLL_SECONDS = 15;
 const MIN_LEASE_SECONDS = 30;
 const DEFAULT_LEASE_SECONDS = 300;
+const MAX_CLAIM_WAIT_MS = 60_000;
+const MAX_CLAIM_WAITS = 10;
 // Safe Refactor is a Developer task only when the buddy names it.
 const EXPLICIT_ONLY: readonly TaskId[] = ["refactor-safely"];
 
@@ -118,6 +115,12 @@ const BUDDY_CONFIG = z.strictObject({
     .min(MIN_LEASE_SECONDS)
     .max(MAX_POLL_SECONDS)
     .default(DEFAULT_LEASE_SECONDS),
+  // Read by task apps (src/task-app/identity.ts): pauses between rereads
+  // of the timeline while it doesn't yet show a start label's removal.
+  claimWaitsMs: z
+    .array(z.int().min(0).max(MAX_CLAIM_WAIT_MS))
+    .max(MAX_CLAIM_WAITS)
+    .optional(),
 });
 
 // What an ops request of a buddy action names: the trusted buddy file, the
@@ -159,20 +162,11 @@ function refuse(file: string, reason: string): never {
 // Throws unless `file` is a regular file, not a link, that the current user
 // owns and nobody else can write.
 function assertTrustedFile(file: string, what: string): void {
-  let stat: fs.Stats;
-  try {
-    stat = fs.lstatSync(file);
-  } catch {
+  const problem = untrustedFile(file);
+  if (problem === "unreadable") {
     refuse(file, `${what} is unreadable`);
   }
-  const uid = process.getuid?.();
-  if (
-    !stat.isFile() ||
-    SHARED_WRITE_BITS.some(
-      (bit: number): boolean => Math.floor(stat.mode / bit) % 2 === 1,
-    ) ||
-    (uid !== undefined && stat.uid !== uid)
-  ) {
+  if (problem === "shared") {
     refuse(
       file,
       `${what} must be a regular file owned by this user and writable by no one else`,

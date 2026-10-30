@@ -31,6 +31,7 @@ A buddy file is strict JSON. The runtime refuses unknown keys. The file and ever
 - `identity.account.login` must be the repository config's `devAccount` for a Developer, or its `landingAccount` for a Gatekeeper.
 - `identity.models` is optional. It may override the repository config's `author`, `developer` or `reviewer` model.
 - `pollSeconds` (1 to 3600, default 60), `stopPollSeconds` (1 to 600, default 15) and `leaseSeconds` (30 to 3600, default 300) are optional.
+- `claimWaitsMs` is optional and read only by [task apps](#task-app-runs). It lists up to 10 pauses, each 0 to 60000 milliseconds, between rereads of the issue timeline while it doesn't yet show the app's removal of a start label. The default is `[500, 1000, 2000, 4000]`.
 
 The runtime refuses the obsolete scheduler and assignment controls `assignments`, `grant`, `grantor`, `maxJobs`, `stageCaps`, `orchestratorIntervalSeconds`, `takeNewWork`, `stage` and `stages`. It also refuses a buddy-level `modelSessions` or `resources`. Capacity is the repository's shared `resources.modelSessions` pool, which every repository config must supply; see [project settings](project-settings.md).
 
@@ -263,3 +264,69 @@ const ACTION_RUN = z.strictObject({
 `TASK_ID`, `WORK_ITEM_REF`, `BINDING`, `ACTION_CAUSE`, `RUN_STATE` and `VERDICT` come from `src/domain.ts`; `INVOCATION_BINDING` comes from `src/coordination-record-schema.ts`. `previous` is the task's previous action on the same binding. `mode` is `recover` for a read-only recovery, which records no attempt of its own. `authorization` is the action's authorization digest. `preserved.checkout` names a checkout kept whole, and `preserved.patches` names the saved patches of uncommitted work, relative to the issue's run folder. The same folder holds each session's JSONL (`sessions/KEY.jsonl`), `context.jsonl` and the control socket.
 
 Both schemas are exported as `BUDDY_RUN` and `ACTION_RUN` from `src/runtime/observations.ts`.
+
+## Task app runs
+
+A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. No task runs on the framework yet, and no buddy launches it until #248 lands. The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
+
+To run a task app, run:
+
+```bash
+node TASK_APP --config BUDDY_FILE --issue OWNER/REPO#N
+```
+
+- `TASK_APP` is the task app's program.
+- `BUDDY_FILE` is an absolute path to the buddy file. The app acts as its `identity.account.login`.
+- `OWNER/REPO#N` is the issue. The buddy's scope must name a repository config for `OWNER/REPO`.
+
+Until a buddy file names its own credential (#248), the app reads the token that the repository config's `credentialsEnvFile` holds for the account: the development token when the account is `devAccount`, and the landing token when it's `landingAccount`. It checks with GitHub that the token is that account's before any other call.
+
+The app exits 0 when its run ends normally: it finished its work, lost the claim, found `agents:stop` before claiming, or stopped on it. It exits 1 when the run failed or it couldn't confirm its claim.
+
+### Claim confirmation
+
+GitHub removes a label only while it's on the issue. When GitHub accepts the app's removal of `start:X`, the app took a start that no other buddy took. The app then reads the timeline until it shows its own `unlabeled` event for `start:X` after the latest `labeled` event it noted before the removal. That event is the run's claim.
+
+If another buddy removed the label first and a person applied it again before this app's removal, the app took the newer start, and it runs it.
+
+### Running label
+
+Each run that wins its claim ends by posting an end comment with a hidden marker that names its claim. It then removes `agent:X:running` only when every claim of `X` on the timeline has an end comment from the account that made it. Afterwards it reads the timeline again, and adds the label back if a new claim appeared while it was removing it.
+
+A crashed run posts no end comment, so its claim holds the label. To release it, a person removes `agent:X:running`. The app counts every claim before that removal as ended. It tells a person's removal from a run's by the actor: a run's account has posted an end comment for `X`, and a person's hasn't. A person who removes `start:X` by hand makes a claim that no run ends, which holds the label the same way.
+
+### Task run
+
+Path: `runs/SLUG/issue-N/task-runs/TASK_RUN_ID/run.json`. Only a run that won its claim writes one.
+
+```ts
+const TASK_RUN = z.strictObject({
+  kind: z.literal("task-run"),
+  version: z.literal(1),
+  id: z.uuid(),
+  task: z.string().regex(TASK_ID),
+  workItem: z.strictObject({
+    repo: z.string().regex(REPOSITORY),
+    number: z.number().int().positive(),
+  }),
+  account: z.string().min(1),
+  claim: z.strictObject({
+    start: z.number().int().positive().nullable(),
+    removal: z.number().int().positive(),
+  }),
+  process: z.strictObject({
+    pid: z.int().positive(),
+    host: z.string().min(1),
+  }),
+  state: z.enum(["running", "ended"]),
+  step: z.enum(["mark", "work", "unmark"]),
+  outcome: z.enum(["succeeded", "failed", "stopped"]).nullable(),
+  reason: z.string().nullable(),
+  startedAt: TIME,
+  endedAt: TIME.nullable(),
+});
+```
+
+`claim.start` is the `labeled` event of the start the run took, or null when the timeline doesn't show one, and `claim.removal` is its claim's `unlabeled` event. `step` is the lifecycle step the run is in. `reason` names the error of a failed run. The schema is exported as `TASK_RUN` from `src/task-app/run-record.ts`.
+
+The [workflow dashboard](../../apps/workflow-dash/README.md) shows each task run as an action. It shows a run recorded as running whose process is gone, or doesn't run on this host, as unavailable.

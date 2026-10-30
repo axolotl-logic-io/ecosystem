@@ -1,4 +1,4 @@
-// Buddy-run and action-run observation files for tests, written as the buddy
+// Buddy-run, action-run and task-run observation files for tests, written as the buddy
 // runtime writes them: one whole `run.json` per run under the runs folder.
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -9,6 +9,7 @@ import process from "node:process";
 import type {
   ActionRunObservation,
   BuddyRunObservation,
+  TaskRunObservation,
 } from "../runtime-run-schema.ts";
 
 const leaseSeconds = 60;
@@ -132,6 +133,32 @@ function buddyRunPath(runs: string, id: string): string {
 function actionRunPath(runs: string, issue: number, id: string): string {
   return join(runs, slug, `issue-${issue}`, "actions", id, "run.json");
 }
+function taskRun(
+  id: string,
+  issue: number,
+  overrides: Partial<TaskRunObservation> = {},
+): TaskRunObservation {
+  return {
+    kind: "task-run",
+    version: 1,
+    id,
+    task: "gherkin",
+    workItem: { repo, number: issue },
+    account: "fixture-account",
+    claim: { start: 100, removal: 101 },
+    process: { pid: process.pid, host: hostname() },
+    state: "running",
+    step: "work",
+    outcome: null,
+    reason: null,
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    ...overrides,
+  };
+}
+function taskRunPath(runs: string, issue: number, id: string): string {
+  return join(runs, slug, `issue-${issue}`, "task-runs", id, "run.json");
+}
 async function writeText(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, text);
@@ -165,6 +192,8 @@ export {
   nodeProcess,
   repo,
   slug,
+  taskRun,
+  taskRunPath,
   writeObservation,
   writeText,
 };

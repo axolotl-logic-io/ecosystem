@@ -72,7 +72,11 @@
         "src/runtime/action.ts",
         "src/runtime/buddy-config.ts",
         "src/runtime/observations.ts",
-        "src/runtime/stop.ts"
+        "src/runtime/stop.ts",
+        "src/trusted-file.ts",
+        "src/task-app/identity.ts",
+        "src/task-app/run-record.ts",
+        "src/task-app/task-app.ts"
       ],
       "linter": {
         "rules": {
@@ -108,10 +112,14 @@
         }
       }
     },
-    // GitHub's REST API names a comment's times in snake_case (`created_at`,
-    // `updated_at`). comments.ts declares its comment schema with them.
+    // GitHub's REST API names fields in snake_case (`created_at`,
+    // `in_reply_to_id`). These modules declare its schemas with them.
     {
-      "includes": ["src/comments.ts"],
+      "includes": [
+        "src/comments.ts",
+        "src/task-app/issue-github.ts",
+        "src/task-app/recovery.ts"
+      ],
       "linter": {
         "rules": {
           "style": {

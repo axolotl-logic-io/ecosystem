@@ -16,6 +16,7 @@ import {
   type ActionRunEntry,
   type BuddyRunEntry,
   loadRuntimeRuns,
+  type TaskRunEntry,
 } from "../runtime-runs.ts";
 import { parse } from "../source-records.ts";
 import { entity, projectRecord, safeBody, timestamp } from "./records.ts";
@@ -304,10 +305,43 @@ async function importAction(
     (session): Promise<void> => importSession(at, entry, session, sourceAt),
   );
 }
+// A task app run, shown as an action: its recorded outcome once it ended,
+// running while its process is observed, and unavailable otherwise.
+async function importTask(at: Collector, entry: TaskRunEntry): Promise<void> {
+  const { run, condition } = entry;
+  let state: string = run.outcome ?? "status unavailable";
+  let { reason } = run;
+  if (run.state === "running" && condition.state === "process-observed") {
+    state = "running";
+  } else if (run.state === "running") {
+    ({ reason } = condition);
+  }
+  await saveEntity(
+    at.db,
+    entity({
+      id: run.id,
+      kind: "action",
+      repo: run.workItem.repo,
+      issue: run.workItem.number,
+      title: `#${run.workItem.number}`,
+      state,
+      task: run.task,
+      phase: run.step,
+      actor: run.account,
+      sourceAt: await sourceTime(entry.path),
+      startedAt: run.startedAt,
+      endedAt: run.endedAt,
+      reason,
+    }),
+  );
+}
 async function collectPipeline(at: Collector): Promise<void> {
   const runs = await loadRuntimeRuns(at.config);
   if (
-    runs.coverage.buddyRunsOmitted + runs.coverage.actionRunsOmitted > 0 ||
+    runs.coverage.buddyRunsOmitted +
+      runs.coverage.actionRunsOmitted +
+      runs.coverage.taskRunsOmitted >
+      0 ||
     runs.coverage.unlistable.length > 0 ||
     runs.problems.length > 0
   ) {
@@ -323,6 +357,7 @@ async function collectPipeline(at: Collector): Promise<void> {
     runs.actionRuns,
     (entry): Promise<void> => importAction(at, entry, runs.buddyRuns),
   );
+  await collect(runs.taskRuns, (entry): Promise<void> => importTask(at, entry));
 }
 async function importGeneric(at: Collector, directory: string): Promise<void> {
   const folder = join(at.config.subagentRuns, directory);

@@ -1,6 +1,7 @@
 // The buddy runtime's local run observations, exactly as published in
 // docs/reference/runtime-runs.md and exported as BUDDY_RUN and ACTION_RUN by
-// apps/issue-pipeline/src/runtime/observations.ts. Dash keeps this reader
+// apps/issue-pipeline/src/runtime/observations.ts, and the task app runs
+// exported as TASK_RUN by apps/issue-pipeline/src/task-app/run-record.ts. Dash keeps this reader
 // copy instead of importing the pipeline's writer module, whose imports read
 // the pipeline's environment and configuration. test/runtime-runs.test.ts
 // compares both copies' JSON Schemas through a pipeline subprocess, so a
@@ -194,8 +195,36 @@ const actionRunSchema = z.strictObject({
   }),
 });
 
+const taskIdPattern = /^[a-z][a-z0-9-]*$/u;
+const taskRunSchema = z.strictObject({
+  kind: z.literal("task-run"),
+  version: z.literal(1),
+  id: uuid,
+  task: z.string().regex(taskIdPattern),
+  workItem: z.strictObject({
+    repo: z.string().regex(repositoryPattern),
+    number: z.number().int().positive(),
+  }),
+  account: z.string().min(1),
+  claim: z.strictObject({
+    start: z.number().int().positive().nullable(),
+    removal: z.number().int().positive(),
+  }),
+  process: z.strictObject({
+    pid: z.int().positive(),
+    host: z.string().min(1),
+  }),
+  state: z.enum(["running", "ended"]),
+  step: z.enum(["mark", "work", "unmark"]),
+  outcome: z.enum(["succeeded", "failed", "stopped"]).nullable(),
+  reason: z.string().nullable(),
+  startedAt: time,
+  endedAt: time.nullable(),
+});
+
 type BuddyRunObservation = z.infer<typeof buddyRunSchema>;
 type ActionRunObservation = z.infer<typeof actionRunSchema>;
+type TaskRunObservation = z.infer<typeof taskRunSchema>;
 
-export type { ActionRunObservation, BuddyRunObservation };
-export { actionRunSchema, buddyRunSchema };
+export type { ActionRunObservation, BuddyRunObservation, TaskRunObservation };
+export { actionRunSchema, buddyRunSchema, taskRunSchema };

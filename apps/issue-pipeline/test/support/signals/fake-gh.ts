@@ -2,7 +2,8 @@
 // world the fake GitHub server holds (fake-gh-server.ts) and appending each
 // call to the server's call log. It speaks the parts of gh and GitHub that
 // signals rely on: `api user`, `api --include --method GET` with status
-// lines and Link headers on numbered pages, `api graphql` comment
+// lines and Link headers on numbered pages, event listings that can lag
+// behind a label removal, `api graphql` comment
 // provenance, and comment POSTs whose answer can be lost after or before
 // they apply. The buddy flow tests' further gh surface is in
 // fake-gh-flow.ts.
@@ -30,6 +31,7 @@ const UPPER = /[A-Z]/gu;
 const ISSUE_PATH = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)$/u;
 const ISSUE_PART =
   /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/(?<part>events|comments)$/u;
+const EVENTS_PATH = /^repos\/[^/]+\/[^/]+\/issues\/\d+\/events(?:\?|$)/u;
 const PULL_PART =
   /^repos\/[^/]+\/[^/]+\/pulls\/(?<number>\d+)\/(?<part>reviews|comments)$/u;
 const ORG_MEMBERSHIP = /^orgs\/(?<org>[^/]+)\/memberships\/(?<login>[^/]+)$/u;
@@ -234,6 +236,7 @@ function listing(
   world: World,
   path: string,
   query: URLSearchParams,
+  lagging: boolean,
 ): unknown[] | null {
   const { number: pull, part: pullPart } = PULL_PART.exec(path)?.groups ?? {};
   if (pullPart !== undefined) {
@@ -246,7 +249,11 @@ function listing(
       return null;
     }
     if (part === "events") {
-      return restEvent(world, issue);
+      const events = restEvent(world, issue);
+      if (lagging && issue.events.at(-1)?.event === "unlabeled") {
+        return events.slice(0, -1);
+      }
+      return events;
     }
     return issue.comments.map((item) => restComment(world, issue, item));
   }
@@ -353,7 +360,7 @@ function pageLink(
   return links.join(", ");
 }
 
-function get(world: World, target: string): Answer {
+function get(world: World, target: string, lagging: boolean): Answer {
   const url = new URL(`https://api.github.com/${target}`);
   const path = url.pathname.slice(1);
   const page = Number(url.searchParams.get("page") ?? "1");
@@ -363,7 +370,7 @@ function get(world: World, target: string): Answer {
   if (fault !== undefined && fault.link === null) {
     return { status: fault.status, body: { message: "injected" }, link: null };
   }
-  const rows = listing(world, path, url.searchParams);
+  const rows = listing(world, path, url.searchParams, lagging);
   if (rows !== null) {
     const size = world.pageSize;
     const last = Math.max(1, Math.ceil(rows.length / size));
@@ -384,6 +391,26 @@ function get(world: World, target: string): Answer {
       link: null,
     }
   );
+}
+
+// Whether this read of `target` lags behind the issue's newest event,
+// spending one of the world's lagging reads when it does.
+function lag(
+  world: World,
+  target: string,
+  commit: (world: World) => void,
+): boolean {
+  const lagging = world.timelineLag;
+  if (lagging === undefined || !EVENTS_PATH.test(target)) {
+    return false;
+  }
+  if (lagging > 1) {
+    world.timelineLag = lagging - 1;
+  } else {
+    Reflect.deleteProperty(world, "timelineLag");
+  }
+  commit(world);
+  return true;
 }
 
 function printAnswer(answer: Answer): void {
@@ -578,7 +605,7 @@ function call(
     if (countPoll(world, args[4])) {
       commit(world);
     }
-    printAnswer(get(world, args[4]));
+    printAnswer(get(world, args[4], lag(world, args[4], commit)));
     return;
   }
   fail(`fake gh: unsupported api call ${args.join(" ")}`);

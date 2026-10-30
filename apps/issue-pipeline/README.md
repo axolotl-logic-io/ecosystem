@@ -189,7 +189,7 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 `programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
 
-Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
+Canonical observation files are `runs/buddy-runs/ID/run.json`, `runs/SLUG/issue-N/actions/ID/run.json` and, for [task app runs](../../docs/reference/runtime-runs.md#task-app-runs), `runs/SLUG/issue-N/task-runs/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
 Buddies also write one JSON line to stderr for each new or changed loop hold,
 each action that ends without success and each failure an action goes on past,

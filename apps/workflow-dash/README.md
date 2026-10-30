@@ -62,6 +62,7 @@ It polls local records every 5 seconds and GitHub issues every 2 minutes. `--onc
 The collector imports:
 
 - buddy runs, action runs and their sessions from the runtime records described in the [runtime runs reference](../../docs/reference/runtime-runs.md);
+- task app runs, shown as actions, from the task run records described in the [runtime runs reference](../../docs/reference/runtime-runs.md#task-run);
 - each session's transcript, appending only complete new lines;
 - generic subagent run statuses and events;
 - open and closed issues for each configured repository.

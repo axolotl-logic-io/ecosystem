@@ -241,6 +241,10 @@ const WORLD = z.strictObject({
   // Each real required-check read consumes one admission reply. The
   // conditional effect reply above takes precedence and consumes none.
   checksSequence: z.array(CHECK_REPLY).optional(),
+  // How many more reads of an issue's events leave out its newest event
+  // when that is an `unlabeled` one, as GitHub's timeline can lag behind a
+  // label removal.
+  timelineLag: z.number().int().positive().optional(),
   stopBuddy: z
     .strictObject({
       pid: z.number().int().positive(),
