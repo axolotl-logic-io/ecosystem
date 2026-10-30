@@ -4,7 +4,7 @@ Source changes take effect only after installation. The operator owns credential
 
 ## Programs
 
-`programs.ts` is the build and install manifest. Delivery programs are `buddy.mjs`, `gherkin.mjs`, `implement.mjs`, `verify.mjs`, `fix.mjs` and `land.mjs`. Session support includes `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs` and `git-review.mjs`. Safe Refactor and standards upgrade retain their standalone entrypoints.
+`programs.ts` is the build and install manifest. The generated `tasks.json` registers task ids and executable paths; the launcher never infers an executable from a task name. Delivery programs are `launcher.mjs`, compatibility `buddy.mjs`, `gherkin.mjs`, `implement.mjs`, `verify.mjs`, `fix.mjs` and `land.mjs`. Session support includes `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs` and `git-review.mjs`. Safe Refactor and standards upgrade retain their standalone entrypoints.
 
 `ops.mjs`, `database.mjs` and `recover-implement.mjs` are retired. The installer does not delete files outside its manifest; obsolete installed files must not be invoked.
 
@@ -19,7 +19,7 @@ Keep credential files outside managed worktrees, owned by the operator and reada
 ## Validate or activate a buddy
 
 ```sh
-node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
+node "$ISSUE_PIPELINE_ROOT/launcher.mjs" --config BUDDY_FILE --check
 ```
 
 `BUDDY_FILE` is the absolute path of the operator's buddy file. Omit `--check` to start it. Validation checks configuration and installed task apps, but does not verify credentials with GitHub.
@@ -37,7 +37,7 @@ The installer backs up replaced files and records `INSTALLED.json`; it does not 
 
 ## Installation acceptance
 
-Validate each version 2 buddy file and confirm each configured task app is installed. Preserve old run folders, retained checkouts and pushed recovery branches. Monitoring tables and historical dashboard records remain available.
+Validate each version 2 buddy file and confirm `tasks.json` and every registered executable are installed together. `buddy.mjs` remains compatible. See [launcher migration](../../apps/launcher/README.md#migrate-an-installation). Preserve old run folders, retained checkouts and pushed recovery branches. Monitoring tables and historical dashboard records remain available.
 
 ## Upgrade safely
 

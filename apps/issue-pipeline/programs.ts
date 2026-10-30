@@ -6,6 +6,7 @@ export const PROGRAMS = [
   { source: "src/job/git-review.ts", file: "git-review.mjs" },
   { source: "src/shell-supervisor.ts", file: "shell-supervisor.mjs" },
   { source: "src/buddy.ts", file: "buddy.mjs" },
+  { source: "../launcher/src/cli.ts", file: "launcher.mjs" },
   { source: "src/gherkin.ts", file: "gherkin.mjs" },
   { source: "src/task-apps/implement.ts", file: "implement.mjs" },
   { source: "src/job/structured-output.ts", file: "structured-output.mjs" },

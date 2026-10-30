@@ -1,14 +1,18 @@
 // Host-only credential transport for the shared issue adapter.
 
 import type { RunResult } from "@ecosystem/task-runtime/command";
+import { unreadable } from "@ecosystem/task-runtime/issue/github-observation";
+import {
+  GH_TIMEOUT_MS,
+  githubRead,
+} from "@ecosystem/task-runtime/issue/github-read";
 import type { IssueRef } from "@ecosystem/task-runtime/issue/issue-github";
 import { IssueGitHub } from "@ecosystem/task-runtime/issue/issue-github";
+import { credentialedRun } from "@ecosystem/task-runtime/issue/transport";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { z } from "zod";
 import { redactGhArgs } from "../github.ts";
-import { credentialedRun } from "../github-auth.ts";
-import { observeAll, unreadable } from "../github-observation.ts";
-import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
+import { observeAll } from "../github-observation.ts";
 import { runFailure } from "../process.ts";
 
 function issueGitHub(

@@ -12,8 +12,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import { untrustedFile } from "@ecosystem/task-runtime/trusted-file";
 import { z } from "zod";
-import { untrustedFile } from "../trusted-file.ts";
 
 const VERSION = 2;
 const GITHUB_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
@@ -71,7 +71,7 @@ const BUDDY_FILE = z.strictObject({
     .default([...DEFAULT_CLAIM_WAITS_MS]),
 });
 const REPOSITORY_CONFIG = z.looseObject({
-  repo: z.string().min(1),
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/u),
   baseBranch: z.string().min(1).default("main"),
 });
 // The account any buddy file in a folder names: a launcher buddy's

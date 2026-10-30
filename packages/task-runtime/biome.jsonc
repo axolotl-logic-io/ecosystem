@@ -11,6 +11,9 @@
       "includes": [
         "test/**",
         "src/command.ts",
+        "src/credentials.ts",
+        "src/trusted-file.ts",
+        "src/issue/invocation.ts",
         "src/process-group.ts",
         "src/project-policy.ts",
         "src/clone-setup.ts",

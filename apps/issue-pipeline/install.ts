@@ -102,6 +102,7 @@ function sources(): Source[] {
       "repos/example.json",
       "runtime/pi-cliproxyapi-config.example.json",
       "dist/standards-python-tools.txt",
+      "dist/tasks.json",
       ...mdIn(SRC, "prompts"),
     ].map((from) => {
       let to = path.join(ROOT, from);

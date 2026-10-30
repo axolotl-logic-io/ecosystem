@@ -76,3 +76,5 @@ A change to the repository's scripts doesn't rewrite an operator's `commands.tes
 - `database` runs `npm run test:database` against a disposable PostgreSQL service. Branch protection doesn't require it.
 
 A newer push to a PR cancels that PR's older run.
+
+The launcher workspace participates in both root gates. Its manifest tests use real files. Built launcher system coverage runs in the pipeline suite against fake GitHub and real task subprocesses.

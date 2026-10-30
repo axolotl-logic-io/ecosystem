@@ -18,6 +18,8 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Domain runtime contract](domain-runtime-contract.md): the source contract for label-started task apps: claims, running labels, stops, recovery from GitHub and results.
 
+[Launcher](../apps/launcher/README.md): one buddy, installed task registrations, explicit subprocess invocations and migration.
+
 ## Reference
 
 [Authority](reference/authority.md): buddy accounts, label claims and trusted input.

@@ -26,7 +26,7 @@ import {
 
 const { PATH: searchPath }: NodeJS.ProcessEnv = process.env;
 const SAMPLE = path.join(import.meta.dirname, "sample-task-app.ts");
-const BUDDY = path.resolve(import.meta.dirname, "../../../src/buddy.ts");
+const BUDDY = path.resolve(import.meta.dirname, "../../../dist/launcher.mjs");
 const REPO = "acme/widgets";
 const ISSUE = 7;
 const PERSON = "autumn";
@@ -279,7 +279,12 @@ function appExits(stderr: string): AppExit[] {
 // the task app's program, the sample task app unless given.
 function machine(
   setup: (world: World) => void = (): void => undefined,
-  served: { origin?: string; app?: string; task?: string } = {},
+  served: {
+    origin?: string;
+    app?: string;
+    task?: string;
+    environment?: ReadonlyMap<string, string>;
+  } = {},
 ): Machine {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-task-app-"));
   const bin = path.join(root, "bin");
@@ -326,7 +331,19 @@ function machine(
     );
     return file;
   }
+  const registrations = new Map<string, string>();
   function install(task: string): void {
+    registrations.set(task, `${task}.mjs`);
+    fs.writeFileSync(
+      path.join(pipeline, "tasks.json"),
+      JSON.stringify({
+        version: 1,
+        tasks: [...registrations].map(([id, executable]) => ({
+          id,
+          executable,
+        })),
+      }),
+    );
     fs.writeFileSync(
       path.join(pipeline, `${task}.mjs`),
       `process.env.SAMPLE_TASK_ID = ${JSON.stringify(task)};\nawait import(${JSON.stringify(pathToFileURL(SAMPLE).href)});\n`,
@@ -345,6 +362,7 @@ function machine(
   function appEnv(gated: string, fail: string | undefined): NodeJS.ProcessEnv {
     return {
       ...process.env,
+      ...Object.fromEntries(served.environment ?? []),
       ...Object.fromEntries([
         ["PATH", `${bin}:${searchPath ?? ""}`],
         ["ISSUE_PIPELINE_ROOT", pipeline],

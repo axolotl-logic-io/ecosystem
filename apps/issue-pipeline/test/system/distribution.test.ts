@@ -39,7 +39,16 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
     path.resolve(source, "../../tasks"),
     { recursive: true },
   );
-  fs.symlinkSync(DEPENDENCIES, path.join(source, "node_modules"), "dir");
+  fs.cpSync(
+    path.resolve(SOURCE, "../launcher"),
+    path.resolve(source, "../launcher"),
+    { recursive: true },
+  );
+  fs.symlinkSync(
+    DEPENDENCIES,
+    path.resolve(source, "../../node_modules"),
+    "dir",
+  );
   command(path.resolve(source, "../.."), "git", [
     "init",
     "--initial-branch=main",
@@ -110,6 +119,45 @@ test("installer accepts uncommitted source and records its dirty identity", () =
     assert.equal(installed.commit, commit);
     assert.equal(installed.dirty, true);
     assert.ok(result.stdout.includes("with uncommitted changes"));
+    const config = path.join(sandbox.root, "buddy.json");
+    const repository = path.join(sandbox.root, "repository.json");
+    fs.writeFileSync(
+      repository,
+      JSON.stringify({ repo: "acme/widgets", baseBranch: "main" }),
+    );
+    fs.writeFileSync(
+      config,
+      JSON.stringify({
+        version: 2,
+        name: "operator",
+        scope: { repositories: [repository] },
+        tasks: ["gherkin", "implement", "fix", "verify", "land"],
+        account: {
+          login: "operator",
+          credentials: {
+            file: path.join(sandbox.root, "private-credentials"),
+            variable: "TOKEN",
+          },
+        },
+      }),
+    );
+    const args = [
+      "--config",
+      config,
+      "--manifest",
+      path.join(root, "tasks.json"),
+      "--check",
+    ];
+    const launcher = command(sandbox.root, process.execPath, [
+      path.join(root, "launcher.mjs"),
+      ...args,
+    ]);
+    const compatible = command(sandbox.root, process.execPath, [
+      path.join(root, "buddy.mjs"),
+      ...args,
+    ]);
+    assert.equal(compatible, launcher);
+    assert.ok(launcher.includes(path.join(root, "gherkin.mjs")));
   } finally {
     sandbox.cleanup();
   }

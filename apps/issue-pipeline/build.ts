@@ -1,7 +1,7 @@
 // Bundles the distribution in programs.ts and its compiler/Python assets.
 // Usage: node build.ts [outdir] (defaults to this folder's dist/).
 
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -68,6 +68,10 @@ async function main(): Promise<void> {
           path.join(outDir, file),
         ),
       ),
+    );
+    await writeFile(
+      path.join(outDir, "tasks.json"),
+      `${JSON.stringify({ version: 1, tasks: ["gherkin", "implement", "fix", "verify", "land"].map((id) => ({ id, executable: `${id}.mjs` })) }, null, 2)}\n`,
     );
     await cp(PYTHON_TOOLS, path.join(outDir, "standards-python-tools.txt"));
   } catch (error: unknown) {

@@ -1,36 +1,25 @@
-// The buddy as a launcher of task apps. It polls the repositories in its
-// scope for open issues with a `start:X` label, where X is one of its
-// tasks, and for each one it sees runs X's task app with the issue:
-//
-//   node "$ISSUE_PIPELINE_ROOT/X.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
-//
-// It checks nothing else first, not `agent:X:running`, earlier results nor
-// `agents:stop`: the app's claim decides which buddy runs a start, and the
-// app handles the stop. So it runs every start it sees, and two runs of one
-// task on one issue can overlap. An app that fails changes nothing here:
-// the launcher logs each app's exit status and leaves the reporting to the
-// app.
-//
-// It refuses to start, before any effect, when its buddy file doesn't
-// settle (buddy-file.ts), another buddy file in the same folder names its
-// account, one of its tasks has no installed task app, or GitHub doesn't
-// confirm its credential is its account's.
+// One buddy discovers starts and launches registered subprocesses. Claims belong to children.
 import { type ChildProcess, spawn } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
+import { childEnvironment } from "@ecosystem/task-runtime/child-env";
+import {
+  observeAll,
+  unreadable,
+} from "@ecosystem/task-runtime/issue/github-observation";
+import { issueInvocation } from "@ecosystem/task-runtime/issue/invocation";
+import { wire } from "@ecosystem/task-runtime/issue/wire";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
-import { wire } from "../discovery/wire.ts";
-import { observeAll, unreadable } from "../github-observation.ts";
-import { ROOT } from "../pipeline-root.ts";
+
 import {
   type BuddyFile,
+  type BuddyRepository,
   type LaunchedTask,
   readBuddyFile,
   sharingAccount,
 } from "./buddy-file.ts";
 import { accountOf } from "./identity.ts";
+import { readManifest } from "./manifest.ts";
 import { pause } from "./stop.ts";
 
 const MS_PER_SECOND = 1000;
@@ -56,21 +45,31 @@ interface Ended {
   reason: string;
 }
 
-// The installed program of `task`'s app.
-function programOf(task: LaunchedTask): string {
-  return path.join(ROOT, `${task}.mjs`);
-}
-
 function log(line: object): void {
   process.stderr.write(
     `${JSON.stringify({ at: new Date().toISOString(), ...line })}\n`,
   );
 }
 
+function programFor(
+  programs: ReadonlyMap<string, string>,
+  task: string,
+): string {
+  const program = programs.get(task);
+  if (program === undefined) {
+    throw new OpsError(`task ${task} has no installed task app registration`);
+  }
+  return program;
+}
+
 // The launcher buddy file at `file`, refused unless it is the only one in
 // its folder with its account and every one of its tasks has an app.
-function launcherOf(file: string): BuddyFile {
+function launcherOf(
+  file: string,
+  manifest: string,
+): { buddy: BuddyFile; programs: ReadonlyMap<string, string> } {
   const buddy = readBuddyFile(file);
+  const programs = readManifest(manifest);
   const other = sharingAccount(buddy);
   if (other !== null) {
     throw new OpsError(
@@ -78,19 +77,16 @@ function launcherOf(file: string): BuddyFile {
     );
   }
   for (const task of buddy.tasks) {
-    const program = programOf(task);
-    if (!fs.statSync(program, { throwIfNoEntry: false })?.isFile()) {
-      throw new OpsError(
-        `buddy config ${buddy.file}: task ${task} has no installed task app at ${program}`,
-      );
+    if (!programs.has(task)) {
+      throw new OpsError(`task ${task} has no installed task app registration`);
     }
   }
-  return buddy;
+  return { buddy, programs };
 }
 
 // Validates the launcher buddy at `file` without contacting GitHub.
-function checkLauncher(file: string): Checked {
-  const buddy = launcherOf(file);
+function checkLauncher(file: string, manifest: string): Checked {
+  const { buddy, programs } = launcherOf(file, manifest);
   return {
     buddy: buddy.name,
     account: buddy.account,
@@ -101,7 +97,7 @@ function checkLauncher(file: string): Checked {
       base,
     })),
     apps: Object.fromEntries(
-      buddy.tasks.map((task) => [task, programOf(task)]),
+      buddy.tasks.map((task) => [task, programFor(programs, task)]),
     ),
   };
 }
@@ -109,21 +105,57 @@ function checkLauncher(file: string): Checked {
 // Runs the launcher buddy at `file` until `stop` aborts, then waits for the
 // task apps it launched to end. Each app ends on its own terms; the stop
 // only ends the polling.
-async function runLauncher(file: string, stop: AbortSignal): Promise<Ended> {
-  const buddy = launcherOf(file);
+async function runLauncher(
+  file: string,
+  manifest: string,
+  stop: AbortSignal,
+): Promise<Ended> {
+  const { buddy, programs } = launcherOf(file, manifest);
   const { env } = accountOf(buddy);
   // Each app still running, with its end.
   const live = new Map<ChildProcess, Promise<void>>();
 
-  function launch(task: LaunchedTask, repo: string, number: number): void {
-    const issue = `${repo}#${number}`;
+  function launch(
+    task: LaunchedTask,
+    repository: BuddyRepository,
+    number: number,
+  ): void {
+    const issue = `${repository.repo}#${number}`;
+    const invocation = issueInvocation.parse({
+      version: 1,
+      task,
+      issue: { repo: repository.repo, number },
+      settings: {
+        config: repository.config,
+        base: repository.base,
+        claimWaitsMs: buddy.claimWaitsMs,
+      },
+      account: buddy.account,
+    });
     // The app's stdout joins the buddy's stderr, keeping stdout for the
     // buddy's own final line.
     const child = spawn(
       process.execPath,
-      [programOf(task), "--config", buddy.file, "--issue", issue],
-      { stdio: ["ignore", STDERR, STDERR] },
+      [programFor(programs, task), "--invocation"],
+      {
+        env: childEnvironment(process.env),
+        stdio: ["pipe", STDERR, STDERR, "pipe"],
+      },
     );
+    // Credentials travel on a separate inherited pipe, never argv, files or invocation JSON.
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(JSON.stringify(invocation));
+    const [, , , channel] = child.stdio;
+    if (channel !== null && channel !== undefined && "end" in channel) {
+      channel.on("error", () => undefined);
+      channel.end(
+        JSON.stringify({
+          account: buddy.account,
+          env: [...env],
+          hiddenVariables: [buddy.credentials.variable],
+        }),
+      );
+    }
     const ended = new Promise<void>((resolve) => {
       child.once("error", (error) => {
         log({ buddy: buddy.name, task, issue, error: error.message });
@@ -162,11 +194,14 @@ async function runLauncher(file: string, stop: AbortSignal): Promise<Ended> {
   }
 
   async function poll(): Promise<void> {
-    for (const { repo } of buddy.repositories) {
+    for (const repository of buddy.repositories) {
+      const { repo } = repository;
       for (const task of buddy.tasks) {
         if (!stop.aborted) {
           for (const number of started(repo, task)) {
-            launch(task, repo, number);
+            if (!stop.aborted) {
+              launch(task, repository, number);
+            }
           }
         }
       }

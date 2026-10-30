@@ -14,7 +14,7 @@ The full gate discovers all non-external test levels with file concurrency 8 and
 
 ## Task apps and launcher
 
-Start from `support/task-app/task-app-test-kit.ts` for framework and launcher behavior. It runs the sample task app as buddies with distinct accounts against fake GitHub. A gate can hold a run until the test releases it. `acceptance/246-task-app-framework.test.ts` covers claims, overlapping runs and stops; `acceptance/248-task-app-launcher.test.ts` covers the launcher. The Land acceptance file runs the real app over a local Git origin.
+Start from `support/task-app/task-app-test-kit.ts` for framework and launcher behavior. It runs the sample task app as buddies with distinct accounts against fake GitHub. A gate can hold a run until the test releases it. `acceptance/246-task-app-framework.test.ts` covers claims, overlapping runs and stops; `acceptance/248-task-app-launcher.test.ts` covers the built launcher. `system/runtime/launcher.test.ts` covers manifest registrations, subprocess inputs, inherited credential filtering, account mismatch and shutdown draining. The Land acceptance file runs the real app over a local Git origin.
 
 For built model-backed apps, use `system/runtime/buddy-flow-test-kit.ts`. Its `startTaskApp` runs an app with planned fake model sessions. `system/task-apps/implement.test.ts`, `verify.test.ts`, `system/gherkin.test.ts` and `system/runtime/fix-task-app.test.ts` demonstrate it. The review fixture supplies ordinary GitHub reviews and base-branch changes.
 

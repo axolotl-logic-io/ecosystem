@@ -1,7 +1,7 @@
 // Bounded retries for safe GitHub reads only. Callers may further restrict
 // retry eligibility (identity rejection must take precedence over transport text).
-import type { RunResult } from "./process.ts";
-import { sleepMs } from "./process.ts";
+import type { RunResult } from "../command.ts";
+import { sleepMs } from "../command.ts";
 
 const GH_TIMEOUT_MS = 120_000;
 const GH_READ_ATTEMPTS = 4;
