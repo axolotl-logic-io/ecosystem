@@ -1,6 +1,6 @@
 # Runtime
 
-This page summarizes the model runtime every session uses: Pi's native sessions under settings the pipeline generates. The full contract and provisioning steps are in the pipeline's [runtime README](../../apps/issue-pipeline/runtime/README.md).
+This page summarizes the model runtime every session uses: Pi's native sessions under settings the pipeline generates. The full contract and provisioning steps are in the pipeline's [runtime README](../../apps/issue-host/runtime/README.md).
 
 ## Supported runtime
 
@@ -8,7 +8,7 @@ Every supported model session runs native **Pi 1.4.0** with the **pi-cliproxyapi
 
 - Each session gets a new private `PI_CODING_AGENT_DIR` holding only pipeline-generated settings. Personal settings, models, auth files, packages, extensions, skills, prompt templates and themes aren't copied. Project settings and resource discovery are off.
 - Model children use a dedicated HOME: `runtime.home`, default `$ISSUE_PIPELINE_ROOT/runtime/home`. The job and its operations keep their own HOME.
-- `runtime.toolchainEnv` declares the non-secret `PATH` and mise locations (`MISE_DATA_DIR`, `MISE_STATE_DIR`, `MISE_CACHE_DIR`, `MISE_CONFIG_DIR`, `MISE_GLOBAL_CONFIG_FILE`) that the version probe, Pi and session tools share, default `{}`. Values are absolute paths. Declare them when node or other tools come from HOME-relative mise shims, which otherwise fail under the dedicated HOME. The [runtime README](../../apps/issue-pipeline/runtime/README.md#declared-toolchain-isolated-model-configuration) gives an example.
+- `runtime.toolchainEnv` declares the non-secret `PATH` and mise locations (`MISE_DATA_DIR`, `MISE_STATE_DIR`, `MISE_CACHE_DIR`, `MISE_CONFIG_DIR`, `MISE_GLOBAL_CONFIG_FILE`) that the version probe, Pi and session tools share, default `{}`. Values are absolute paths. Declare them when node or other tools come from HOME-relative mise shims, which otherwise fail under the dedicated HOME. The [runtime README](../../apps/issue-host/runtime/README.md#declared-toolchain-isolated-model-configuration) gives an example.
 - `runtime.credentialEnv` lists the names of model credential variables, default `["PIPELINE_MODEL_KEY"]`. Each must be set in the session's filtered environment. GitHub token variables can't be named.
 
 This is configuration isolation, not a filesystem, network, keyring or OS sandbox.
@@ -34,6 +34,6 @@ The action's launch registry records its verified runtime policy, versions and S
 ## Recover from a runtime refusal
 
 1. Read the refusal in the action's observation and local diagnostic log. It names the missing or mismatched item. A failed `pi --version` probe also gives its exit status, or its signal, timeout or spawn error, and up to 300 bytes of its stderr with credential values redacted.
-2. Fix provisioning: the Pi version on the service's `PATH`, `runtime.toolchainEnv`, `runtime.providerExtension`, the provider config and discovery cache under the model HOME, credential names or `modelContextWindows`. Follow the [runtime README](../../apps/issue-pipeline/runtime/README.md) provisioning steps.
+2. Fix provisioning: the Pi version on the service's `PATH`, `runtime.toolchainEnv`, `runtime.providerExtension`, the provider config and discovery cache under the model HOME, credential names or `modelContextWindows`. Follow the [runtime README](../../apps/issue-host/runtime/README.md) provisioning steps.
 3. Don't invent cache windows, copy a personal profile or remove a version check to get a launch through.
 4. Reread the original action and ownership evidence before any continuation. Fixing provisioning does not unspend an Implement attempt or authorize a new one. Use only defined task recovery; otherwise hold for explicit reconciliation.

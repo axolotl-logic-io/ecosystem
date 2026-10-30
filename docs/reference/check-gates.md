@@ -10,7 +10,7 @@ From the repository root, run:
 npm run check
 ```
 
-That runs every workspace's `check` script, including the issue pipeline, dashboard, shared packages and root tasks. To run the pipeline's gate alone, run `npm run check --workspace @ecosystem/issue-pipeline` or `mise //apps/issue-pipeline:check`; both call the same script in `apps/issue-pipeline/package.json`. It runs:
+That runs every workspace's `check` script, including the issue pipeline, dashboard, shared packages and root tasks. To run the pipeline's gate alone, run `npm run check --workspace @ecosystem/issue-host` or `mise //apps/issue-host:check`; both call the same script in `apps/issue-host/package.json`. It runs:
 
 - TypeScript checks for source, tests and the installer, under one `tsconfig.json`.
 - Biome, with warnings treated as errors.
@@ -29,13 +29,13 @@ To select the expensive suite explicitly, run from the repository root:
 npm run check:full
 ```
 
-It checks the orchestrator and launcher applications and the shared task runtime, task framework and database packages, runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, followed by the dashboard and all five task workspace checks:
+It checks the orchestrator and launcher applications and the shared task runtime, task framework and database packages, runs the pipeline's fast gate, then this command from `apps/issue-host/`, followed by the dashboard and all five task workspace checks:
 
 ```bash
 node --test --test-concurrency=8 --test-timeout=180000 'test/{component,component-integration,system,acceptance}/**/*.test.ts'
 ```
 
-`mise //apps/issue-pipeline:check:full` runs only the pipeline's part.
+`mise //apps/issue-host:check:full` runs only the pipeline's part.
 
 The suite covers framework claims and overlapping runs, launcher behavior, Gherkin, Implement and hardening, Verify, Fix, Land and recovery, project policy, standalone tools and installed artifacts. Tests run real files, subprocesses and local Git against fake GitHub and models. New test files are discovered automatically.
 
@@ -43,7 +43,7 @@ File concurrency stays at 8. `test/system-integration/` stays out, since it need
 
 ## Gate selection
 
-The effective trusted checking policy decides which gate a revision needs before Land. The [pipeline README](../../apps/issue-pipeline/README.md#install-and-safe-upgrades) requires the full gate before Land for the current refactor. Run the full gate only when it's explicitly selected, and only before Land. Don't run it after Land or as an installation step.
+The effective trusted checking policy decides which gate a revision needs before Land. The [pipeline README](../../apps/issue-host/README.md#install-and-safe-upgrades) requires the full gate before Land for the current refactor. Run the full gate only when it's explicitly selected, and only before Land. Don't run it after Land or as an installation step.
 
 ## Known cost
 

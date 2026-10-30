@@ -30,7 +30,7 @@ Commands ran from the repository root:
 | Check | Result |
 | --- | --- |
 | `mise //apps/workflow-dash:check` | Passed: TypeScript, 108 tests and Biome over 60 files; no failures, cancellations, skips or todo tests |
-| `mise //apps/issue-pipeline:check` | Passed: typecheck, lint, build, executable syntax checks and 2,055 tests; no failures, cancellations, skips or todo tests |
+| `mise //apps/issue-host:check` | Passed: typecheck, lint, build, executable syntax checks and 2,055 tests; no failures, cancellations, skips or todo tests |
 
 The complete pipeline gate took approximately 1,023 seconds. An earlier 900-second attempt was incomplete and is not counted as passing evidence. Its owned process group was verified and stopped. The successful run had an adequate deadline and exited normally.
 

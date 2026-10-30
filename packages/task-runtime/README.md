@@ -118,5 +118,5 @@ fake GitHub and fake models, including claims, stops, credential isolation,
 publication and recovery.
 
 A source merge changes no running installation. Follow the pipeline's
-[install and restart procedure](../../apps/issue-pipeline/README.md#install-and-safe-upgrades)
+[install and restart procedure](../../apps/issue-host/README.md#install-and-safe-upgrades)
 to activate the release, preserving retained work and private configuration.

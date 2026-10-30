@@ -50,8 +50,8 @@ replacements. See the [failure and shutdown contract](../../apps/orchestrator/RE
 Run the required source gates before landing. Drain old buddies and allow their in-flight work to settle before installing and restarting. Never run old and new releases on the same repository during cutover.
 
 ```sh
-mise //apps/issue-pipeline:install:dry-run
-mise //apps/issue-pipeline:install
+mise //apps/issue-host:install:dry-run
+mise //apps/issue-host:install
 ```
 
 The installer backs up replaced files and records `INSTALLED.json`; it does not rewrite private configs, provision credentials or select project pins.

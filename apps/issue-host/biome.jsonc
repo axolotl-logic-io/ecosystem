@@ -1,0 +1,118 @@
+// The issue pipeline's Biome config. It extends the root biome.jsonc, which
+// holds the lint policy for all of the repo's code. The pipeline passes it,
+// and `npm run check` runs it (#223). Globs here resolve from this folder.
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "extends": "//",
+  "files": {
+    // dist/ is build.ts's output, rebuilt from src/ on every build and install.
+    "includes": ["**", "!AGENTS.md", "!dist"]
+  },
+  "overrides": [
+    // Process-boundary modules may read arguments, environment, stdin, files
+    // and the terminal: build/install and standalone scripts, CLI entries,
+    // runtime lifecycle/observations, deterministic filesystem/process ops,
+    // model-session infrastructure, pi extensions and real-entrypoint tests.
+    // Domain, signal, task and protocol modules keep the full policy.
+    {
+      "includes": [
+        "install.ts",
+        "test/**",
+        "build.ts",
+        "scripts/**",
+        "src/safe-refactor/**",
+        "src/standards/source.ts",
+        "src/standards/assess.ts",
+        "src/standards/execute.ts",
+        "src/standards/execute-poetry.ts",
+        "src/standards/sandbox.ts",
+        "src/host-paths.ts",
+        "src/process.ts",
+        "src/shell-supervisor.ts",
+        "src/config.ts",
+        "src/mirror-lock.ts",
+        "src/clone-setup.ts",
+        "src/checkouts.ts",
+        "src/issue-context.ts",
+        "src/ops/checks.ts",
+        "src/job/launch.ts",
+        "src/job/runtime-profile.ts",
+        "src/job/git-review.ts",
+        "src/job/git-review-process.ts",
+        "src/job/git-review-repository.ts",
+        "src/job/structured-output.ts",
+        "src/job/prompts.ts",
+        "src/job/pipeline-commit-tool.ts",
+        "src/job/checkout.ts",
+        "src/job/checkout-close.ts",
+        "src/job/code-recovery.ts",
+        "src/buddy.ts",
+        "src/task-app/stop.ts",
+        "src/trusted-file.ts",
+        "src/task-app/buddy-file.ts",
+        "src/task-app/identity.ts",
+        "src/task-app/launcher.ts",
+        "src/task-app/run-record.ts",
+        "src/task-app/session.ts",
+        "src/task-app/task-app.ts",
+        "src/task-app/issue-execution.ts",
+        "src/task-app/sessions.ts",
+        "src/task-apps/implement.ts",
+        "src/task-apps/head-checkout.ts",
+        "src/task-apps/verify-session.ts",
+        "src/task-apps/writer.ts"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": "off",
+            "noProcessGlobal": "off"
+          },
+          "style": {
+            "noProcessEnv": "off"
+          },
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    // pi loads an extension from its default export, so the runtime's pi
+    // extensions keep one (`best-practice-over-lint`: default exports are
+    // fine where they are the platform's setup): structured_output's and
+    // pipeline_commit's (#303), and git_review's.
+    {
+      "includes": [
+        "src/job/structured-output.ts",
+        "src/safe-refactor/tool.ts",
+        "src/job/git-review.ts",
+        "src/job/pipeline-commit-tool.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    // GitHub's REST API names fields in snake_case (`created_at`,
+    // `in_reply_to_id`). These modules declare its schemas with them.
+    {
+      "includes": [
+        "src/comments.ts",
+        "src/task-app/issue-github.ts",
+        "src/task-app/issue-brief.ts",
+        "src/task-apps/submit-review.ts",
+        "src/task-apps/land.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": "off"
+          }
+        }
+      }
+    }
+  ]
+}

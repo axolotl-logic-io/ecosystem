@@ -38,9 +38,7 @@ import {
 } from "./runtime-run-fixtures.ts";
 
 const run = promisify(execFile);
-const pipeline = fileURLToPath(
-  new URL("../../issue-pipeline/", import.meta.url),
-);
+const pipeline = fileURLToPath(new URL("../../issue-host/", import.meta.url));
 const millisecondsPerHour = 3_600_000;
 const oversizedBytes = 1_048_577;
 const options = { timeout: 30_000 };

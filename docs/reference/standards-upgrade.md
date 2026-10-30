@@ -68,7 +68,7 @@ no network, repository code:      poetry install --only-root
                                   poetry run python -m pytest
 ```
 
-The tools come from [`python-tools.txt`](../../apps/issue-pipeline/src/standards/python-tools.txt): `poetry` 2.5.1 and `pip-audit` 2.10.1 with all their dependencies, each pinned to its wheels' hashes. pip refuses any wheel that doesn't match, and any source distribution, so no build code runs. It was made with `uv pip compile --generate-hashes --universal --python-version 3.10 --only-binary :all: --exclude-newer DATE`, with `DATE` at least two weeks before the pin.
+The tools come from [`python-tools.txt`](../../apps/issue-host/src/standards/python-tools.txt): `poetry` 2.5.1 and `pip-audit` 2.10.1 with all their dependencies, each pinned to its wheels' hashes. pip refuses any wheel that doesn't match, and any source distribution, so no build code runs. It was made with `uv pip compile --generate-hashes --universal --python-version 3.10 --only-binary :all: --exclude-newer DATE`, with `DATE` at least two weeks before the pin.
 
 Poetry installs dependencies as wheels only (`POETRY_INSTALLER_ONLY_BINARY=:all:`), so no dependency's build script runs either. The project itself installs afterwards, with no network. pip reads no configuration files, and Poetry's keyring is off.
 
@@ -92,8 +92,8 @@ What the commands print goes to `OUT_DIR/logs/`, never into `assessment.json`, `
 To assess the configured repository at its default branch, run from the repository root:
 
 ```bash
-npm run build --workspace @ecosystem/issue-pipeline
-node apps/issue-pipeline/dist/standards-upgrade.mjs assess \
+npm run build --workspace @ecosystem/issue-host
+node apps/issue-host/dist/standards-upgrade.mjs assess \
   --config CONFIG --repo OWNER/REPO --out OUT_DIR
 ```
 
@@ -179,7 +179,7 @@ A green workflow never stands in for enforcement. Without a required check, the 
 
 ## Results
 
-`assessment.json` follows the `ASSESSMENT` schema in [`src/standards/schema.ts`](../../apps/issue-pipeline/src/standards/schema.ts). The entrypoint validates it before writing. It records:
+`assessment.json` follows the `ASSESSMENT` schema in [`src/standards/schema.ts`](../../apps/issue-host/src/standards/schema.ts). The entrypoint validates it before writing. It records:
 
 - the repository, the requested ref, the resolved ref and the full source commit;
 - the record version (2), the assessment time, the policy version (`standards-v2`) and the Node and Git versions;
@@ -209,7 +209,7 @@ To deliver an assessment's plan, follow these steps:
 3. Check the issue and get the human-start handoff:
 
    ```bash
-   node apps/issue-pipeline/dist/standards-upgrade.mjs apply --config CONFIG --issue ISSUE
+   node apps/issue-host/dist/standards-upgrade.mjs apply --config CONFIG --issue ISSUE
    ```
 
    `ISSUE` is the number of the issue you filed.

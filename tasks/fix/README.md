@@ -32,4 +32,4 @@ Run `npm run check --workspace @ecosystem/fix` for types, lint and direct
 capability tests. The root full gate also exercises the installed compatibility
 CLI against fake GitHub/model services and real local Git. Existing executable
 names and installed prompt names remain functional. A source merge activates
-nothing; follow the [pipeline install procedure](../../apps/issue-pipeline/README.md#install-and-safe-upgrades).
+nothing; follow the [pipeline install procedure](../../apps/issue-host/README.md#install-and-safe-upgrades).

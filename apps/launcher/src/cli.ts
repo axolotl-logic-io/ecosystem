@@ -5,9 +5,14 @@ import { parseArgs } from "node:util";
 import { checkLauncher, runLauncher } from "./launcher.ts";
 import { openStop } from "./stop.ts";
 
-const { ISSUE_PIPELINE_ROOT: installedRoot }: NodeJS.ProcessEnv = process.env;
+const {
+  ECOSYSTEM_INSTALL_ROOT: installedRoot,
+  ISSUE_PIPELINE_ROOT: legacyRoot,
+}: NodeJS.ProcessEnv = process.env;
 const ROOT = path.resolve(
-  installedRoot || path.join(os.homedir(), ".pi/agent/issue-pipeline"),
+  installedRoot ||
+    legacyRoot ||
+    path.join(os.homedir(), ".pi/agent/issue-pipeline"),
 );
 const USAGE = "usage: buddy.mjs --config <buddy.json> [--check]";
 

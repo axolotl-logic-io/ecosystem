@@ -1,0 +1,65 @@
+# The issue pipeline's tasks. Each runs in this folder and uses the node version
+# from the root mise.toml. Run them from anywhere with
+# `mise //apps/issue-host:<task>`. Run `npm ci` at the repo root first.
+# mise is optional: each task calls an npm script you can run directly.
+
+[tasks.check]
+description = "Fast default gate: typecheck, lint, build and syntax"
+# The steps live in package.json's check script, so they're defined once and
+# run the same without mise (`npm run check`).
+run = "npm run check"
+
+[tasks."check:full"]
+description = "Expensive opt-in full gate: fast gate plus every Node integration/flow test"
+# package.json's check:full script runs the fast gate, then every Node test
+# with the flags below:
+#   node --test --test-concurrency=8 --test-timeout=180000 'test/**/*.test.ts'
+# The glob includes the current integration and public-entrypoint flow tests.
+# Cap file concurrency at 8: flow tests also spawn buddy, ops, fake transports
+# and Git processes. Fix or remove a test that exceeds 180000 ms; do not raise
+# its deadline or move substantive work into hooks to conceal its cost.
+# Native timeout alone does not settle callbacks or reap their child processes;
+# flow tests forward cancellation to their exact owned buddy process.
+run = "npm run check:full"
+
+# One test level each, with check:full's flags. The levels and their
+# folders are in docs/project-practices.md.
+[tasks."test:component"]
+description = "Node tests of one component alone (test/component)"
+run = "npm run test:component"
+
+[tasks."test:component-integration"]
+description = "Node tests of components with each other or a real dependency (test/component-integration)"
+run = "npm run test:component-integration"
+
+[tasks."test:system"]
+description = "Node tests of the whole built program: flows, CLI entrypoints, artifacts (test/system)"
+run = "npm run test:system"
+
+[tasks."test:system-integration"]
+description = "Node tests against real GitHub or a real model; opt-in, not in check:full (test/system-integration)"
+run = "npm run test:system-integration"
+
+[tasks."test:acceptance"]
+description = "Node tests written from an issue's Gherkin scenarios (test/acceptance)"
+run = "npm run test:acceptance"
+
+[tasks.build]
+description = "Build src/ into dist/ with esbuild (build.ts)"
+run = "npm run build"
+
+[tasks.typecheck]
+description = "Typecheck the pipeline's TypeScript, its tests and install.ts included, with tsc"
+run = "npm run typecheck"
+
+[tasks.lint]
+description = "Biome with the repo's lint policy"
+run = "npm run lint"
+
+[tasks.install]
+description = "Install this checkout's pipeline where pi reads it"
+run = "node install.ts"
+
+[tasks."install:dry-run"]
+description = "List what install would change, writing nothing"
+run = "node install.ts --dry-run"

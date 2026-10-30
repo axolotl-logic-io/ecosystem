@@ -2,7 +2,7 @@
 node_modules/
 
 # the issue pipeline's build output (build.ts)
-/apps/issue-pipeline/dist/
+/dist/
 
 # environment
 .env*

@@ -54,7 +54,7 @@ The loaded config snapshots the effective checking settings and computes a polic
 1. Commit and review `.issue-pipeline.json` in the configured repository under the policy already trusted for that change.
 2. Obtain the reviewed commit in an operator-owned local clone of that same repository. Keep its commit and objects available for the lifetime of actions using it.
 3. Preserve the current operator config and recovery evidence, then drain active runs before changing the policy source, pin or capacity.
-4. Starting from `apps/issue-pipeline/repos/example.json`, set the real repository/account/runtime controls and the reviewed source path and full commit. The all-zero example pin is a placeholder, not runnable policy.
+4. Starting from `apps/issue-host/repos/example.json`, set the real repository/account/runtime controls and the reviewed source path and full commit. The all-zero example pin is a placeholder, not runnable policy.
 5. Remove `commands`, `practices`, `lockfiles`, `migrations` and `resources` from that operator config. Keep credentials and every operator control outside the project document.
 6. Validate the explicitly scoped buddy configuration before starting work. Retained unfinished work needs current prerequisite evidence and an authorized trigger. Review the current head before landing.
 

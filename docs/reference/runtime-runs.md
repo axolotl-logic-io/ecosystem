@@ -71,7 +71,7 @@ The buddy writes one JSON line to stderr for each app that ends:
 
 ## Task app runs
 
-A task app is one task's command-line program, built on the task app framework in `apps/issue-pipeline/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Gherkin's app is `gherkin.mjs`. Implement runs as `implement.mjs`; see [Implement](#implement). Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
+A task app is one task's command-line program, built on the task app framework in `apps/issue-host/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Gherkin's app is `gherkin.mjs`. Implement runs as `implement.mjs`; see [Implement](#implement). Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
 
 To run a task app, run:
 
