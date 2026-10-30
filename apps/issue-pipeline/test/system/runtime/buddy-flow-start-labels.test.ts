@@ -94,8 +94,13 @@ test("a task leaves a newer start application in place when its old request comp
     assert.equal(run.actions[0]?.verdict, "passed");
     const issue = box.world().issues.find((item) => item.number === ISSUE);
     assert.deepEqual(issue?.labels, ["start:implement"]);
-    assert.equal(issue?.events.at(-1)?.event, "labeled");
-    assert.equal(issue?.events.at(-1)?.actor, HUMAN);
+    // Implement's own assignment events follow it, so look only at the
+    // start label's.
+    const last = issue?.events
+      .filter((event) => event.label === "start:implement")
+      .at(-1);
+    assert.equal(last?.event, "labeled");
+    assert.equal(last?.actor, HUMAN);
     assert.equal(results(box).length, 1);
   } finally {
     box.cleanup();
