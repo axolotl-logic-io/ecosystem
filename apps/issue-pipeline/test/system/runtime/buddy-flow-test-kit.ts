@@ -521,6 +521,33 @@ function writeBuddyConfig(
   });
 }
 
+// Writes `file`, the trusted launcher buddy file (version 2) of a buddy in
+// `buddy`'s role whose one task is `app`, scoped to `repositoryConfig`, with
+// its account's token in `credentials`.
+function writeLauncherBuddy(
+  file: string,
+  setup: { repositoryConfig: string; credentials: string },
+  buddy: BuddyChoice,
+  app: string,
+): void {
+  let name = "hippy";
+  let login = DEVELOPER;
+  let variable = "ISSUE_PIPELINE_DEV_GITHUB_TOKEN";
+  if (buddy.role === "gatekeeper") {
+    name = "lawd";
+    login = LANDING;
+    variable = "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN";
+  }
+  writePrivate(file, {
+    version: 2,
+    name,
+    scope: { repositories: [setup.repositoryConfig] },
+    tasks: [app],
+    account: { login, credentials: { file: setup.credentials, variable } },
+    pollSeconds: 1,
+  });
+}
+
 // The repository config's lane slot pool, when the machine has one.
 function laneSlotsOf(setup: MachineSetup): { laneSlots?: number } {
   if (setup.laneSlots === undefined) {
@@ -695,11 +722,13 @@ function machine(
     buddy: BuddyChoice,
     sessions: PlannedSession[],
   ): Promise<TaskAppEnd> {
-    const buddyConfig = path.join(
-      root,
-      `buddy-${buddy.role}-${buddy.tasks.join("-")}.json`,
+    const buddyConfig = path.join(root, `launcher-${buddy.role}-${app}.json`);
+    writeLauncherBuddy(
+      buddyConfig,
+      { repositoryConfig, credentials },
+      buddy,
+      app,
     );
-    writeBuddyConfig(buddyConfig, repositoryConfig, buddy);
     fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
     const child = spawn(
       process.execPath,
