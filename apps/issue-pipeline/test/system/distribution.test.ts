@@ -34,6 +34,10 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
       return !["dist", "node_modules", "test"].includes(first ?? "");
     },
   });
+  fs.copyFileSync(
+    path.resolve(SOURCE, "../../programs.ts"),
+    path.resolve(source, "../../programs.ts"),
+  );
   fs.cpSync(
     path.resolve(SOURCE, "../../tasks"),
     path.resolve(source, "../../tasks"),

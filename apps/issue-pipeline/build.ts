@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     await Promise.all(
       PROGRAMS.map(({ source, file }) =>
         buildNodeModule(
-          path.join(import.meta.dirname, source),
+          path.resolve(import.meta.dirname, "../..", source),
           path.join(outDir, file),
         ),
       ),
