@@ -1,6 +1,6 @@
 # Issue pipeline
 
-A buddy is a launcher of task apps. It polls its configured repositories for `start:TASK` labels and runs the matching app. The framework claims the start, marks the issue, runs the task and unmarks it. Only version 2 buddy files are supported.
+The [launcher application](../launcher/README.md) runs one configured buddy and launches task apps. It polls its configured repositories for `start:TASK` labels and runs the matching app. The framework claims the start, marks the issue, runs the task and unmarks it. Only version 2 buddy files are supported.
 
 Landing changes nothing that runs until the operator installs the release. See [operations](../../docs/reference/operations.md), [runtime runs](../../docs/reference/runtime-runs.md) and the [reference index](../../docs/README.md).
 
@@ -32,7 +32,7 @@ To validate a buddy file without starting the buddy:
 node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 ```
 
-`BUDDY_FILE` is an absolute path to the buddy file. Omit `--check` to start the buddy. The [runtime reference](../../docs/reference/runtime-runs.md#launcher-buddies) defines the exact keys, the trust checks, how the buddy launches each app and what it logs. Each task in `tasks` needs its installed task app, `$ISSUE_PIPELINE_ROOT/TASK.mjs`; the buddy refuses to start without it.
+`BUDDY_FILE` is an absolute path to the buddy file. Omit `--check` to start the buddy. The [runtime reference](../../docs/reference/runtime-runs.md#launcher-buddies) defines the exact keys, the trust checks, how the buddy launches each app and what it logs. Each task in `tasks` needs a registration in the installed `tasks.json` manifest. The launcher validates the manifest and its executable paths before contacting GitHub. `launcher.mjs` is the standalone entrypoint; `buddy.mjs` remains compatible. See [launcher migration](../launcher/README.md#migrate-an-installation).
 
 ## Task workspaces
 
@@ -50,8 +50,7 @@ Public contracts and retry behavior: [Gherkin](../../tasks/gherkin/README.md),
 [Implement](../../tasks/implement/README.md), [Fix](../../tasks/fix/README.md),
 [Verify](../../tasks/verify/README.md) and [Land](../../tasks/land/README.md).
 The [shared runtime](../../packages/task-runtime/README.md) owns checkout,
-model-process, recovery and trusted-policy services. Installed executable names
-and prompt locations remain unchanged until the host cutover.
+model-process, recovery and trusted-policy services. Installed task executable names and prompt locations remain compatible. Launcher-created task subprocesses receive explicit validated invocations, with credentials provisioned on a separate pipe.
 
 ## Tasks
 

@@ -96,6 +96,19 @@ Gherkin uses these services through its existing host-provisioned
 `openRepository`, `runModel` and artifact capabilities. Its task contract stays in
 [tasks/gherkin](../../tasks/gherkin/README.md).
 
+## Launcher services
+
+`credentials` and `trusted-file` retain operator-file checks. `issue/transport`,
+`issue/github-read`, `issue/github-observation` and `issue/wire` provide redacted
+GitHub calls, bounded read retries, strict paginated observations and wire
+normalization. Observation readers supply an explicit credential environment or
+credential closure; these modules import no applications or buddy settings.
+
+`issue/invocation` defines the strict version 1 issue-host invocation and its
+separate credential channel. The [launcher](../../apps/launcher/README.md) owns
+buddy configuration and provisions these inputs to task bootstraps. Domain
+tasks continue to receive their own validated inputs and task-specific capabilities.
+
 ## Validation and activation
 
 `npm run check --workspace @ecosystem/task-runtime` runs types, lint and behavior

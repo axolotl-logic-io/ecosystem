@@ -1,6 +1,6 @@
 # Runtime runs
 
-The buddy is a launcher of task apps. Only version 2 buddy files are supported. Task apps claim starts, report their work and recover from GitHub. Landing source changes nothing until the operator installs it.
+The [launcher application](../../apps/launcher/README.md) runs one buddy and launches task apps. Only version 2 buddy files are supported. Task apps claim starts, report their work and recover from GitHub. Landing source changes nothing until the operator installs it.
 
 ## Launcher buddies
 
@@ -29,7 +29,7 @@ A launcher buddy file is strict JSON. The buddy refuses unknown keys. The file a
 - `ACCOUNT` is the buddy's GitHub account. The buddy and its task apps make every GitHub write through it.
 - `credentials.file` is the absolute path of the operator's private credential file, which only its owner can read. `VARIABLE` is the entry in it that holds `ACCOUNT`'s token. The file is parsed as dotenv text and never exported.
 - `pollSeconds` is optional: the pause between polls, 1 to 3600 seconds, default 60.
-- `claimWaitsMs` is optional and read only by task apps. It lists up to 10 pauses, each 0 to 60000 milliseconds, between rereads of the issue timeline while it doesn't yet show the app's removal of a start label. The default is `[500, 1000, 2000, 4000]`.
+- `claimWaitsMs` is optional and resolved by the launcher for each task invocation. It lists up to 10 pauses, each 0 to 60000 milliseconds, between rereads of the issue timeline while it doesn't yet show the app's removal of a start label. The default is `[500, 1000, 2000, 4000]`.
 
 Each buddy needs its own GitHub account, so that the account that claims a start identifies the buddy. Keep a machine's buddy files in one folder. A buddy refuses to start when another JSON file in that folder is a buddy file, including a retired version 1 file, that names the same account, compared without case. Buddies on other machines are out of its sight.
 
@@ -38,18 +38,22 @@ Each buddy needs its own GitHub account, so that the account that claims a start
 To check a launcher buddy file without contacting GitHub, run:
 
 ```sh
-node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
+node "$ISSUE_PIPELINE_ROOT/launcher.mjs" --config BUDDY_FILE --check
 ```
 
 It prints one JSON object with the buddy's name, account, tasks, repositories and the program of each task's app. It refuses the file, and exits 1, for every reason the buddy would refuse to start except an unverified credential.
 
-To start the buddy, omit `--check`. Before any other effect, it checks the file and its repository configs, refuses an account that another buddy file in its folder names and refuses a task whose app isn't installed at `$ISSUE_PIPELINE_ROOT/TASK.mjs`. It then reads the token and checks with GitHub that it is the account's.
+`buddy.mjs` remains a compatibility entrypoint with the same arguments. `--manifest MANIFEST_FILE` overrides the installed `tasks.json`.
+
+To start the buddy, omit `--check`. Before any other effect, it checks the file and its repository configs, refuses an account that another buddy file in its folder names and validates the entire task manifest and refuses a task without a registered installed executable. It then reads the token and checks with GitHub that it is the account's.
 
 Each poll lists, for each repository and task, the open issues with `start:TASK`. Pull requests are skipped. For each issue, the buddy runs:
 
 ```sh
-node "$ISSUE_PIPELINE_ROOT/TASK.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
+node REGISTERED_EXECUTABLE --invocation
 ```
+
+The launcher sends a validated nonsecret invocation on standard input and provisions credentials through a separate inherited pipe. Children receive no buddy-file path. The [launcher contract](../../apps/launcher/README.md#task-subprocess-boundary) defines these channels.
 
 The buddy checks nothing else first: not `agent:TASK:running`, earlier results nor `agents:stop`. The app's claim decides which buddy runs a start, and the app holds while `agents:stop` is on the issue. So the buddy runs every start it sees, two runs of one task on one issue can overlap, and an app launched for a start that another app already took ends quietly. An app that fails doesn't stop the buddy, which leaves the reporting to the app.
 
@@ -79,7 +83,7 @@ node TASK_APP --config BUDDY_FILE --issue OWNER/REPO#N
 - `BUDDY_FILE` is an absolute path to a [launcher buddy file](#launcher-buddy-file). The app acts as its `account.login`.
 - `OWNER/REPO#N` is the issue. The buddy's scope must name a repository config for `OWNER/REPO`.
 
-The app reads the token that the buddy file's `account.credentials` entry selects, and checks with GitHub that the token is the account's before any other call. It doesn't check that the buddy file lists its task.
+For manual compatibility calls, the host uses the launcher's identity resolver to authorize the task and repository scope, select the credential and verify its account before effects. Launcher-created children instead validate the explicit invocation and separately provisioned credential channel; they never read the buddy file.
 
 The app exits 0 when its run ends normally: it finished its work, lost the claim, found `agents:stop` before claiming, or stopped on it. It exits 1 when the run failed or it couldn't confirm its claim.
 
@@ -97,7 +101,7 @@ A crashed run posts no end comment, so its claim holds the label. To release it,
 
 ### Model session
 
-Before any claim or write, a task app checks that its task is in the buddy's configured `tasks`, including when invoked manually. Repository scope checks still apply.
+Before launching children, the launcher validates task availability and repository scope. Manual compatibility calls use the same buddy identity resolver to authorize their task and scope before any claim or write.
 
 A task app's work can run one read-only model session, as Gherkin does. An app with a session reads the whole repository config, which must therefore include its project pin, runtime settings and compatibility credentials. The session runs `pi` as an installed agent, on the task's pinned prompt page and the repository config's model for its session profile, with the repository config's `runtime`. It holds no GitHub token, can't commit and returns one structured reply, which the app checks against its schema and acts on.
 

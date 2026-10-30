@@ -1,7 +1,9 @@
 // Built standalone launcher, real task subprocesses and fake GitHub.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import {
@@ -136,3 +138,69 @@ test("shutdown drains a live subprocess while an issue stop guards its publicati
     box.cleanup();
   }
 });
+
+const BAD_INVOCATIONS = [
+  {
+    name: "a task mismatch",
+    value: {
+      version: 1,
+      task: "land",
+      issue: { repo: "acme/widgets", number: 7 },
+      account: "hippy-dev",
+      settings: {
+        config: "/explicit/repo.json",
+        base: "main",
+        claimWaitsMs: [],
+      },
+    },
+  },
+  {
+    name: "an unknown credential field",
+    value: {
+      version: 1,
+      task: "gherkin",
+      issue: { repo: "acme/widgets", number: 7 },
+      account: "hippy-dev",
+      token: "must-not-be-accepted",
+      settings: {
+        config: "/explicit/repo.json",
+        base: "main",
+        claimWaitsMs: [],
+      },
+    },
+  },
+  {
+    name: "an unresolved settings path",
+    value: {
+      version: 1,
+      task: "gherkin",
+      issue: { repo: "acme/widgets", number: 7 },
+      account: "hippy-dev",
+      settings: { config: "relative.json", base: "main", claimWaitsMs: [] },
+    },
+  },
+];
+for (const { name, value } of BAD_INVOCATIONS) {
+  test(`the task bootstrap rejects ${name} before claiming`, () => {
+    const box = machine();
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [
+          path.resolve(import.meta.dirname, "../../../dist/gherkin.mjs"),
+          "--invocation",
+        ],
+        {
+          input: JSON.stringify(value),
+          encoding: "utf8",
+          timeout: 30_000,
+        },
+      );
+      assert.equal(result.status, 1);
+      assert.equal(issueOf(box.world()).comments.length, 0);
+      assert.ok(issueOf(box.world()).labels.includes("start:gherkin"));
+    } finally {
+      box.cleanup();
+    }
+  });
+}
