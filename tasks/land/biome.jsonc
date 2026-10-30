@@ -4,7 +4,7 @@
   "overrides": [
     {
       // GitHub comparison responses use the REST field behind_by.
-      "includes": ["src/index.ts"],
+      "includes": ["src/index.ts", "test/component/task.test.ts"],
       "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
     },
     {

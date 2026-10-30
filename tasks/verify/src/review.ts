@@ -5,9 +5,7 @@
 // a Security finding always does. The review approves when nothing blocks and
 // requests changes otherwise, and it binds the head through its `commit_id`.
 //
-// The body ends with a mark naming the Verify run that submitted it and
-// what it counted, so a read-only reconciliation finds exactly that run's
-// review and never submits a second one.
+// The host adds the runtime-owned persistence marker when it submits the plan.
 
 interface ReviewCounts {
   blocking: number;
@@ -26,9 +24,6 @@ interface ReviewFinding {
   blocking: boolean;
   security: boolean;
 }
-
-// What the review counts: its blocking findings, its nits, and whether a
-// Security finding was among the blocking ones.
 
 // The review Verify will submit, before it is submitted.
 interface PlannedReview {

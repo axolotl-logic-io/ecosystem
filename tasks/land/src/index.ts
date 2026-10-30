@@ -50,6 +50,7 @@ interface LandCapabilities {
   recovery: Pick<Recovery, "pullRequest" | "issue">;
 }
 interface TaskRun extends LandInputs, LandCapabilities {
+  checkStop: () => void;
   comment: (body: string, kind: string, payload: object) => void;
 }
 
@@ -195,6 +196,7 @@ function missing(run: TaskRun, pr: PullRequest, now: Pull): string[] {
 // Marks the conflicting PR `pr` a draft, so it goes to Fix.
 function markConflict(run: TaskRun, pr: number, now: Pull): void {
   const args = ["pr", "ready", String(pr), "-R", run.issue.repo, "--undo"];
+  run.checkStop();
   const result = run.github.writeResult(args);
   if (!pullNow(run, pr).isDraft) {
     throw run.github.failure(args, result);
@@ -222,6 +224,7 @@ function closeIssue(run: TaskRun): boolean {
     "--reason",
     "completed",
   ];
+  run.checkStop();
   const result = run.github.writeResult(args);
   if (run.recovery.issue().state === "open") {
     throw run.github.failure(args, result);
@@ -269,6 +272,7 @@ function mergeAt(run: TaskRun, pr: number, head: string): void {
     "--match-head-commit",
     head,
   ];
+  run.checkStop();
   const result = run.github.writeResult(args);
   const now = pullNow(run, pr);
   if (now.state === "MERGED") {
@@ -331,7 +335,7 @@ function landWork(run: TaskRun): DomainOutcome<string> {
       result: `Land didn't merge PR #${pr.number}, because these prerequisites aren't met:\n${reasons.map((reason) => `- ${reason}`).join("\n")}`,
     };
   }
-  run.github.checkStop();
+  run.checkStop();
   mergeAt(run, pr.number, pr.headSha);
   return {
     status: "completed",
@@ -342,7 +346,7 @@ function landWork(run: TaskRun): DomainOutcome<string> {
 const land: TaskDefinition<LandInputs, LandCapabilities, string> = {
   id: "land",
   inputs: landInputs,
-  run: async (
+  run: (
     inputs: LandInputs,
     capabilities: LandCapabilities,
     context: ExecutionContext,
@@ -352,8 +356,12 @@ const land: TaskDefinition<LandInputs, LandCapabilities, string> = {
       ...inputs,
       ...capabilities,
       comment: capabilities.report,
+      checkStop: (): void => {
+        context.checkCancelled();
+        capabilities.github.checkStop();
+      },
     });
-    return outcome;
+    return Promise.resolve(outcome);
   },
 };
 

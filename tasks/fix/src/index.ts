@@ -149,6 +149,9 @@ async function fixWork(run: TaskRun): Promise<DomainOutcome<string>> {
       { head, pr: pull.number },
     );
     remove = true;
+    if (head === pull.headSha && replies.length === 0) {
+      return { status: "no-change", result: summary };
+    }
     return { status: "completed", result: summary };
   } finally {
     if (remove) {
