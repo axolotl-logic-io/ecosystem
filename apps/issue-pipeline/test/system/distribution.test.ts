@@ -39,6 +39,11 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
     path.resolve(source, "../../tasks"),
     { recursive: true },
   );
+  fs.cpSync(
+    path.resolve(SOURCE, "../launcher"),
+    path.resolve(source, "../launcher"),
+    { recursive: true },
+  );
   fs.symlinkSync(DEPENDENCIES, path.join(source, "node_modules"), "dir");
   command(path.resolve(source, "../.."), "git", [
     "init",

@@ -10,8 +10,8 @@
 // these.
 import { spawnSync } from "node:child_process";
 import process from "node:process";
+import { wire } from "@ecosystem/task-runtime/issue/wire";
 import { z } from "zod";
-import { wire } from "../../../src/discovery/wire.ts";
 import {
   fail,
   origin,

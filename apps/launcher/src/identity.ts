@@ -4,23 +4,20 @@
 // GitHub before any other call. Every write a buddy or its task apps make
 // goes through this account.
 import { hideCredentialVariable } from "@ecosystem/task-runtime/child-env";
+import { readCredential } from "@ecosystem/task-runtime/credentials";
+import {
+  GH_TIMEOUT_MS,
+  githubRead,
+} from "@ecosystem/task-runtime/issue/github-read";
+import type { Identity } from "@ecosystem/task-runtime/issue/invocation";
+import { credentialedRun } from "@ecosystem/task-runtime/issue/transport";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
-import { readCredential } from "../config.ts";
-import { credentialedRun } from "../github-auth.ts";
-import { GH_TIMEOUT_MS, githubRead } from "../github-read.ts";
 import { type BuddyFile, readBuddyFile } from "./buddy-file.ts";
 
 interface Account {
   account: string;
   // The verified `gh` environment of `account`.
   env: ReadonlyMap<string, string>;
-}
-interface Identity extends Account {
-  // The trusted repository settings file selected from this buddy's scope.
-  config: string;
-  // The repository's base branch, which an issue's branch is compared with.
-  base: string;
-  claimWaitsMs: readonly number[];
 }
 
 function same(a: string, b: string): boolean {
@@ -76,5 +73,5 @@ function loadIdentity(buddyFile: string, repo: string, task: string): Identity {
   };
 }
 
-export type { Account, Identity };
+export type { Account };
 export { accountOf, loadIdentity };

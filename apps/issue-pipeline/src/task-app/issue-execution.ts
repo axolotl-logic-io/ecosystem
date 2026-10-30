@@ -6,6 +6,7 @@ import {
   startLabel,
   unmark,
 } from "@ecosystem/task-runtime/issue/claims";
+import type { Identity } from "@ecosystem/task-runtime/issue/invocation";
 import type {
   IssueGitHub,
   IssueRef,
@@ -16,7 +17,6 @@ import {
   recovery,
 } from "@ecosystem/task-runtime/issue/recovery";
 import { STOP_LABEL, Stopped } from "@ecosystem/task-runtime/issue/stopped";
-import type { Identity } from "./identity.ts";
 import { type Step, startRunRecord } from "./run-record.ts";
 
 const ERROR_LIMIT = 2000;

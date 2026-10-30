@@ -88,5 +88,14 @@ function run(
   return out;
 }
 
+// Blocks the whole process: the ops CLI runs one request and has nothing else
+// to do while it waits.
+function sleepMs(ms: number): void {
+  const cell = new Int32Array(
+    new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT),
+  );
+  Atomics.wait(cell, 0, 0, ms);
+}
+
 export type { RunOptions, RunResult };
-export { run, runFailure, tail };
+export { run, runFailure, sleepMs, tail };

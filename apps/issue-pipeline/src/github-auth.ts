@@ -1,16 +1,16 @@
 // One selected operator credential per call, verified against its configured
 // identity. Failures and allowFail outputs never expose that selected token.
 
-import { OpsError } from "@ecosystem/task-runtime/ops-error";
-import type { Account, Config } from "./config.ts";
-import { credential } from "./config.ts";
 import {
   GH_TIMEOUT_MS,
   githubRead,
   transientGithubRead,
-} from "./github-read.ts";
-import type { RunOptions, RunResult } from "./process.ts";
-import { run, runFailure } from "./process.ts";
+} from "@ecosystem/task-runtime/issue/github-read";
+import { credentialedRun } from "@ecosystem/task-runtime/issue/transport";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import type { Account, Config } from "./config.ts";
+import { credential } from "./config.ts";
+import type { RunResult } from "./process.ts";
 
 // The entire stderr field, including its truncation indicator, is at most
 // 1024 UTF-16 code units. credentialedRun redacts before this limit is applied.
@@ -94,41 +94,4 @@ function authenticatedEnv(
   return env;
 }
 
-function credentialedRun(
-  cmd: string,
-  args: readonly string[],
-  options: RunOptions,
-): RunResult {
-  const token = options.env?.get("GH_TOKEN") ?? "";
-  const result = run(cmd, args, { ...options, allowFail: true });
-  const out = {
-    ...result,
-    stdout: result.stdout.replaceAll(token, "<token>"),
-    stderr: result.stderr.replaceAll(token, "<token>"),
-  };
-  if (out.code !== 0 && options.allowFail !== true) {
-    throw credentialFailure(cmd, args, out, options);
-  }
-  return out;
-}
-
-function credentialFailure(
-  cmd: string,
-  args: readonly string[],
-  result: RunResult,
-  options: RunOptions,
-): OpsError {
-  const token = options.env?.get("GH_TOKEN");
-  const failure = runFailure(cmd, args, result, options);
-  if (token === undefined) {
-    return new OpsError(failure);
-  }
-  return new OpsError(failure.replaceAll(token, "<token>"));
-}
-
-export {
-  authenticatedEnv,
-  credentialedRun,
-  credentialFailure,
-  LOGIN_STDERR_LIMIT,
-};
+export { authenticatedEnv, LOGIN_STDERR_LIMIT };
