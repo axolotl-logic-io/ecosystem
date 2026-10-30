@@ -1,0 +1,19 @@
+{
+  "name": "@ecosystem/launcher",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check": "tsc -p . && biome check --error-on-warnings && node --test --test-timeout=180000 'test/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@ecosystem/task-runtime": "*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5"
+  }
+}
