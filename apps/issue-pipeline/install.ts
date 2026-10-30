@@ -37,6 +37,7 @@ const GIT_SUFFIX = /\.git$/u;
 const DATE_PUNCTUATION = /[-:]/gu;
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
+const GHERKIN = "../../tasks/gherkin";
 const HOME = os.homedir();
 const {
   ISSUE_PIPELINE_ROOT: rootVariable,
@@ -109,7 +110,15 @@ function sources(): Source[] {
       }
       return { from, to, fill: false };
     }),
-    ...mdIn(SRC, "agents").map((from) => ({
+    ...[`${GHERKIN}/prompts/gherkin.md`].map((from) => ({
+      from,
+      to: path.join(ROOT, "prompts", path.basename(from)),
+      fill: false,
+    })),
+    ...[
+      ...mdIn(SRC, "agents"),
+      `${GHERKIN}/agents/issue-pipeline-gherkin.md`,
+    ].map((from) => ({
       from,
       to: path.join(AGENT_DIR, "agents/issue-pipeline", path.basename(from)),
       fill: true,
@@ -232,7 +241,7 @@ function checkedBuild(): { commit: string; dirty: string | null } {
   if (commit === null || commit === "") {
     fail(`${SRC} is not in a git checkout`);
   }
-  const dirty = git("status", "--porcelain", "--", ".");
+  const dirty = git("status", "--porcelain");
   const built = spawnSync(process.execPath, [path.join(SRC, "build.ts")], {
     cwd: SRC,
     stdio: "inherit",

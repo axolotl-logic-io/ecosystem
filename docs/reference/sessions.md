@@ -33,7 +33,7 @@ The app posts Gherkin as the issue's one Gherkin comment, with the hidden marker
 
 ## Prompts and provenance
 
-Behavioral pages live in `apps/issue-pipeline/prompts/` and are installed under the pipeline root's `prompts/`. Source publication does not replace installed prompts or activate a buddy. A candidate cannot replace the installed prompt that reviews it.
+Behavioral pages live in `apps/issue-pipeline/prompts/`, with Gherkin's page owned by `tasks/gherkin/prompts/`. They are installed under the pipeline root's `prompts/`. Source publication does not replace installed prompts or activate a buddy. A candidate cannot replace the installed prompt that reviews it.
 
 Before the corresponding launch, the runtime pins and validates the selected page's exact bytes and uses those bytes for that session. A page must be a plain file, not a symlink, valid UTF-8 without NUL bytes, nonblank, more than one line and at most 131,071 bytes. Missing or malformed pages fail closed; there is no prompt fallback.
 

@@ -3,14 +3,15 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tasks/*"
   ],
   "engines": {
     "node": ">=24 <25"
   },
   "scripts": {
     "check": "npm run check --workspaces",
-    "check:full": "npm run check --workspace @ecosystem/task-framework && npm run check --workspace @ecosystem/db && npm run check:full --workspace @ecosystem/issue-pipeline && npm run check --workspace @ecosystem/workflow-dash",
+    "check:full": "npm run check --workspace @ecosystem/task-framework && npm run check --workspace @ecosystem/db && npm run check:full --workspace @ecosystem/issue-pipeline && npm run check --workspace @ecosystem/workflow-dash && npm run check --workspace @ecosystem/gherkin",
     "test:database": "npm run test:database --workspace @ecosystem/db && npm run test:database --workspace @ecosystem/workflow-dash",
     "db:up": "docker compose up --detach --wait database",
     "db:down": "docker compose down",
