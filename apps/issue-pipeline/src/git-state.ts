@@ -6,7 +6,7 @@
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { git } from "./github.ts";
-import { withCloneLock } from "./locks.ts";
+import { withCloneLock } from "./mirror-lock.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
 import { run, tail } from "./process.ts";

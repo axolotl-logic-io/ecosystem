@@ -1,27 +1,15 @@
-// How a running stage job is controlled from outside: its live pi sessions
-// by launch key and its live ops children, the local socket that steers the
-// sessions (`job.mjs --steer`), takes its writer sessions' push requests
-// (`pipeline_commit`), and the stop that SIGTERM or SIGINT begins. The stop
-// aborts every live session, gives each STOP_GRACE_MS to exit and then kills
-// its process group, and sends SIGTERM to the process group of every ops
-// child live at that moment, and SIGKILL to one that hasn't exited within
-// STOP_GRACE_MS (#371). This module alone listens on the socket and handles
-// signals; control-protocol.ts holds its requests and clients.
-
+// Local model-session socket: steers and authenticated push requests.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import type { InvocationBinding } from "../coordination.ts";
-import { sameBinding } from "../coordination-records.ts";
-import { endGroup } from "../process-group.ts";
+import type { InvocationBinding } from "../job/session-identity.ts";
+import { sameBinding } from "../job/session-identity.ts";
 import type { PushReply, SteerReply } from "./control-protocol.ts";
 import { CONTROL_REQUEST } from "./control-protocol.ts";
-import type { OpsProcess } from "./ops-process.ts";
 import type { RpcAnswer, RpcProcess } from "./rpc.ts";
-import type { StopSignal } from "./status.ts";
 
 // How long a session has to exit after its abort, and an ops child or a
 // timed-out launch after its SIGTERM, before its process group is killed. It
@@ -42,22 +30,10 @@ interface LiveLaunch extends RpcProcess {
   key: string;
 }
 
-// A live launch: a pi session, or an ops child.
-type LiveHandle =
-  | { kind: "session"; session: LiveLaunch }
-  | { kind: "ops"; ops: OpsProcess };
-
-interface Control {
-  // The steer socket's path.
-  socket: string;
-  // Keeps `live` live, a session for steers and the stop, an ops child for
-  // the stop, until it exits. A session registered once the stop began is
-  // stopped; an ops child is not, since the stop runs its own ops.
-  register: (live: LiveHandle) => void;
-  // The signal that began the stop, or null while the job runs on.
-  stopping: () => StopSignal | null;
-  // Stops listening, removes the socket and the signal handlers.
-  close: () => void;
+// A live model session.
+interface LiveHandle {
+  kind: "session";
+  session: LiveLaunch;
 }
 
 // Where the job in `runDir` listens: `job.sock` there, or a hashed name in
@@ -86,14 +62,6 @@ async function stopLaunch(launch: LiveLaunch): Promise<void> {
   }
   clearTimeout(timer);
   await Promise.all([answered, launch.exited]);
-}
-
-// Ends `ops`'s process group: SIGTERM, then SIGKILL if it hasn't exited
-// within the grace.
-async function stopOps(ops: OpsProcess): Promise<void> {
-  if (ops.pid !== null) {
-    await endGroup(ops.pid, ops.exited, STOP_GRACE_MS);
-  }
 }
 
 async function steerReply(
@@ -200,12 +168,10 @@ interface LiveSet {
   // Keeps `live` until it exits, stopping a session at once if `stopping`.
   add: (live: LiveHandle, stopping: boolean) => void;
   // Stops every launch live now.
-  stopAll: () => Promise<unknown>;
 }
 
 function liveSetOf(): LiveSet {
   const sessions = new Map<string, LiveLaunch>();
-  const ops = new Set<OpsProcess>();
   function addSession(launch: LiveLaunch, stopping: boolean): void {
     sessions.set(launch.key, launch);
     if (stopping) {
@@ -215,29 +181,11 @@ function liveSetOf(): LiveSet {
       .then((): boolean => sessions.delete(launch.key))
       .catch(() => null);
   }
-  function addOps(child: OpsProcess): void {
-    ops.add(child);
-    child.exited.then((): boolean => ops.delete(child)).catch(() => null);
-  }
   return {
     sessions,
     add: (live: LiveHandle, stopping: boolean): void => {
-      switch (live.kind) {
-        case "session":
-          addSession(live.session, stopping);
-          return;
-        case "ops":
-          addOps(live.ops);
-          return;
-        default:
-          unreachable(live);
-      }
+      addSession(live.session, stopping);
     },
-    stopAll: (): Promise<unknown> =>
-      Promise.all([
-        ...[...sessions.values()].map(stopLaunch),
-        ...[...ops].map(stopOps),
-      ]),
   };
 }
 
@@ -260,7 +208,7 @@ async function serveSocket(
 }
 
 // A control socket with no stop of its own, for a caller that stops its
-// launches cooperatively (src/runtime/stop.ts): its path, what keeps a live
+// launches cooperatively: its path, what keeps a live
 // launch steerable until it exits, the live sessions, and what closes it.
 // Nothing here signals or kills a launch.
 interface ControlSocket {
@@ -292,5 +240,5 @@ async function openControlSocket(
   };
 }
 
-export type { Control, ControlSocket, LiveHandle, LiveLaunch, OnPush };
+export type { ControlSocket, LiveHandle, LiveLaunch, OnPush };
 export { openControlSocket, STOP_GRACE_MS, socketPathOf, stopLaunch };

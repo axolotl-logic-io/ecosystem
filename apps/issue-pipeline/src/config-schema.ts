@@ -6,30 +6,12 @@ import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
 import { OpsError } from "./ops-error.ts";
 import { PROJECT_POLICY_SOURCE } from "./project-policy-schema.ts";
 
-const MIDDLE_CONFIRMATION_BACKOFF_SECONDS = 4;
-const LATE_CONFIRMATION_BACKOFF_SECONDS = 8;
-const FINAL_CONFIRMATION_BACKOFF_SECONDS = 10;
-const MAX_CONFIRMATION_DEADLINE_SECONDS = 600;
-const MAX_CONFIRMATION_BACKOFF_STEPS = 20;
-const MAX_LANE_SLOTS = 399;
-
 const DEFAULTS: Readonly<Record<string, unknown>> = {
   baseBranch: "main",
   // The files that hold the project's coding practices, relative to the worktree
   // (such as "docs/Decisions.md"). Writers and reviewers read each in full
   // (Axlog, 2026-10-15). Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
-  leaseHours: 3,
-  landingConfirmation: {
-    deadlineSeconds: 90,
-    backoffSeconds: [
-      1,
-      2,
-      MIDDLE_CONFIRMATION_BACKOFF_SECONDS,
-      LATE_CONFIRMATION_BACKOFF_SECONDS,
-      FINAL_CONFIRMATION_BACKOFF_SECONDS,
-    ],
-  },
   requireCi: true,
   ciWaitMinutes: 30,
   commandTimeoutMinutes: 20,
@@ -38,19 +20,6 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
 };
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
-const DATABASE_FILE = /^(?:\/|[A-Za-z]:[\\/])/u;
-const COORDINATION_STORE = z
-  .discriminatedUnion("backend", [
-    z.strictObject({ backend: z.literal("github") }),
-    z.strictObject({
-      backend: z.literal("postgres"),
-      credentialsEnvFile: z
-        .string()
-        .regex(DATABASE_FILE, "must be an absolute path"),
-    }),
-  ])
-  .default({ backend: "github" });
-
 const OPTIONAL_TEXT = z.string().nullish();
 // Access-profile metadata and credential-variable names to strip from model
 // children (src/job/roles.ts). Declared hosts do not enforce a sandbox.
@@ -87,7 +56,6 @@ const CONFIG_SCHEMA = z.looseObject({
   landingAccount: z.string(),
   verifyAccount: z.string().min(1).optional(),
   credentialsEnvFile: z.string(),
-  coordination: COORDINATION_STORE,
   allowedUsers: z.array(z.string()),
   baseBranch: z.string(),
   requireCi: z.boolean(),
@@ -97,31 +65,13 @@ const CONFIG_SCHEMA = z.looseObject({
     prune: OPTIONAL_TEXT,
     test: z.string(),
   }),
-  // Project-buddy's lane app ports must stay below its proxy port range.
-  laneSlots: z.number().int().min(1).max(MAX_LANE_SLOTS).optional(),
-  // The repository's own Land permission. Land needs it and the Gatekeeper
-  // buddy's `permissions.land` (src/runtime/buddy-config.ts); missing is
-  // false.
-  permissions: z.strictObject({ land: z.boolean() }).optional(),
+  // Old lane configurations need an operator cutover before task apps run.
+  laneSlots: z.never().optional(),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
   jobRoles: JOB_ROLES.nullish(),
   models: MODELS,
   runtime: RUNTIME_SCHEMA,
-  leaseHours: z.number(),
-  // One read-only confirmation run, not renewed mutation authority. Bound both
-  // knobs to avoid accidental busy loops or an effectively unbounded job.
-  landingConfirmation: z.object({
-    deadlineSeconds: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_CONFIRMATION_DEADLINE_SECONDS),
-    backoffSeconds: z
-      .array(z.number().int().min(1).max(60))
-      .min(1)
-      .max(MAX_CONFIRMATION_BACKOFF_STEPS),
-  }),
   practices: z.array(z.string()),
   repo: z.string(),
 });
@@ -228,4 +178,4 @@ function checkRequired(
 type JobRolesConfig = z.infer<typeof JOB_ROLES>;
 
 export type { JobRolesConfig, ModelRole };
-export { CONFIG_SCHEMA, checkRequired, DEFAULTS, MAX_LANE_SLOTS };
+export { CONFIG_SCHEMA, checkRequired, DEFAULTS };

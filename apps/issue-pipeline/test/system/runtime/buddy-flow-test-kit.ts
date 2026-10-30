@@ -1,23 +1,10 @@
-// The buddy flow tests' kit: a disposable machine on which the real buddy
-// runs as the operator installs it. Its pipeline root holds this source's
-// build (buddy.mjs, ops.mjs and the session extensions) and prompt pages,
-// and pi's agent folder the installed agent definitions. The repository is
-// a real local bare origin with a pinned project policy; GitHub is the
-// signal tests' fake GitHub (test/support/signals/fake-github-test-kit.ts)
-// over one world file, whose git database is that origin; the model is
-// fake-pi.ts, playing the sessions of a plan. Nothing here stands in for the runtime, the tasks,
-// the ops or the ledger: tests read back what they wrote to the world, the
-// origin and the run observations.
+// Disposable task-app machine: real Git, fake GitHub and fake model sessions.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
-import {
-  ACTION_RUN,
-  BUDDY_RUN as BUDDY_RUN_OBSERVATION,
-} from "../../../src/runtime/observations.ts";
 import type { PolicyPin } from "../../support/project-policy-test-kit.ts";
 import { committedPolicy } from "../../support/project-policy-test-kit.ts";
 import { startFakeGitHub } from "../../support/signals/fake-github-test-kit.ts";
@@ -32,7 +19,6 @@ import {
 import {
   baseWorld,
   LANDING,
-  ORGANIZATION,
   REPO,
 } from "../../support/signals/signal-test-kit.ts";
 
@@ -49,16 +35,10 @@ const API_OF = {
   openai: "openai-responses",
   anthropic: "anthropic-messages",
 } as const;
-const SLUG = REPO.replace("/", "__");
 const OVERSTAY_MS = 140_000;
 // How long `when` waits for its condition, unless told otherwise, before
 // failing the test.
 const WHEN_MS = 30_000;
-const ENDED = z.strictObject({
-  buddyRun: z.uuid(),
-  kind: z.enum(["stopped", "failed"]),
-  reason: z.string(),
-});
 const LOGGED = z.strictObject({ login: z.string(), args: z.array(z.string()) });
 // The fields of task-result and coordination records the tests read.
 const RECORD = z.looseObject({
@@ -81,8 +61,6 @@ const PI_LAUNCH = z.strictObject({
   laneSlot: z.string().nullable(),
 });
 
-type ActionRun = z.infer<typeof ACTION_RUN>;
-type BuddyRun = z.infer<typeof BUDDY_RUN_OBSERVATION>;
 type Logged = z.infer<typeof LOGGED>;
 
 // One session fake pi plays.
@@ -157,15 +135,6 @@ interface TaskAppEnd {
   stderr: string;
 }
 
-// What one buddy run printed and left behind.
-interface BuddyOutcome {
-  status: number | null;
-  stderr: string;
-  ended: z.infer<typeof ENDED>;
-  run: BuddyRun;
-  actions: ActionRun[];
-}
-
 interface Machine {
   root: string;
   origin: string;
@@ -178,15 +147,6 @@ interface Machine {
   commits: () => z.infer<typeof COMMIT_RESULT>[];
   // The pi launches fake-pi.ts played, in order.
   launches: () => z.infer<typeof PI_LAUNCH>[];
-  // Runs `buddy`, from a trusted file of its own, or else the buddy that
-  // buddy.json names as it now reads, with `sessions` planned until a poll's first listing is the `stopAtPoll`th,
-  // when the fake gh stops it with SIGTERM.
-  runBuddy: (
-    sessions: PlannedSession[],
-    stopAtPoll: number,
-    buddy?: BuddyChoice,
-    signal?: AbortSignal,
-  ) => Promise<BuddyOutcome>;
   // Runs task app `app` (APP.mjs) once on issue ISSUE as `buddy`, from a
   // trusted file of its own, with `sessions` planned, to its end.
   startTaskApp: (
@@ -199,11 +159,6 @@ interface Machine {
     buddy: BuddyChoice,
     sessions: PlannedSession[],
   ) => Promise<TaskAppEnd>;
-  recoverImplement: (
-    action: string,
-    apply: boolean,
-    reason?: string,
-  ) => { status: number | null; stdout: string; stderr: string };
   git: (args: string[]) => string;
   // The commits the project's check ran on, in order.
   checksRun: () => string[];
@@ -474,62 +429,6 @@ function marked(
   });
 }
 
-function readJson(file: string): unknown {
-  return JSON.parse(fs.readFileSync(file, "utf8"));
-}
-
-function actionsOf(pipeline: string): ActionRun[] {
-  const dir = path.join(pipeline, "runs", SLUG, `issue-${ISSUE}`, "actions");
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-  return fs
-    .readdirSync(dir)
-    .map((id) => ACTION_RUN.parse(readJson(path.join(dir, id, "run.json"))))
-    .sort((a, b) => a.id.localeCompare(b.id));
-}
-
-// The access profile each task the flow buddies run needs (its TASKS
-// definition's `access`).
-const ACCESS: Readonly<Record<BuddyChoice["tasks"][number], string>> = {
-  implement: "writer",
-  fix: "writer",
-  verify: "reader",
-  land: "lander",
-};
-
-// Writes `file`, the trusted file of `buddy`, scoped to `repositoryConfig`
-// in ORGANIZATION.
-function writeBuddyConfig(
-  file: string,
-  repositoryConfig: string,
-  buddy: BuddyChoice,
-): void {
-  const tasks: BuddyChoice["tasks"][number][] = buddy.tasks;
-  const profiles = [...new Set(tasks.map((task) => ACCESS[task]))];
-  let name = "hippy";
-  let login = DEVELOPER;
-  let permissions = {};
-  if (buddy.role === "gatekeeper") {
-    name = "lawd";
-    login = LANDING;
-    if (buddy.tasks.includes("land")) {
-      permissions = { permissions: { land: true } };
-    }
-  }
-  writePrivate(file, {
-    version: 1,
-    name,
-    scope: { organization: ORGANIZATION, repositories: [repositoryConfig] },
-    role: buddy.role,
-    responsibilities: buddy.tasks,
-    identity: { name, account: { provider: "github", login }, profiles },
-    ...permissions,
-    pollSeconds: 1,
-    stopPollSeconds: 1,
-  });
-}
-
 // Writes `file`, the trusted launcher buddy file (version 2) of a buddy in
 // `buddy`'s role whose one task is `app`, scoped to `repositoryConfig`, with
 // its account's token in `credentials`.
@@ -609,11 +508,6 @@ function machine(
     runtime: provisionRuntime(root, provider),
     projectPolicy,
   });
-  const buddyFile = path.join(root, "buddy.json");
-  writeBuddyConfig(buddyFile, repositoryConfig, {
-    role: "developer",
-    tasks: ["implement"],
-  });
   const worldFile = path.join(root, "world.json");
   const ghLog = path.join(root, "gh.log");
   const piLog = path.join(root, "pi.log");
@@ -657,75 +551,6 @@ function machine(
     },
   });
   const { change } = github;
-  async function runBuddy(
-    sessions: PlannedSession[],
-    stopAtPoll: number,
-    buddy?: BuddyChoice,
-    signal?: AbortSignal,
-  ): Promise<BuddyOutcome> {
-    signal?.throwIfAborted();
-    let buddyConfig = buddyFile;
-    if (buddy !== undefined) {
-      buddyConfig = path.join(
-        root,
-        `buddy-${buddy.role}-${buddy.tasks.join("-")}.json`,
-      );
-      writeBuddyConfig(buddyConfig, repositoryConfig, buddy);
-    }
-    fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
-    const child = spawn(
-      process.execPath,
-      [path.join(pipeline, "buddy.mjs"), "--config", buddyConfig],
-      { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-    if (child.pid === undefined) {
-      throw new Error("the buddy did not start");
-    }
-    const { pid } = child;
-    // Native test cancellation stops this exact owned buddy, not an issue
-    // through fabricated authority. Failed/cancelled callers retain files.
-    function abort(): void {
-      child.kill("SIGTERM");
-    }
-    signal?.addEventListener("abort", abort, { once: true });
-    change((world) => {
-      world.stopBuddy = { pid, atPoll: stopAtPoll, polls: 0 };
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    // A buddy the fake gh never stopped gets the same graceful SIGTERM,
-    // by its own pid, once the run overstays.
-    const overstay = setTimeout(() => {
-      child.kill("SIGTERM");
-    }, OVERSTAY_MS);
-    const status = await new Promise<number | null>((resolve) => {
-      child.on("close", (code) => resolve(code));
-    });
-    clearTimeout(overstay);
-    signal?.removeEventListener("abort", abort);
-    let ended: z.infer<typeof ENDED>;
-    try {
-      ended = ENDED.parse(JSON.parse(stdout));
-    } catch (error: unknown) {
-      throw new Error(`buddy exited ${String(status)}: ${stdout}\n${stderr}`, {
-        cause: error,
-      });
-    }
-    const run = BUDDY_RUN_OBSERVATION.parse(
-      readJson(
-        path.join(pipeline, "runs", "buddy-runs", ended.buddyRun, "run.json"),
-      ),
-    );
-    return { status, stderr, ended, run, actions: actionsOf(pipeline) };
-  }
   function startTaskApp(
     app: string,
     sessions: PlannedSession[],
@@ -798,44 +623,12 @@ function machine(
         .split("\n")
         .filter((line) => line !== "")
         .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
-    runBuddy,
     startTaskApp,
     runTaskApp: (
       app: string,
       buddy: BuddyChoice,
       sessions: PlannedSession[],
     ): Promise<TaskAppEnd> => startTaskApp(app, sessions, buddy).exited,
-    recoverImplement: (
-      action: string,
-      apply: boolean,
-      reason = "The interrupted work is preserved for a person.",
-    ): { status: number | null; stdout: string; stderr: string } => {
-      const args = [
-        path.join(pipeline, "recover-implement.mjs"),
-        "--config",
-        repositoryConfig,
-        "--issue",
-        String(ISSUE),
-        "--action",
-        action,
-        "--reason",
-        reason,
-      ];
-      if (apply) {
-        args.push("--apply");
-      }
-      const result = spawnSync(process.execPath, args, {
-        cwd: root,
-        env,
-        encoding: "utf8",
-        timeout: OVERSTAY_MS,
-      });
-      return {
-        status: result.status,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      };
-    },
     git: (args: string[]) => git(origin, args),
     checksRun: (): string[] => {
       if (!fs.existsSync(checksLog(root))) {
@@ -891,9 +684,7 @@ function applyStart(box: Pick<Machine, "change">, label: string): void {
 }
 
 export type {
-  ActionRun,
   BuddyChoice,
-  BuddyOutcome,
   Machine,
   MachineSetup,
   PlannedSession,

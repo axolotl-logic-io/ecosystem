@@ -1,8 +1,4 @@
-// Locks between ops processes on this machine. Ops for different issues run at
-// the same time, and `git worktree add/remove`, `git config` and fetches write
-// state shared by the whole clone; two at once fail with "could not lock
-// config file". So they take the clone's lock, and a sweep takes its repo's.
-
+// Serialize fetches and Git metadata updates in the shared local mirror.
 import fs from "node:fs";
 import path from "node:path";
 import type { Config } from "./config.ts";

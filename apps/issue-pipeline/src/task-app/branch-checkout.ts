@@ -15,7 +15,6 @@ import { git } from "../github.ts";
 import type { JobDirs } from "../job/checkout.ts";
 import { openJobCheckout } from "../job/checkout.ts";
 import { closeJobCheckout } from "../job/checkout-close.ts";
-import { checkoutEnvironment, withCheckoutSlot } from "../lane-slots.ts";
 import { OpsError } from "../ops-error.ts";
 import { run, runFailure } from "../process.ts";
 
@@ -81,13 +80,7 @@ function openBranchCheckout(
     dir: paths.jobRepo(cfg, issue, stage),
     branch,
   });
-  const claimed = withCheckoutSlot(scoped, issue, () =>
-    openJobCheckout(cfg, issue, { stage, branch }),
-  );
-  if (claimed === null) {
-    throw new OpsError(`#${issue}'s checkout claim was cancelled`);
-  }
-  const dirs: JobDirs = claimed;
+  const dirs = openJobCheckout(cfg, issue, { stage, branch });
   try {
     setUpCheckout(scoped, issue, dirs.repo, `${stage}-setup.log`);
   } catch (error: unknown) {
@@ -96,7 +89,7 @@ function openBranchCheckout(
       { cause: error },
     );
   }
-  const env = Object.fromEntries(checkoutEnvironment(cfg, issue));
+  const env = {};
   const { repo } = dirs;
   function head(): string {
     return gitIn(repo, ["rev-parse", "HEAD"]);

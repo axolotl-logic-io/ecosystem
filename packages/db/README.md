@@ -18,8 +18,7 @@ try {
 ```
 
 Apps own the connection lifecycle and use database roles with appropriate
-grants. The coordination API in `@ecosystem/db/coordination` uses transactions
-and relational constraints; audit JSON is evidence, never authority.
+grants. The historical coordination API remains in this shared package for compatibility; the issue pipeline no longer imports it. Monitoring uses independent tables and remains available to Project Buddy.
 
 Run the fast static gate with `npm run check --workspace @ecosystem/db`.
 For the separate real-database suite, start the disposable server and supply
@@ -28,4 +27,4 @@ database fixture for workspace integration tests.
 
 The [database reference](../../docs/reference/database.md) covers Docker setup,
 configuration, schema constraints, generated and custom migrations, tests,
-backups and explicit pipeline cutover. No application migrates automatically.
+monitoring and isolated tests. No application migrates automatically.

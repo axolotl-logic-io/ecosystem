@@ -7,7 +7,6 @@
 // completed call.
 import fs from "node:fs";
 import { z } from "zod";
-import { TASK_RESULT } from "../../../src/domain.ts";
 
 const MAX_EXIT_CODE = 255;
 const CHECK_REPLY = z.strictObject({
@@ -119,63 +118,6 @@ const FAULT = z.strictObject({
 // The task lane's answers, in the subset of the contract's shapes the
 // signal tests use: Author and Implement requirements bindings, revision
 // bindings of the other tasks, and no stored results.
-const WORK_ITEM = z.strictObject({
-  repo: z.string(),
-  number: z.number().int().positive(),
-});
-const TARGET = z.strictObject({ branch: z.string(), commit: z.string() });
-const BINDING = z.union([
-  z.strictObject({
-    workItem: WORK_ITEM,
-    task: z.literal("implement"),
-    target: TARGET,
-    requirements: z.string(),
-  }),
-  z.strictObject({
-    workItem: WORK_ITEM,
-    task: z.enum(["verify", "fix", "land", "refactor-safely"]),
-    target: TARGET,
-    revision: z.strictObject({
-      code: z.string(),
-      inputs: z.string(),
-      policy: z.string(),
-    }),
-  }),
-]);
-const TASK_ANSWERS = z.strictObject({
-  number: z.number().int().positive(),
-  view: z.strictObject({
-    workItem: WORK_ITEM,
-    requirements: z.string(),
-    revision: z.null(),
-    target: TARGET,
-    containsTarget: z.boolean(),
-    results: z.array(TASK_RESULT),
-    hold: z.string().nullable(),
-    permissions: z.strictObject({ land: z.boolean() }),
-  }),
-  causes: z.array(
-    z.strictObject({
-      binding: BINDING,
-      cause: z.strictObject({
-        signal: z.string(),
-        recordId: z.number().int().positive(),
-      }),
-    }),
-  ),
-  previous: z.string().nullable(),
-  machine: z.array(
-    z.strictObject({
-      kind: z.literal("result"),
-      id: z.string(),
-      workItem: WORK_ITEM,
-      binding: BINDING,
-      recordId: z.number().int().positive(),
-      producerRun: z.string(),
-    }),
-  ),
-  failure: z.string().nullable(),
-});
 const WORLD = z.strictObject({
   repo: z.string(),
   organization: z.string(),
@@ -191,7 +133,6 @@ const WORLD = z.strictObject({
   // answer, or fails before applying.
   post: z.enum(["ok", "lost-after-apply", "lost-before-apply"]),
   nextId: z.number().int().positive(),
-  tasks: z.array(TASK_ANSWERS),
   // The buddy flow tests' additions: the repository's collaborators, its
   // pull requests, the buddy process the fake stops with SIGTERM when a
   // poll's first open-issue listing is its `atPoll`th, and a concurrent
@@ -264,7 +205,6 @@ type FakeEvent = z.infer<typeof EVENT>;
 type FakeComment = z.infer<typeof COMMENT>;
 type FakeReview = z.infer<typeof REVIEW>;
 type FakeReviewComment = z.infer<typeof REVIEW_COMMENT>;
-type TaskAnswers = z.infer<typeof TASK_ANSWERS>;
 
 function parseWorld(text: string): World {
   return WORLD.parse(JSON.parse(text));
@@ -290,7 +230,6 @@ export type {
   FakeIssue,
   FakeReview,
   FakeReviewComment,
-  TaskAnswers,
   World,
 };
 export { parseWorld, readWorld, writeWorld };

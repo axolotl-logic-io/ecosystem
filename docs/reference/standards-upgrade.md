@@ -8,7 +8,7 @@ standards-upgrade assess --config CONFIG --repo OWNER/REPO [--ref REF] --out DIR
 an allow-listed collaborator files plan.md as the repository's one upgrade issue
 standards-upgrade apply --config CONFIG --issue ISSUE
    → issue branch, plan metadata and human-start handoff (read-only checks)
-a qualified human applies start:implement; buddy tasks independently check admission
+a person applies start:implement; the task app claims the start
 ```
 
 `CONFIG` is the repository operator config, `OWNER/REPO` is the assessed repository, `REF` is an optional source ref, `DIR` is the output directory and `ISSUE` is the filed issue number. The plan and assessment grant no execution or Land authority.
@@ -213,11 +213,12 @@ To deliver an assessment's plan, follow these steps:
    ```
 
    `ISSUE` is the number of the issue you filed.
-4. As a qualified human in the buddy's configured organization, apply `start:implement` to the issue.
+4. Apply `start:implement` to the issue.
 
-`apply` prints one JSON line with `issue`, the canonical issue `branch`, the plan marker fields, `task: "implement"` and `next`, which states that a qualified human must apply the label. It prints no retired launcher or stage. Its branch follows the same repository branch rules as the buddy's task view; for a new unbound issue this is `agent/issue-ISSUE`.
+`apply` prints one JSON line with `issue`, the canonical issue `branch`, the plan marker fields, `task: "implement"` and `next`, which states that a person must apply the label. It prints no retired launcher or stage. Its branch is `agent/issue-ISSUE`.
 
-The buddy independently qualifies the label event and all current task prerequisites. Later task results drive readiness: Implement hardens its change, Verify reviews the PR head, and Fix merges the base into the head when Land finds it missing. Verify's Security review and explicit repository/buddy Land permission remain necessary. See [coordination](coordination.md).
+The operator applies `start:implement` to start Implement. Each later task also needs its own start label. Implement hardens the change, Verify reviews the current head and Land reads its prerequisites from GitHub. See [runtime runs](runtime-runs.md) and [Land](merge.md).
+
 
 `apply` only reads. It refuses, with exit 2 and the reason on stderr, when:
 
@@ -248,4 +249,4 @@ The assessment and `apply` write nothing to GitHub or the origin and keep no sta
 
 A new commit on the base branch makes a plan stale before Implementation starts. Close the stale issue, rerun the assessment and file the new plan. Once Implementation has started, Fix brings the branch up to date when Land finds it conflicting with the base, as it does for any issue.
 
-An interrupted delivery retains its original action, branch, checkpoint and uncertain-write evidence. There is no automatic retry or continuation operation: a spent start does not become new after an error or target change. Reconcile uncertain writes by reading, never by repeating them. `apply` refuses another open upgrade plan, but that uniqueness check is not an execution lock or recovery grant. Fenced ownership and the current task guards still apply.
+An interrupted delivery keeps pushed commits and a retained private checkout. Read the branch and PR, preserve unpublished work and retry with a new start label. `apply` refuses another open upgrade plan; this uniqueness check does not claim a task start.

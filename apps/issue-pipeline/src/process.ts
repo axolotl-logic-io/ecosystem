@@ -51,7 +51,7 @@ const MS_PER_SECOND = 1000;
 const FAILURE_LINES = 15;
 const SHELL_TAIL_LINES = 25;
 const TOKEN_PATTERN = /gh[pousr]_[A-Za-z0-9_]+/gu;
-// The shell supervisor, built (beside ops.mjs) or as source.
+// The shell supervisor, built (beside the task apps) or as source.
 const SUPERVISOR_FILES: readonly string[] = [
   "shell-supervisor.mjs",
   "shell-supervisor.ts",
@@ -135,7 +135,7 @@ function run(
 }
 
 // The first of the shell supervisor's files that exists beside this module:
-// the built one beside ops.mjs, else the source, which Node runs by
+// the built one beside the task apps, else the source, which Node runs by
 // stripping its types. Undefined when neither does.
 function supervisorFile(): string | undefined {
   const files = SUPERVISOR_FILES.map((name: string): string =>

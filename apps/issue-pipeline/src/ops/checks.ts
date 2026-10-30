@@ -9,11 +9,6 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
-import {
-  assertCheckoutReady,
-  checkoutEnvironment,
-  withCheckoutSetup,
-} from "../lane-slots.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 
@@ -121,12 +116,7 @@ function exitCheck(
       env,
     });
   }
-  let result: ShellResult;
-  if (id === "setup") {
-    result = withCheckoutSetup(v.cfg, v.issue, v.dir, execute);
-  } else {
-    result = execute(v.env);
-  }
+  const result = execute(v.env);
   const pass = result.code === 0;
   record(v, { id, pass, detail: `exit ${result.code}` }, result);
   return pass;
@@ -135,12 +125,8 @@ function exitCheck(
 // Setup, then the test, lint and typecheck commands. False when setup fails.
 function runCommands(v: Verification): boolean {
   const { setup, test, lint, typecheck } = v.settings.commands;
-  if (present(setup)) {
-    if (!exitCheck(v, "setup", setup)) {
-      return false;
-    }
-  } else {
-    assertCheckoutReady(v.cfg, v.issue, v.dir);
+  if (present(setup) && !exitCheck(v, "setup", setup)) {
+    return false;
   }
   const commands = new Map([
     ["test", test],
@@ -257,7 +243,7 @@ function runChecks(
     ),
     settings,
     timeoutMs: settings.commandTimeoutMinutes * MS_PER_MINUTE,
-    env: checkoutEnvironment(cfg, n),
+    env: new Map<string, string>(),
   };
   if (!runCommands(v)) {
     return { pass: false, headSha: sha, checks: v.checks };

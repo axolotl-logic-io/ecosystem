@@ -23,7 +23,6 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { loadConfig } from "../config.ts";
 import { changedFiles, runChecks } from "../ops/checks.ts";
-import { changeBase } from "../ops/verify-checks.ts";
 import type { ReviewCounts, ReviewFinding } from "../ops/verify-review.ts";
 import { commentable, planReview } from "../ops/verify-review.ts";
 import { OpsError } from "../ops-error.ts";
@@ -31,6 +30,7 @@ import type { PullRequest, Review } from "../task-app/recovery.ts";
 import { Stopped } from "../task-app/stopped.ts";
 import type { TaskApp, TaskRun } from "../task-app/task-app.ts";
 import { main } from "../task-app/task-app.ts";
+import { changeBase } from "./change-base.ts";
 import type { HeadCheckout } from "./head-checkout.ts";
 import {
   checkoutState,

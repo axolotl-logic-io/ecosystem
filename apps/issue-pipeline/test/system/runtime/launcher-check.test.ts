@@ -1,7 +1,10 @@
 // `buddy --check` on a launcher buddy file, through the real entrypoint
 // `src/buddy.ts`, as the operator runs it before starting a buddy.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
 import {
@@ -19,6 +22,7 @@ const CHECKED = z.strictObject({
   ),
   apps: z.record(z.string(), z.string()),
 });
+const OLD_VERSION = /version/u;
 const NO_APP = /task implement has no installed task app/u;
 const NOT_A_TASK = /tasks/u;
 
@@ -64,6 +68,31 @@ test("buddy --check refuses a task that no start label starts", () => {
     const checked = box.check("hippy", ["refactor-safely"]);
     assert.equal(checked.status, 1);
     assert.match(checked.stderr, NOT_A_TASK);
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("buddy refuses a retired version 1 file before launching work", () => {
+  const box = machine();
+  try {
+    const config = box.buddyFile("hippy");
+    fs.writeFileSync(config, JSON.stringify({ version: 1, name: "retired" }));
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.resolve(import.meta.dirname, "../../../src/buddy.ts"),
+        "--config",
+        config,
+      ],
+      { encoding: "utf8", timeout: 30_000 },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, OLD_VERSION);
+    assert.equal(
+      box.world().issues.flatMap((issue) => issue.comments).length,
+      0,
+    );
   } finally {
     box.cleanup();
   }

@@ -1,133 +1,33 @@
 # Writing a test
 
-Tests are sorted by ISTQB test level, as the [project practices](../../../docs/project-practices.md#tests) define them. Pick the lowest level that can show the behavior, put the file in that level's folder under its subject's path, and start from the kit this page names.
+Tests follow the ISTQB levels in [project practices](../../../docs/project-practices.md#tests). Choose the lowest level that demonstrates the behavior. Put shared helpers under `support/` and reuse an existing kit before adding one.
 
-```
-test/
-  component/                 one module on its own
-  component-integration/     modules together, or with real Git, files or processes
-  system/                    the whole built program
-  system-integration/        the program against real GitHub or a real model (opt-in)
-  acceptance/                an issue's Gherkin scenarios, run against the system
-  support/                   kits more than one level uses
-```
+| Level | Folder | Command | Dependencies |
+| --- | --- | --- | --- |
+| Component | `component/` | `npm run test:component` | Plain inputs |
+| Component integration | `component-integration/` | `npm run test:component-integration` | Real files or subprocesses; fake external services |
+| System | `system/` | `npm run test:system` | Built task apps, real local Git, fake GitHub and models |
+| System integration | `system-integration/` | `npm run test:system-integration` | Explicit disposable external services; opt-in |
+| Acceptance | `acceptance/` | `npm run test:acceptance` | One system test for each issue scenario |
 
-| Level | Real | Fake | Start from | Run | In `check:full` |
-| --- | --- | --- | --- | --- | --- |
-| Component | the module | its inputs | nothing | `npm run test:component` | yes |
-| Component integration | Git, files, subprocesses | GitHub, pi | `support/signals/signal-test-kit.ts`, `support/project-policy-test-kit.ts` | `npm run test:component-integration` | yes |
-| System | the built `buddy.mjs` and its ops | GitHub, pi | `system/runtime/buddy-flow-test-kit.ts` | `npm run test:system` | yes |
-| System integration | GitHub or a model | nothing | `system/runtime/buddy-flow-test-kit.ts` | `npm run test:system-integration` | no |
-| Acceptance | as system | as system | `system/runtime/buddy-flow-test-kit.ts` | `npm run test:acceptance` | yes |
+The full gate discovers all non-external test levels with file concurrency 8 and a per-test deadline of 180000 ms. The fast gate checks types, lint, build and program syntax without running pipeline tests.
 
-A new level folder needs no setup: its script already exists, and a script with no tests passes. The examples below are sketches: names in capitals stand for the test's own constants, and helpers like `bareOrigin` stand for a few lines you write or find in a kit.
+## Task apps and launcher
 
-## Component
+Start from `support/task-app/task-app-test-kit.ts` for framework and launcher behavior. It runs the sample task app as buddies with distinct accounts against fake GitHub. A gate can hold a run until the test releases it. `acceptance/246-task-app-framework.test.ts` covers claims, overlapping runs and stops; `acceptance/248-task-app-launcher.test.ts` covers the launcher. The Land acceptance file runs the real app over a local Git origin.
 
-Import the module and call it. Give it plain values and assert on what it returns or throws.
+For built model-backed apps, use `system/runtime/buddy-flow-test-kit.ts`. Its `startTaskApp` runs an app with planned fake model sessions. `system/task-apps/implement.test.ts`, `verify.test.ts`, `system/gherkin.test.ts` and `system/runtime/fix-task-app.test.ts` demonstrate it. The review fixture supplies ordinary GitHub reviews and base-branch changes.
 
-```ts
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import { readRecords } from "../../src/tasks/records.ts";
+Assert on GitHub comments, reviews and PRs, pushed Git history, exit status or preserved work. Await the outcome itself; never sleep to pace a test. A timeout can fail a test but must not make a successful assertion true. Clean up every process, socket and temporary folder.
 
-test("a record another account wrote grants nothing", () => {
-  const records = readRecords(CFG, 7, [commentBy("visitor", RESULT)]);
-  assert.deepEqual(records.rows, []);
-});
-```
+## Standalone tools
 
-A module that reads `ISSUE_PIPELINE_ROOT` or other environment when it loads needs that set first. Set it, then load the module with `await import(...)`.
+Safe Refactor fixtures live in `support/safe-refactor-test-kit.ts`. Project-policy tests use `support/project-policy-test-kit.ts`. Standards tests exercise the standalone entrypoint against local repositories and fake external services.
 
-## Component integration
+## Fake services
 
-Give the code a real dependency in a temporary folder: a Git repository, files, or a child process. Fake GitHub comes from `support/signals/`, and it serves the world that `baseWorld()` builds.
-
-```ts
-import { harness, labelledIssue, openPull, review, taskAnswers } from "../../support/signals/signal-test-kit.ts";
-
-test("a member's request for changes on the PR's head is delivered once", () => {
-  const kit = harness((world) => {
-    world.issues.push(labelledIssue(ISSUE, "start:implement", "autumn", EVENT));
-    world.tasks.push(taskAnswers(ISSUE));
-    world.pulls = [openPull(ISSUE, PR)];
-  });
-  const head = kit.push(ISSUE);           // a real commit on the PR's branch
-  kit.change((world) => {
-    world.pulls?.[0]?.reviews?.push(review(ID, "autumn", "CHANGES_REQUESTED", head));
-  });
-  assert.equal(kit.poll().signals.length, 1);
-  assert.deepEqual(kit.poll().signals, []);
-});
-```
-
-`component-integration/signals/review-signals.test.ts` and `task-starts.test.ts` are full examples.
-
-## System
-
-Run the built program the way an operator does. `machine()` builds a temporary pipeline root, a local Git origin, fake GitHub and fake pi. `runBuddy()` runs `buddy` with the model sessions you plan, and stops it at a poll you choose.
-
-```ts
-import { machine } from "./buddy-flow-test-kit.ts";
-
-test("a started issue gets a PR", async () => {
-  const box = machine(); // ISSUE already carries an authorized start:implement
-  try {
-    const { status } = await box.runBuddy([IMPLEMENT], 2);
-    assert.equal(status, 0);
-    assert.equal(box.world().pulls?.length, 1);
-  } finally {
-    box.cleanup();
-  }
-});
-```
-
-Assert on what a person would see: GitHub's world, the origin's branches, and the observation files. Wait for an outcome with `box.when(() => …)`, never a delay.
-
-A test of Verify, Fix or Land starts from a PR another buddy opened. `system/runtime/buddy-flow-review-test-kit.ts` and `buddy-flow-land-test-kit.ts` run Implement first and hand you that PR. `buddy-flow-verify.test.ts` and `buddy-flow-land.test.ts` show them in use.
-
-## System integration
-
-These tests use real GitHub or a real model, so they need credentials and cost money or rate limit. `check:full` leaves them out. Run them yourself with `npm run test:system-integration`, which runs one file at a time.
-
-- Use a disposable repository that holds nothing else, and read its name and tokens from the environment.
-- When a variable is missing, fail with a message naming it. Don't skip: Biome's `noSkippedTests` forbids it.
-- Clean up what the test made on GitHub in `finally`, such as branches, PRs and labels.
+Fake GitHub lives under `support/signals/`; that historical folder name remains for the shared fake, not a production signal subsystem. One long-lived server owns each disposable world. The `gh` on PATH forwards requests through `curl --unix-socket`, rather than starting a server per call. Fake pi lives beside the built task-app kit. Keep real credentials and models out of default tests.
 
 ## Acceptance
 
-The Gherkin task writes an issue's requirements as Gherkin. An acceptance test turns each scenario into one test, named after it. It uses the system kit: **Given** sets up the world, **When** runs the buddy, and **Then** asserts on what a person can see.
-
-```gherkin
-Scenario: Verify approves a head with only nits
-  Given a PR whose head has only naming nits
-  When Verify reviews it
-  Then the PR has an approving review on that head
-```
-
-```ts
-test("Scenario: Verify approves a head with only nits", async () => {
-  const box = machine(withNitOnlyPr);              // Given
-  try {
-    await box.runBuddy([VERIFY_NITS], 2);          // When
-    const [review] = box.world().pulls?.[0]?.reviews ?? []; // Then
-    assert.equal(review?.state, "APPROVED");
-  } finally {
-    box.cleanup();
-  }
-});
-```
-
-Put the file at `acceptance/<issue number>-<short name>.test.ts`, so the test leads back to its requirements.
-
-## Kits and fakes
-
-Look in `support/` and the level's own folder before writing a helper, and extend what's there. A kit used by more than one level belongs in `support/`, under its subject's path. Fakes are named `fake-*.ts`, fixtures `*-fixtures.ts` and kits `*-test-kit.ts`.
-
-Task app tests start from `support/task-app/task-app-test-kit.ts`. It runs the sample task app, `support/task-app/sample-task-app.ts`, as two buddies with their own accounts against fake GitHub, and can hold a run live at its gate. `acceptance/246-task-app-framework.test.ts` shows it in use. To test the buddy as a launcher, the kit installs the sample app as other tasks' apps in the pipeline root, runs `src/buddy.ts` with a launcher buddy file and reads each app's exit from the buddy's log; see `acceptance/248-task-app-launcher.test.ts`. To run another task app, pass its program as `app` to `machine()`, as `acceptance/253-land-task-app.test.ts` does for Land over a real local origin.
-
-A built task app runs through the buddy flow kit's `startTaskApp`; `system/task-apps/implement.test.ts` runs `implement.mjs` that way.
-
-A fake external service is one long-lived server per test machine, not a process per call. Fake GitHub is `support/signals/fake-gh-server.ts`. The `gh` on the machine's `PATH` is a small sh script that forwards each call to it with `curl --unix-socket`.
-
-`fake-gh-service.ts` and `startFakeGhTransport` share that protocol and process startup across the signal/runtime fake and the reservation fake in `component-integration/fake-coordination-gh.ts`. Reservation scenarios pass their native test signal to each driver, await driver closure before teardown, and stop their owned service between cases. A cancelled driver retains its evidence and prevents later scenarios from starting; expected negative driver results do not count as cancellation.
+Name each test after its Gherkin scenario and put it at `acceptance/ISSUE-description.test.ts`. Given prepares observable inputs, When runs the app, and Then checks what a person or caller can observe. Do not substitute a successful mock for the task under test.

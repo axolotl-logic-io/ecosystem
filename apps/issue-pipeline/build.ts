@@ -29,16 +29,8 @@ const PYTHON_TOOLS = path.join(SOURCE_DIR, "standards", "python-tools.txt");
 const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
 
 async function buildNodeModule(source: string, outfile: string): Promise<void> {
-  // pg loads Node builtins through CommonJS require. Only its privileged
-  // entrypoint needs this primitive in the relocatable ES module bundle.
-  let prelude = "";
-  if (path.basename(outfile) === "database.mjs") {
-    prelude =
-      'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);';
-  }
   await build({
     bundle: true,
-    banner: { js: prelude },
     // Keep the compiler with its real CommonJS file and declaration assets.
     // Resolve the external alias relative to the relocatable distribution.
     absWorkingDir: path.dirname(outfile),
