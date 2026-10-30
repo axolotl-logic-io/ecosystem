@@ -29,7 +29,7 @@ To select the expensive suite explicitly, run from the repository root:
 npm run check:full
 ```
 
-It checks the shared database package, runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, followed by the dashboard, task framework and Gherkin workspace checks:
+It checks the task framework and shared database packages, runs the pipeline's fast gate, then this command from `apps/issue-pipeline/`, followed by the dashboard and Gherkin workspace checks:
 
 ```bash
 node --test --test-concurrency=8 --test-timeout=180000 'test/{component,component-integration,system,acceptance}/**/*.test.ts'
