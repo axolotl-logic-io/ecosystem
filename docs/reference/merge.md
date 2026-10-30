@@ -1,71 +1,83 @@
 # Land
 
-Land delivers an approved PR head onto the configured base. It merges the item's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. One Land result covers both effects. Land is a Gatekeeper task with the lander access profile. See the [domain runtime contract](../domain-runtime-contract.md).
+Land merges the issue's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. It is a Gatekeeper task, and the `land.mjs` task app runs it on the [task app framework](../domain-runtime-contract.md#task-app-contract). Only `start:land` starts it. An approved head doesn't make Land ready on its own.
 
-**Note:** The installed pipeline still lands with a fast-forward push and closes the issue in a separate Complete task. Nothing on this page runs until this source is installed.
+A launcher buddy configured with the `land` task runs this app when `start:land` is present. An operator can also run it by hand as described in [Run Land](#run-land).
+
+## Run Land
+
+To run Land on one issue, run:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/land.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
+```
+
+- `BUDDY_FILE` is the absolute path of the buddy's configuration file. Land acts through the GitHub account it names.
+- `OWNER/REPO#N` is the issue.
+
+The framework claims `start:land`, marks the issue `agent:land:running`, runs Land's work and posts an end comment. Land exits 0 when the run ends normally: it merged, found the PR already merged, marked a conflicting PR as a draft, lost the claim or was stopped. It exits 1 when the run fails, such as when a prerequisite is missing.
 
 ## Land prerequisites
 
-Land binds the item PR's current head as its revision, together with the trusted inputs, the policy and the observed base. It needs a passed Verify of that head whoever approves it, because Verify runs the Security review, and a Security review must pass before any merge. It may then act only when all five of these hold for that head:
+Land finds the PR from the branch `agent/issue-N` and reads every prerequisite from GitHub on the PR's current head each time it runs. There are no task records, approval records or integration turns. The PR must be open and ready for review, and its head must have all of these:
 
-1. An approving review from the landing account, which is that passed Verify, or from a qualified person.
-2. No request-changes review from either that still stands on the head.
-3. A head that contains the base branch, so GitHub reports the PR as mergeable.
-4. Green required CI on exactly that head.
-5. The trusted repository's explicit `permissions.land` grant.
+1. An approval from Verify's account or a person with write access.
+2. No standing request for changes from either.
+3. Green required CI. At least one required check must report, and each one must pass or be skipped.
+4. A head that contains the PR's base branch, which GitHub can merge.
 
-A qualified person is an active member of the configured organization, as the [signals reference](signals.md#who-may-apply-a-control-label) defines it. A review stands on a head only when it was submitted against that head's commit. A review of an earlier head never counts. Land runs only when a qualified person applies `start:land` for the current head. A start applied before Verify passes the head waits, and Land runs once Verify passes it.
+A review stands on a head only when it was submitted on that head's commit, and only a reviewer's latest approval, request for changes or dismissal counts. A review of an earlier head never counts. Land counts a review only when GitHub reports that its author has write, maintain or admin permission on the repository, so Verify's account needs write access too.
 
-A pass is evidence, not permission. The Gatekeeper buddy must also have the right scope, responsibility, account and lander profile. Ownership, the action's cause, stop evidence and write fences are checked again at the merge itself. Absent, pending, failed or unreadable required CI can't authorize Land.
+If any prerequisite is missing, Land merges nothing and the run fails. Its end comment names each missing prerequisite and says to apply `start:land` again. A head that doesn't contain its base is Fix's work, so the comment names `start:fix` for it.
 
-Land doesn't run checks, sessions or repairs. A head that is missing its base is Fix's work, and a head with no current approval is Verify's or a person's.
+Land doesn't read the repository's `permissions.land` grant. GitHub's permissions on its buddy's account decide whether it can merge.
 
-## The target's integration turn
+## Merge
 
-A target-write reservation serializes participating Lands for one repository and literal base branch. Land takes this integration turn before it records its attempt. If it can't take the turn, it spends no attempt and makes no change.
-
-The turn uses authenticated coordination records and create-only epoch refs. Issue execution is still required; a turn grants no issue authority. An unsettled Land keeps the turn. A process exit, an expired lease or a deleted local run directory doesn't release it.
-
-The turn excludes only participants in this protocol. Outside accounts can still move the base. To close that gap, configure the base to require branches to be up to date before merging. GitHub then refuses a stale merge itself, and the PR goes back to Fix.
-
-## Merge effect
-
-The guarded `land-task` operation rechecks the binding and every prerequisite. The authenticated version 2 attempt records Land's intent before the merge. It keeps its action, buddy and cause. A later observation can't invent that intent.
-
-The landing account merges the PR through GitHub with a merge commit, passing the head it checked:
+Land merges the PR through its buddy's account, passing the head it checked:
 
 ```bash
 gh pr merge PR --merge --match-head-commit HEAD
 ```
 
-`PR` is the item's PR number and `HEAD` is the full commit Land checked. If anyone pushes after the check, GitHub refuses the merge. Land never squashes, rebases, pushes to the base or uses an admin bypass.
+`PR` is the PR number and `HEAD` is the full commit Land checked. If anyone pushes after Land reads the head, GitHub refuses the merge. Land never squashes, rebases, pushes to the base or uses an admin bypass. To stop the base moving between Land's checks and its merge, require branches to be up to date before merging on the base.
 
-After the merge, the landing account closes the issue. A PR body that names the issue with a closing reference, such as `Closes #187`, may already have closed it; Land then reads the issue as closed and doesn't close it again.
-
-Land passes only after fresh reads find the PR merged at exactly the checked head and the issue closed. Its receipt names the merge commit as the code it produced. The evidence holds the PR, the head, the merge commit and `issueClosed: true`, as [task results](task-results.md#verify-and-land-evidence) describes.
+After the merge, Land posts a comment that names the head and the merge commit. Then it closes the issue, unless the merge already closed it: GitHub closes the issue when the PR's body names it with a closing reference, such as `Closes #187`.
 
 ## Conflicts
 
-An approved PR can still conflict with its base. Land then doesn't merge. It marks the PR as a draft, through the landing account, and records a refused result that says why. The refused result names the PR, the head and the base it conflicts with.
+An approved PR can still conflict with its base. Land then doesn't merge. It marks the PR as a draft and posts a comment naming `start:fix`. Land checks for a conflict before the other prerequisites, so a conflicting PR goes to Fix whatever its reviews and CI say. If GitHub refuses the merge because the base moved and now conflicts, Land handles it the same way.
 
-Land treats a head that doesn't contain the current base as a conflict too, even when GitHub reports it mergeable. It checks for a conflict before it reads CI, so an approved, conflicting PR goes to Fix whatever its CI says. A merge that GitHub refuses at the same head, because the base moved and now conflicts or is missing from the head, is handled the same way.
+To resolve it, apply `start:fix`; see [Fix](review.md#fix). Fix merges the base into the head, pushes and marks the PR ready for review again. A conflict doesn't count toward Verify's loop limit.
 
-To resolve it, apply `start:fix`; see [Fix](review.md#fix). Fix merges the base into the head, pushes and marks the PR ready for review again. A refused Land leaves code writable for Fix; only an unsettled or passed Land fences code writes. See [write authority](authority.md#controlled-writes).
+## Recovery from GitHub
 
-A conflict doesn't spend Verify's loop limit.
+Every run reads the PR's state first. If the PR is already merged, the run only closes the issue if it's still open, and posts a comment saying so. Land never merges twice.
 
-## Uncertain effects
+Land settles a merge by reading the PR afterwards, whatever `gh` answered. A merge whose response was lost reads as merged, and the run goes on to close the issue. If the run fails before the issue is closed, apply `start:land` again: the next run finds the PR merged and only closes the issue.
 
-Recovery, the `land-reconcile` operation, settles the original attempt, with its original identity and binding. It reads the PR's merged state and the issue's state. It never merges or marks a draft. When the PR merged at the checked head but the issue still reads open, for example because the original close failed, it closes the issue itself, once. Nothing is ever merged or closed twice.
+| PR when the run starts | What Land does |
+| --- | --- |
+| Merged | Closes the issue if it's open; never merges |
+| Open, and conflicts with its base | Marks the PR as a draft and names `start:fix` |
+| Open, with a missing prerequisite | Fails, naming each missing prerequisite |
+| Open, with every prerequisite | Merges at the checked head, then closes the issue if the merge didn't |
+| Closed without a merge, or no PR | Fails; nothing is merged |
 
-| PR | Issue | Settlement |
-|---|---|---|
-| Merged at the checked head | Closed | Passed |
-| Merged at the checked head | Open | Recovery closes the issue, then passed; unknown if it still can't read the issue closed |
-| An open draft at the checked head | Any state | Refused, with conflict evidence for Fix |
-| Open and not a draft, closed without a merge, merged at another head, or no PR | Any state | Failed; this run merged nothing |
-| Unreadable | Any state | Unknown; retain the turn |
+## Earlier Land action
 
-Current recording authorization and ownership remain required. A lost response isn't permission to resend a merge or a close that GitHub may have accepted.
+A buddy with the earlier version 1 configuration still runs Land as an action of the earlier runtime. #254 removes it. The action has the same merge, conflict and close behavior, with these differences:
 
-To investigate uncertainty, stop new dispatch for the affected issue. Preserve its attempts, results, checkpoints, coordination records, checkout and consumers. Then read the actual PR and issue on GitHub. Don't erase intent, release another invocation's turn or restart an old stage.
+- It needs a passed Verify task record of the head, an approval from the landing account or a qualified person, and the repository's `permissions.land` grant.
+- It records an authenticated attempt before the merge, and its result names the merge commit.
+- It takes the target's integration turn before it records its attempt.
+
+### The target's integration turn
+
+A target-write reservation serializes participating Lands for one repository and literal base branch. If Land can't take the turn, it spends no attempt and makes no change. An unsettled Land keeps the turn. A process exit, an expired lease or a deleted local run directory doesn't release it. The turn excludes only participants in this protocol, so outside accounts can still move the base.
+
+### Uncertain effects
+
+The `land-reconcile` operation settles an unsettled attempt from reads of the PR and the issue. It never merges or marks a draft. When the PR merged at the checked head but the issue still reads open, it closes the issue, once. If it can't read the PR, the attempt stays unknown and keeps the turn.
+
+To investigate uncertainty, stop new dispatch for the affected issue. Preserve its attempts, results, checkpoints, coordination records, checkout and consumers, and read the actual PR and issue on GitHub. Don't erase intent, release another invocation's turn or restart an old stage.

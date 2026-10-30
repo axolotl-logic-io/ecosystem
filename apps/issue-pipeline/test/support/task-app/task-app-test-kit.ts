@@ -1,8 +1,9 @@
 // The task app tests' kit: a temporary machine with fake GitHub
 // (fake-github-test-kit.ts), one repository config, a private credential
 // file with each buddy's token, a buddy file for each of two buddies with
-// their own accounts, and the sample task app (sample-task-app.ts) run in a
-// fresh process as a buddy runs it. Issue ISSUE starts with `start:sample`
+// their own accounts, and a task app, by default the sample task app
+// (sample-task-app.ts), run in a fresh process as a buddy runs it.
+// Issue ISSUE starts with `start:sample`
 // applied by a person. Tests change the world as GitHub or a person would,
 // hold a run live at its gate, and read back what a person sees. The
 // launcher's tests install the sample app as other tasks' apps in the
@@ -108,9 +109,9 @@ interface Machine {
   pipeline: string;
   world: () => World;
   change: (edit: (world: World) => void) => void;
-  // Starts the sample task app as `buddy`.
+  // Starts the machine's task app as `buddy`.
   run: (buddy: Buddy, options?: RunOptions) => AppRun;
-  // Runs the sample task app as `buddy` to its end.
+  // Runs the machine's task app as `buddy` to its end.
   runToEnd: (buddy: Buddy, options?: RunOptions) => Promise<Ended>;
   // Writes `buddy`'s file with `tasks` and returns its path.
   buddyFile: (buddy: Buddy, tasks?: string[]) => string;
@@ -275,10 +276,11 @@ function appExits(stderr: string): AppExit[] {
 }
 
 // A machine whose world `setup` changes first. With `origin`, a local bare
-// repository, fake GitHub serves that repository's Git database.
+// repository, fake GitHub serves that repository's Git database. `app` is
+// the task app's program, the sample task app unless given.
 function machine(
   setup: (world: World) => void = (): void => undefined,
-  served: { origin?: string } = {},
+  served: { origin?: string; app?: string } = {},
 ): Machine {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-task-app-"));
   const bin = path.join(root, "bin");
@@ -357,7 +359,13 @@ function machine(
     const held = gateOf(options.gate);
     const child = spawn(
       process.execPath,
-      [SAMPLE, "--config", buddyFile(buddy), "--issue", `${REPO}#${ISSUE}`],
+      [
+        served.app ?? SAMPLE,
+        "--config",
+        buddyFile(buddy),
+        "--issue",
+        `${REPO}#${ISSUE}`,
+      ],
       {
         env: appEnv(held, options.fail),
         stdio: ["ignore", "ignore", "pipe"],

@@ -123,7 +123,8 @@
         "src/comments.ts",
         "src/task-app/issue-github.ts",
         "src/task-app/recovery.ts",
-        "src/task-apps/submit-review.ts"
+        "src/task-apps/submit-review.ts",
+        "src/task-apps/land.ts"
       ],
       "linter": {
         "rules": {

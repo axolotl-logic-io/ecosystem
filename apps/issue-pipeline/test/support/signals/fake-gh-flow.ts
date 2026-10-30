@@ -1,8 +1,9 @@
 // The parts of gh that the buddy flow tests' runtime, tasks and ops use
 // beyond the signal reads fake-gh.ts answers: whole paginated comment
 // listings (`--paginate --jq '.[] | @json'`), comment edits, plain resource
-// reads (issues, collaborators), issue assignee and label changes, the repository's
-// git database, which is the real local bare origin in FAKE_GH_ORIGIN, and
+// reads (issues, collaborators and their permissions, comparisons), issue
+// assignee and label changes, the repository's git database, which is the
+// real local bare origin in FAKE_GH_ORIGIN, and
 // `gh pr` for the item's pull request: its view, checks, creation, draft
 // and ready changes, merge commit, submitted reviews and thread replies.
 // flowCall answers from the world and says whether the call was one of
@@ -31,6 +32,9 @@ const LABEL =
 const LABELS = /^repos\/[^/]+\/[^/]+\/issues\/(?<number>\d+)\/labels$/u;
 const LABEL_FIELD = /^labels\[\]=(?<label>.+)$/u;
 const COLLABORATOR = /^repos\/[^/]+\/[^/]+\/collaborators\/(?<login>[^/]+)$/u;
+const PERMISSION =
+  /^repos\/[^/]+\/[^/]+\/collaborators\/(?<login>[^/]+)\/permission$/u;
+const COMMIT_ID = /^[0-9a-f]{40}$/u;
 const REF = /^repos\/[^/]+\/[^/]+\/git\/ref\/(?<ref>.+)$/u;
 const GIT_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits\/(?<sha>[0-9a-f]{40})$/u;
 const NEW_COMMIT = /^repos\/[^/]+\/[^/]+\/git\/commits$/u;
@@ -240,6 +244,42 @@ function issueGet(world: World, args: readonly string[], number: string): void {
   fail(`fake gh: unsupported --jq ${jq}`);
 }
 
+// A compare endpoint's side: a full commit id, or a branch name.
+function revisionOf(name: string): string {
+  if (COMMIT_ID.test(name)) {
+    return name;
+  }
+  return `refs/heads/${name}`;
+}
+
+// `repos/O/R/compare/BASE...HEAD`: the files and commits HEAD adds to
+// BASE, and how many commits each has that the other lacks.
+function compare(base: string, head: string): boolean {
+  const diff = git(["diff", "--name-only", `${base}...${head}`]);
+  if (!diff.ok) {
+    return fail("gh: Not Found (HTTP 404)");
+  }
+  const names = diff.out.split("\n").filter((name) => name !== "");
+  const listed = git(["rev-list", "--reverse", `${base}..${head}`]);
+  const commits = listed.out
+    .split("\n")
+    .filter((id) => id !== "")
+    .map((id) => ({
+      sha: id,
+      commit: { message: git(["log", "-1", "--format=%B", id]).out },
+    }));
+  const behind = git(["rev-list", "--count", `${head}..${base}`]);
+  print(
+    Object.fromEntries([
+      ["files", names.map((filename) => ({ filename }))],
+      ["commits", commits],
+      ["ahead_by", commits.length],
+      ["behind_by", Number(behind.out)],
+    ]),
+  );
+  return true;
+}
+
 function gitGet(endpoint: string): boolean {
   const { ref } = REF.exec(endpoint)?.groups ?? {};
   if (ref !== undefined) {
@@ -269,29 +309,7 @@ function gitGet(endpoint: string): boolean {
   }
   const { base, head } = COMPARE.exec(endpoint)?.groups ?? {};
   if (base !== undefined && head !== undefined) {
-    const diff = git([
-      "diff",
-      "--name-only",
-      `refs/heads/${base}...refs/heads/${head}`,
-    ]);
-    if (!diff.ok) {
-      return fail("gh: Not Found (HTTP 404)");
-    }
-    const names = diff.out.split("\n").filter((name) => name !== "");
-    const listed = git([
-      "rev-list",
-      "--reverse",
-      `refs/heads/${base}..refs/heads/${head}`,
-    ]);
-    const commits = listed.out
-      .split("\n")
-      .filter((id) => id !== "")
-      .map((id) => ({
-        sha: id,
-        commit: { message: git(["log", "-1", "--format=%B", id]).out },
-      }));
-    print({ files: names.map((filename) => ({ filename })), commits });
-    return true;
+    return compare(revisionOf(base), revisionOf(head));
   }
   return false;
 }
@@ -302,6 +320,21 @@ function plainGet(world: World, args: readonly string[]): boolean {
   const { number } = ISSUE.exec(endpoint)?.groups ?? {};
   if (number !== undefined) {
     issueGet(world, args, number);
+    return true;
+  }
+  const { login: asked } = PERMISSION.exec(endpoint)?.groups ?? {};
+  if (asked !== undefined) {
+    // A collaborator writes; anyone else only reads, as on a public
+    // repository.
+    let permission = "read";
+    if (
+      (world.collaborators ?? []).some(
+        (name) => name.toLowerCase() === asked.toLowerCase(),
+      )
+    ) {
+      permission = "write";
+    }
+    print({ permission, user: { login: asked } });
     return true;
   }
   const { login } = COLLABORATOR.exec(endpoint)?.groups ?? {};

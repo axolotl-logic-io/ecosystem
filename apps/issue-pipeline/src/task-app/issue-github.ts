@@ -265,6 +265,12 @@ class IssueGitHub {
     return answer;
   }
 
+  // A `gh` write, run once, with its whole result, for a caller that reads
+  // gh's exit status itself.
+  writeResult(args: readonly string[], options: WriteOptions = {}): RunResult {
+    return this.write(args, options);
+  }
+
   private write(
     args: readonly string[],
     options: WriteOptions,

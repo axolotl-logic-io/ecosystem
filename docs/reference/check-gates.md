@@ -15,7 +15,7 @@ That runs every workspace's `check` script: the issue pipeline's, then the dashb
 - TypeScript checks for source, tests and the installer, under one `tsconfig.json`.
 - Biome, with warnings treated as errors.
 - The esbuild build.
-- `node --check` on `install.ts` and on each of the eleven built programs that `programs.ts` lists.
+- `node --check` on `install.ts` and on each built program that `programs.ts` lists.
 
 The pipeline's fast gate runs no Node tests. It doesn't prove flow behavior, authority enforcement, recovery, runtime isolation, provider or session behavior, or safe landing. Typechecking a test doesn't run its assertions. Label its result **fast default**, never full integration coverage.
 
