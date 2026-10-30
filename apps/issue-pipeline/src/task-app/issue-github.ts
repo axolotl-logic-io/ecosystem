@@ -1,6 +1,6 @@
 // One issue on GitHub as one account sees and changes it: its labels, its
-// label timeline and its comments, and the label and comment writes a task
-// run makes. Every write first rereads the issue's labels and refuses with
+// label timeline and its comments, and the label, comment and other writes
+// a task run makes. Every write first rereads the issue's labels and refuses with
 // Stopped while `agents:stop` is on it, unless the caller says the write is
 // part of ending a run. Reads GitHub can repeat are retried through its
 // transient failures; writes run once.
@@ -253,19 +253,39 @@ class IssueGitHub {
     }
   }
 
-  private write(args: readonly string[], options: WriteOptions): RunResult {
+  // POSTs `input` as JSON to the repository API path `path`, such as a
+  // pull request's reviews, and returns GitHub's answer.
+  post(path: string, input: object, options: WriteOptions = {}): unknown {
+    const args = ["api", "-X", "POST", path, "--input", "-"];
+    const result = this.write(args, options, JSON.stringify(input));
+    if (result.code !== 0) {
+      throw this.failure(args, result);
+    }
+    const answer: unknown = JSON.parse(result.stdout);
+    return answer;
+  }
+
+  private write(
+    args: readonly string[],
+    options: WriteOptions,
+    input?: string,
+  ): RunResult {
     if (options.ending !== true) {
       this.checkStop();
     }
-    return this.gh(redacted(args));
+    return this.gh(redacted(args), input);
   }
 
-  private gh(args: readonly string[]): RunResult {
-    return credentialedRun("gh", args, {
+  private gh(args: readonly string[], input?: string): RunResult {
+    const options: Parameters<typeof credentialedRun>[2] = {
       env: this.env,
       allowFail: true,
       timeoutMs: GH_TIMEOUT_MS,
-    });
+    };
+    if (input !== undefined) {
+      options.input = input;
+    }
+    return credentialedRun("gh", args, options);
   }
 
   failure(args: readonly string[], result: RunResult): OpsError {

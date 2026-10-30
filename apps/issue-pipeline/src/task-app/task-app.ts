@@ -41,7 +41,9 @@ const ERROR_LIMIT = 2000;
 const USAGE = "usage: TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N";
 
 // What a task's work gets: the issue, GitHub as this buddy, the readers of
-// what earlier runs left there, and its own marked comments. Every write
+// what earlier runs left there, its own marked comments, and the
+// repository config file the buddy file names for the issue's repository,
+// for a task that needs the repository's settings. Every write
 // through `github` or `comment` throws Stopped while `agents:stop` is on
 // the issue; `checkStop` lets long work check between its own steps.
 interface TaskRun {
@@ -49,6 +51,7 @@ interface TaskRun {
   run: string;
   account: string;
   issue: IssueRef;
+  config: string;
   github: IssueGitHub;
   recovery: Recovery;
   checkStop: () => void;
@@ -112,7 +115,7 @@ function wait(ms: number): Promise<void> {
 async function runClaimed(
   app: TaskApp,
   github: IssueGitHub,
-  base: string,
+  repository: { config: string; base: string },
   claim: { start: number | null; claim: number },
 ): Promise<ExitStatus> {
   const { id: task } = app;
@@ -138,8 +141,9 @@ async function runClaimed(
       run,
       account: github.account,
       issue: github.issue,
+      config: repository.config,
       github,
-      recovery: recovery(github, task, base),
+      recovery: recovery(github, task, repository.base),
       checkStop: (): void => github.checkStop(),
       comment: (text: string, kind: string, payload: object): void =>
         github.comment(marked(text, task, kind, payload)),
@@ -229,7 +233,7 @@ async function runTaskApp(
     );
     return 1;
   }
-  return runClaimed(app, github, identity.base, claim);
+  return runClaimed(app, github, identity, claim);
 }
 
 // The program's entry point: runs `app` with this process's arguments and

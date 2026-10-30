@@ -66,6 +66,43 @@ The result's evidence records the submitted review, the counts of blocking findi
 
 A Verify result binds one head. A new head, from Fix or from a person's push, needs a new `start:verify`. A passed or refused Verify doesn't rerun for the same head. A Verify that failed to judge the head, for example because CI turned pending, isn't retried automatically. A new `start:verify` for that head retries it.
 
+### Verify task app
+
+Verify is also a [task app](runtime-runs.md#task-app-runs), `verify.mjs`, built on the task app framework. Only `start:verify` starts it. A [launcher buddy](runtime-runs.md#launcher-buddies) whose tasks include `verify` launches it for each `start:verify` it sees. A buddy with a version 1 file still runs the Verify described above.
+
+To run it by hand, run:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/verify.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
+```
+
+- `BUDDY_FILE` is the absolute path of the Verify buddy's file. The app acts as the account the file names.
+- `OWNER/REPO#N` is the issue.
+
+The app's work goes like this:
+
+1. It finds the open PR from the issue's branch, `agent/issue-N`, and notes the PR's head.
+2. It runs the repository's full checks on that head, in a fresh checkout of its own.
+3. It runs the Security review in one read-only `issue-pipeline-reviewer` session, as above.
+4. It waits for the required CI on that head. It reads the checks again every 30 seconds, for up to the repository config's `ciWaitMinutes`.
+5. It submits one review on that head through the buddy's own account, as [the verdict](#the-verdict) describes.
+6. It posts a comment on the issue that links the review and names the next start label: `start:land` after an approval, or `start:fix` after a request for changes.
+
+The review is Verify's result. The app writes no task records.
+
+The app fails, and submits nothing, when it can't judge the head:
+
+- The issue has no open PR.
+- The buddy's account opened the PR. GitHub doesn't let a PR's author review it, so Verify needs a buddy with another account.
+- The head moved before the review.
+- The setup failed, or the checks left tracked files changed.
+- The review session failed or changed its checkout.
+- CI had no verdict within `ciWaitMinutes`.
+
+A failed run keeps its checkout in the pipeline's job folders for a person to inspect. A run that succeeds or stops removes its checkout. The app doesn't take a lane slot, so it refuses a repository config that sets `laneSlots`.
+
+GitHub is the app's whole record. If the buddy's account already approved or requested changes on the current head, a rerun submits no second review. It posts a comment that links the existing review instead. A review of an earlier head doesn't count, and neither does a comment-only or dismissed review.
+
 ## Fix
 
 Fix belongs to the Developer and uses the writer profile. It binds the item PR's current head. It runs only when a qualified person applies `start:fix`, and it answers what stands on that head:

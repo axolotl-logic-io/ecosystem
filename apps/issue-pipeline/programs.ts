@@ -11,4 +11,5 @@ export const PROGRAMS = [
   { source: "src/job/structured-output.ts", file: "structured-output.mjs" },
   { source: "src/job/pipeline-commit-tool.ts", file: "pipeline-commit.mjs" },
   { source: "scripts/standards-upgrade.ts", file: "standards-upgrade.mjs" },
+  { source: "src/task-apps/verify.ts", file: "verify.mjs" },
 ] as const;

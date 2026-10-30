@@ -78,7 +78,9 @@
         "src/task-app/identity.ts",
         "src/task-app/launcher.ts",
         "src/task-app/run-record.ts",
-        "src/task-app/task-app.ts"
+        "src/task-app/task-app.ts",
+        "src/task-apps/head-checkout.ts",
+        "src/task-apps/verify-session.ts"
       ],
       "linter": {
         "rules": {
@@ -120,7 +122,8 @@
       "includes": [
         "src/comments.ts",
         "src/task-app/issue-github.ts",
-        "src/task-app/recovery.ts"
+        "src/task-app/recovery.ts",
+        "src/task-apps/submit-review.ts"
       ],
       "linter": {
         "rules": {

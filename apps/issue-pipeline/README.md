@@ -58,7 +58,7 @@ An authenticated attempt spends its start for the requirements binding even if i
 
 After a confirmed passed, refused or failed result, a task removes the start label whose application caused it. It preserves all accepted signals and task records, other labels and any newer application observed during cleanup. Uncertain results retain their label. Cleanup failures warn without changing the result. See [completed starts](../../docs/reference/stops-and-labels.md#completed-starts).
 
-Implement writes the change and hardens it in a fresh session before it records its result. Verify runs the full checks, the required CI and the Security review of the exact head. It then submits a review through the landing account: an approval for nothing or only nits, and a request for changes otherwise. A Security finding always blocks. Fix merges the base into the PR head, answers every blocking comment with code and a thread reply, and pushes. An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`), then holds for a person. See [Hardening, Verify and Fix](../../docs/reference/review.md).
+Implement writes the change and hardens it in a fresh session before it records its result. Verify runs the full checks, the required CI and the Security review of the exact head. It then submits a review through the landing account: an approval for nothing or only nits, and a request for changes otherwise. A Security finding always blocks. Verify is also a task app, `verify.mjs`, which submits its review through the buddy's own account and keeps no task records; a launcher buddy whose tasks include `verify` runs it. See [the Verify task app](../../docs/reference/review.md#verify-task-app). Fix merges the base into the PR head, answers every blocking comment with code and a thread reply, and pushes. An issue gets at most three Fix rounds that Verify triggered (`VERIFY_FIX_ROUNDS`), then holds for a person. See [Hardening, Verify and Fix](../../docs/reference/review.md).
 
 ## Ownership, resources and preservation
 
@@ -209,7 +209,7 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 ## Programs and observations
 
-`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
+`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `database.mjs`, `ops.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs`, `standards-upgrade.mjs` and the Verify task app, `verify.mjs`.
 
 Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json` for the earlier runtime and, for [task app runs](../../docs/reference/runtime-runs.md#task-app-runs), `runs/SLUG/issue-N/task-runs/ID/run.json`. A launcher buddy writes no observation file of its own. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs and generic subagent runs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
 
@@ -278,7 +278,7 @@ npm run check:full   # database static gate, pipeline non-external tests, dashbo
 
 From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The pipeline fast gate checks source/test types, Biome, build, installer syntax and all ten built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and all eleven built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` under every level folder except `test/system-integration/`, with file concurrency 8 and per-test timeout 180000 ms.
 
 Tests are sorted by ISTQB test level, as the [project practices](../../docs/project-practices.md#tests) define them. Each level has its own folder and script, with the full gate's flags:
 

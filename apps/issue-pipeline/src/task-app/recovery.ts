@@ -28,6 +28,7 @@ const PULLS = z.array(
     baseRefName: z.string(),
     title: z.string(),
     body: z.string(),
+    author: z.looseObject({ login: z.string() }).nullable(),
   }),
 );
 const REVIEW = z.looseObject({
@@ -80,6 +81,8 @@ interface Check {
 }
 interface PullRequest {
   number: number;
+  // The account that opened it, or null when GitHub no longer names one.
+  author: string | null;
   state: string;
   isDraft: boolean;
   head: string;
@@ -206,7 +209,7 @@ function recovery(github: IssueGitHub, task: string, base: string): Recovery {
           "--state",
           "all",
           "--json",
-          "number,state,isDraft,headRefName,headRefOid,baseRefName,title,body",
+          "number,state,isDraft,headRefName,headRefOid,baseRefName,title,body,author",
         ]) ?? [],
       ).sort((a, b) => b.number - a.number);
       const pull =
@@ -217,6 +220,7 @@ function recovery(github: IssueGitHub, task: string, base: string): Recovery {
       const path = `repos/${repo}/pulls/${pull.number}`;
       return {
         number: pull.number,
+        author: pull.author?.login ?? null,
         state: pull.state,
         isDraft: pull.isDraft,
         head: pull.headRefName,

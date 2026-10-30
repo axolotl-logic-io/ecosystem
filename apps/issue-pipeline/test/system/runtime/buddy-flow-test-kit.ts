@@ -146,6 +146,12 @@ interface MachineSetup {
   provider?: "openai" | "anthropic";
 }
 
+// How a task app's process ended, and what it wrote to stderr.
+interface TaskAppEnd {
+  status: number | null;
+  stderr: string;
+}
+
 // What one buddy run printed and left behind.
 interface BuddyOutcome {
   status: number | null;
@@ -176,6 +182,13 @@ interface Machine {
     buddy?: BuddyChoice,
     signal?: AbortSignal,
   ) => Promise<BuddyOutcome>;
+  // Runs task app `app` (APP.mjs) once on issue ISSUE as `buddy`, from a
+  // trusted file of its own, with `sessions` planned, to its end.
+  runTaskApp: (
+    app: string,
+    buddy: BuddyChoice,
+    sessions: PlannedSession[],
+  ) => Promise<TaskAppEnd>;
   recoverImplement: (
     action: string,
     apply: boolean,
@@ -508,6 +521,33 @@ function writeBuddyConfig(
   });
 }
 
+// Writes `file`, the trusted launcher buddy file (version 2) of a buddy in
+// `buddy`'s role whose one task is `app`, scoped to `repositoryConfig`, with
+// its account's token in `credentials`.
+function writeLauncherBuddy(
+  file: string,
+  setup: { repositoryConfig: string; credentials: string },
+  buddy: BuddyChoice,
+  app: string,
+): void {
+  let name = "hippy";
+  let login = DEVELOPER;
+  let variable = "ISSUE_PIPELINE_DEV_GITHUB_TOKEN";
+  if (buddy.role === "gatekeeper") {
+    name = "lawd";
+    login = LANDING;
+    variable = "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN";
+  }
+  writePrivate(file, {
+    version: 2,
+    name,
+    scope: { repositories: [setup.repositoryConfig] },
+    tasks: [app],
+    account: { login, credentials: { file: setup.credentials, variable } },
+    pollSeconds: 1,
+  });
+}
+
 // The repository config's lane slot pool, when the machine has one.
 function laneSlotsOf(setup: MachineSetup): { laneSlots?: number } {
   if (setup.laneSlots === undefined) {
@@ -677,6 +717,45 @@ function machine(
     );
     return { status, stderr, ended, run, actions: actionsOf(pipeline) };
   }
+  async function runTaskApp(
+    app: string,
+    buddy: BuddyChoice,
+    sessions: PlannedSession[],
+  ): Promise<TaskAppEnd> {
+    const buddyConfig = path.join(root, `launcher-${buddy.role}-${app}.json`);
+    writeLauncherBuddy(
+      buddyConfig,
+      { repositoryConfig, credentials },
+      buddy,
+      app,
+    );
+    fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(pipeline, `${app}.mjs`),
+        "--config",
+        buddyConfig,
+        "--issue",
+        `${REPO}#${ISSUE}`,
+      ],
+      { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    // A deadline that only fails the test.
+    const overstay = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, OVERSTAY_MS);
+    const status = await new Promise<number | null>((resolve) => {
+      child.on("close", (code) => resolve(code));
+    });
+    clearTimeout(overstay);
+    return { status, stderr };
+  }
   return {
     root,
     origin,
@@ -703,6 +782,7 @@ function machine(
         .filter((line) => line !== "")
         .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
     runBuddy,
+    runTaskApp,
     recoverImplement: (
       action: string,
       apply: boolean,
@@ -795,5 +875,6 @@ export type {
   Machine,
   MachineSetup,
   PlannedSession,
+  TaskAppEnd,
 };
 export { applyStart, DEVELOPER, HARDENING, HUMAN, ISSUE, machine, marked };
