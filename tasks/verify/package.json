@@ -1,0 +1,21 @@
+{
+  "name": "@ecosystem/verify",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check": "tsc -p . && biome check --error-on-warnings && node --test --test-timeout=180000 'test/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@ecosystem/task-framework": "*",
+    "zod": "^4.6.7",
+    "@ecosystem/task-runtime": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5"
+  }
+}

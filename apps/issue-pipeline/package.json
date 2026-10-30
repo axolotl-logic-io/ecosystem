@@ -25,6 +25,10 @@
     "zod": "^4.6.7",
     "@ecosystem/gherkin": "*",
     "@ecosystem/task-framework": "*",
-    "@ecosystem/task-runtime": "*"
+    "@ecosystem/task-runtime": "*",
+    "@ecosystem/implement": "*",
+    "@ecosystem/fix": "*",
+    "@ecosystem/verify": "*",
+    "@ecosystem/land": "*"
   }
 }
