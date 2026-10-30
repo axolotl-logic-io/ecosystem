@@ -175,7 +175,12 @@ test("a first run posts the issue's Gherkin from one read-only session", async (
 }) => {
   const box = machine(started);
   try {
-    const run = await box.runTaskApp("gherkin", { role: "developer" }, [writes(FIRST)], signal);
+    const run = await box.runTaskApp(
+      "gherkin",
+      { role: "developer", tasks: [] },
+      [writes(FIRST)],
+      signal,
+    );
     assert.equal(run.status, 0, run.stderr);
     assert.deepEqual(labelsOf(box), []);
     const [gherkin] = marked(box, GHERKIN_MARK);
@@ -213,12 +218,22 @@ test("a rerun edits the issue's Gherkin comment rather than posting another", as
 }) => {
   const box = machine(started);
   try {
-    const first = await box.runTaskApp("gherkin", { role: "developer" }, [writes(FIRST)], signal);
+    const first = await box.runTaskApp(
+      "gherkin",
+      { role: "developer", tasks: [] },
+      [writes(FIRST)],
+      signal,
+    );
     assert.equal(first.status, 0, first.stderr);
     const [before] = marked(box, GHERKIN_MARK);
     assert.ok(before !== undefined);
     applyStart(box, "start:gherkin");
-    const second = await box.runTaskApp("gherkin", { role: "developer" }, [writes(SECOND)], signal);
+    const second = await box.runTaskApp(
+      "gherkin",
+      { role: "developer", tasks: [] },
+      [writes(SECOND)],
+      signal,
+    );
     assert.equal(second.status, 0, second.stderr);
     const gherkin = marked(box, GHERKIN_MARK);
     assert.equal(gherkin.length, 1);
@@ -255,7 +270,7 @@ test("a needs-info reply posts the questions in a new comment and leaves the Ghe
   try {
     const run = await box.runTaskApp(
       "gherkin",
-      { role: "developer" },
+      { role: "developer", tasks: [] },
       [asks("Do broken widgets count?")],
       signal,
     );
@@ -282,7 +297,7 @@ test("a reply that doesn't match its schema fails the run and posts no Gherkin",
   try {
     const run = await box.runTaskApp(
       "gherkin",
-      { role: "developer" },
+      { role: "developer", tasks: [] },
       [{ ...writes(FIRST), reply: { outcome: "gherkin" } }],
       signal,
     );
@@ -308,7 +323,12 @@ test("an issue by someone the pipeline doesn't trust starts no session", async (
     }
   });
   try {
-    const run = await box.runTaskApp("gherkin", { role: "developer" }, [writes(FIRST)], signal);
+    const run = await box.runTaskApp(
+      "gherkin",
+      { role: "developer", tasks: [] },
+      [writes(FIRST)],
+      signal,
+    );
     assert.equal(run.status, 1);
     assert.equal(box.launches().length, 0);
     const [end] = marked(box, END_MARK);

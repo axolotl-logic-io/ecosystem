@@ -615,25 +615,6 @@ function machine(
     role: "developer",
     tasks: ["implement"],
   });
-  // The launcher buddy file a task app runs as: the Developer's account, in
-  // a folder of its own.
-  const appBuddyFile = path.join(root, "launcher", "buddy.json");
-  fs.mkdirSync(path.dirname(appBuddyFile));
-  writePrivate(appBuddyFile, {
-    version: 2,
-    name: "hippy",
-    scope: { repositories: [repositoryConfig] },
-    tasks: ["gherkin"],
-    account: {
-      login: DEVELOPER,
-      credentials: {
-        file: credentials,
-        variable: "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
-      },
-    },
-    pollSeconds: 1,
-    claimWaitsMs: [1, 1, 1],
-  });
   const worldFile = path.join(root, "world.json");
   const ghLog = path.join(root, "gh.log");
   const piLog = path.join(root, "pi.log");
@@ -912,7 +893,6 @@ function applyStart(box: Pick<Machine, "change">, label: string): void {
 
 export type {
   ActionRun,
-  AppOutcome,
   BuddyChoice,
   BuddyOutcome,
   Machine,

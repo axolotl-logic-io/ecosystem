@@ -44,7 +44,7 @@ const USAGE = "usage: TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N";
 // what earlier runs left there, its own marked comments, and the
 // repository config file the buddy file names for the issue's repository,
 // for a task that needs the repository's settings. Every write
-// through `github` or `comment` throws Stopped while `agents:stop` is on
+// through `github`, `comment` or `edit` throws Stopped while `agents:stop` is on
 // the issue; `checkStop` lets long work check between its own steps.
 interface TaskRun {
   task: string;
