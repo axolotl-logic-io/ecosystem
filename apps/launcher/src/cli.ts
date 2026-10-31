@@ -1,19 +1,10 @@
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
+import { installRootOf } from "./install-root.ts";
 import { checkLauncher, runLauncher } from "./launcher.ts";
 import { openStop } from "./stop.ts";
 
-const {
-  ECOSYSTEM_INSTALL_ROOT: installedRoot,
-  ISSUE_PIPELINE_ROOT: legacyRoot,
-}: NodeJS.ProcessEnv = process.env;
-const ROOT = path.resolve(
-  installedRoot ||
-    legacyRoot ||
-    path.join(os.homedir(), ".pi/agent/issue-pipeline"),
-);
+const ROOT = installRootOf(process.env);
 const USAGE = "usage: buddy.mjs --config <buddy.json> [--check]";
 
 function messageOf(error: unknown): string {
@@ -23,16 +14,11 @@ function messageOf(error: unknown): string {
   return String(error);
 }
 
-function argsOf(argv: readonly string[]): {
-  config: string;
-  check: boolean;
-  manifest: string;
-} {
+function argsOf(argv: readonly string[]): { config: string; check: boolean } {
   const { values } = parseArgs({
     args: [...argv],
     options: {
       config: { type: "string" },
-      manifest: { type: "string", default: path.join(ROOT, "tasks.json") },
       check: { type: "boolean", default: false },
     },
     strict: true,
@@ -41,19 +27,15 @@ function argsOf(argv: readonly string[]): {
   if (values.config === undefined) {
     throw new Error(USAGE);
   }
-  return {
-    config: values.config,
-    check: values.check,
-    manifest: values.manifest,
-  };
+  return { config: values.config, check: values.check };
 }
 
-function check(config: string, manifest: string): void {
-  process.stdout.write(`${JSON.stringify(checkLauncher(config, manifest))}\n`);
+function check(config: string): void {
+  process.stdout.write(`${JSON.stringify(checkLauncher(config, ROOT))}\n`);
 }
 
 async function main(): Promise<0 | 1> {
-  let args: { config: string; check: boolean; manifest: string };
+  let args: { config: string; check: boolean };
   try {
     args = argsOf(process.argv.slice(2));
   } catch (error: unknown) {
@@ -62,7 +44,7 @@ async function main(): Promise<0 | 1> {
   }
   if (args.check) {
     try {
-      check(args.config, args.manifest);
+      check(args.config);
       return 0;
     } catch (error: unknown) {
       process.stderr.write(`buddy: ${messageOf(error)}\n`);
@@ -71,7 +53,7 @@ async function main(): Promise<0 | 1> {
   }
   const stop = openStop();
   try {
-    const ended = await runLauncher(args.config, args.manifest, stop.buddy);
+    const ended = await runLauncher(args.config, ROOT, stop.buddy);
     process.stdout.write(`${JSON.stringify(ended)}\n`);
     return 0;
   } catch (error: unknown) {

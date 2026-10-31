@@ -15,23 +15,31 @@ const INSTALLED = z.object({
   files: z.array(z.string()),
   backup: z.string(),
 });
-const REGISTRATIONS = z.object({
-  tasks: z.array(z.object({ id: z.string() })),
+const FLEET = z.object({
+  installRoot: z.string(),
+  buddies: z.array(z.unknown()),
 });
-const FLEET = z.object({ buddies: z.array(z.unknown()) });
 const execute = promisify(execFile);
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const DEPENDENCIES = path.resolve(SOURCE, "node_modules");
 const TEST_TIMEOUT_MS = 120_000;
 const RETAINED_BYTES = Buffer.from("00ff01", "hex");
 const SYMLINK_REFUSAL = /refusing symlink destination/u;
+const RETIRED_MANIFEST = /manifest field is retired/u;
+// The task manifest that releases before #280 installed.
+const RETIRED_TASKS = '{"version":1,"tasks":[]}\n';
 
-function command(cwd: string, program: string, args: string[]): string {
+function command(
+  cwd: string,
+  program: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const result = spawnSync(program, args, {
     cwd,
     encoding: "utf8",
     timeout: TEST_TIMEOUT_MS,
-    env: process.env,
+    env,
   });
   if (result.status !== 0) {
     throw new Error(`${program} failed: ${result.stdout}\n${result.stderr}`);
@@ -82,6 +90,7 @@ test("build writes every program and leaves other output files alone", () => {
     }
     assert.equal(fs.readFileSync(evidence, "utf8"), "preserved bytes\n");
     assert.ok(fs.existsSync(path.join(output, "standards-python-tools.txt")));
+    assert.equal(fs.existsSync(path.join(output, "tasks.json")), false);
   } finally {
     sandbox.cleanup();
   }
@@ -144,23 +153,48 @@ test("installer accepts uncommitted source and records its dirty identity", () =
         },
       }),
     );
-    const args = [
-      "--config",
-      config,
-      "--manifest",
-      path.join(root, "tasks.json"),
-      "--check",
-    ];
-    const launcher = command(sandbox.root, process.execPath, [
-      path.join(root, "launcher.mjs"),
-      ...args,
-    ]);
-    const compatible = command(sandbox.root, process.execPath, [
-      path.join(root, "buddy.mjs"),
-      ...args,
-    ]);
+    assert.equal(fs.existsSync(path.join(root, "tasks.json")), false);
+    assert.equal(
+      installed.files.includes(path.join(root, "tasks.json")),
+      false,
+    );
+    // The operator's service environment names the install root.
+    const service = {
+      ...process.env,
+      ...Object.fromEntries([["ECOSYSTEM_INSTALL_ROOT", root]]),
+    };
+    const args = ["--config", config, "--check"];
+    const launcher = command(
+      sandbox.root,
+      process.execPath,
+      [path.join(root, "launcher.mjs"), ...args],
+      service,
+    );
+    const compatible = command(
+      sandbox.root,
+      process.execPath,
+      [path.join(root, "buddy.mjs"), ...args],
+      service,
+    );
     assert.equal(compatible, launcher);
     const fleet = path.join(sandbox.root, "fleet.json");
+    fs.writeFileSync(
+      fleet,
+      JSON.stringify({
+        version: 1,
+        buddies: [config],
+        launcher: path.join(root, "launcher.mjs"),
+      }),
+    );
+    const orchestrator = command(
+      sandbox.root,
+      process.execPath,
+      [path.join(root, "orchestrator.mjs"), "--config", fleet, "--check"],
+      service,
+    );
+    const checkedFleet = FLEET.parse(JSON.parse(orchestrator));
+    assert.equal(checkedFleet.buddies.length, 1);
+    assert.equal(checkedFleet.installRoot, root);
     fs.writeFileSync(
       fleet,
       JSON.stringify({
@@ -170,13 +204,13 @@ test("installer accepts uncommitted source and records its dirty identity", () =
         launcher: path.join(root, "launcher.mjs"),
       }),
     );
-    const orchestrator = command(sandbox.root, process.execPath, [
-      path.join(root, "orchestrator.mjs"),
-      "--config",
-      fleet,
-      "--check",
-    ]);
-    assert.equal(FLEET.parse(JSON.parse(orchestrator)).buddies.length, 1);
+    const stale = spawnSync(
+      process.execPath,
+      [path.join(root, "orchestrator.mjs"), "--config", fleet, "--check"],
+      { encoding: "utf8", timeout: TEST_TIMEOUT_MS, env: service },
+    );
+    assert.equal(stale.status, 1);
+    assert.match(stale.stderr, RETIRED_MANIFEST);
     assert.ok(launcher.includes(path.join(root, "gherkin.mjs")));
   } finally {
     sandbox.cleanup();
@@ -235,6 +269,8 @@ test("replacement backs up every managed file and preserves private and historic
     for (const [file, text] of previous) {
       fs.writeFileSync(file, text);
     }
+    const orphan = path.join(root, "tasks.json");
+    fs.writeFileSync(orphan, RETIRED_TASKS);
     const retained = path.join(root, "runs/historical/retained.bin");
     const privateConfig = path.join(root, "repos/private.json");
     const privateAgent = path.join(templates, "operator.md");
@@ -275,6 +311,8 @@ test("replacement backs up every managed file and preserves private and historic
       assert.deepEqual(fs.readFileSync(file), RETAINED_BYTES);
       assert.equal(installed.files.includes(file), false);
     }
+    assert.equal(fs.readFileSync(orphan, "utf8"), RETIRED_TASKS);
+    assert.equal(installed.files.includes(orphan), false);
     assert.equal(installed.dirty, false);
     assert.ok(
       fs
@@ -342,16 +380,7 @@ test("concurrent installs use private builds and leave source distribution outpu
             ]),
           },
         });
-        const manifest = REGISTRATIONS.parse(
-          JSON.parse(fs.readFileSync(path.join(root, "tasks.json"), "utf8")),
-        );
-        assert.deepEqual(manifest.tasks.map(({ id }) => id).sort(), [
-          "fix",
-          "gherkin",
-          "implement",
-          "land",
-          "verify",
-        ]);
+        assert.equal(fs.existsSync(path.join(root, "tasks.json")), false);
         command(root, process.execPath, [
           "--check",
           path.join(root, "launcher.mjs"),

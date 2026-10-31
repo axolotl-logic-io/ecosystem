@@ -10,11 +10,13 @@ const ABSOLUTE = z.string().refine(path.isAbsolute, "must be an absolute path");
 const CONFIG = z.strictObject({
   version: z.literal(1),
   buddies: z.array(ABSOLUTE).min(1),
-  manifest: ABSOLUTE,
   launcher: ABSOLUTE,
 });
+// Fleet files written before #280 named a task manifest. Task programs now
+// come from the install root, so a leftover path is refused, never ignored.
+const RETIRED = z.looseObject({ manifest: z.unknown() });
 interface Fleet {
-  manifest: string;
+  installRoot: string;
   launcher: string;
   hiddenVariables: string[];
   buddies: { file: string; checked: Checked }[];
@@ -28,12 +30,19 @@ function trusted(file: string): void {
   }
 }
 
-function checkOrchestrator(file: string): Fleet {
+// Validates the fleet at `file` and every buddy against the release at
+// `installRoot`, the root each launcher resolves from the same environment.
+function checkOrchestrator(file: string, installRoot: string): Fleet {
   if (!path.isAbsolute(file)) {
     throw new Error("--config must be an absolute path");
   }
   trusted(file);
   const raw: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (RETIRED.safeParse(raw).success) {
+    throw new Error(
+      `${file}: the manifest field is retired; remove it, launchers find task programs in the install root ${installRoot}`,
+    );
+  }
   const config = CONFIG.parse(raw);
   trusted(config.launcher);
   const files = new Set<string>();
@@ -46,7 +55,7 @@ function checkOrchestrator(file: string): Fleet {
       throw new Error(`duplicate buddy entry: ${buddy}`);
     }
     files.add(canonical);
-    const checked = checkLauncher(buddy, config.manifest);
+    const checked = checkLauncher(buddy, installRoot);
     hiddenVariables.add(readBuddyFile(buddy).credentials.variable);
     const name = checked.buddy.toLowerCase();
     const account = checked.account.toLowerCase();
@@ -60,7 +69,7 @@ function checkOrchestrator(file: string): Fleet {
     return { file: path.resolve(buddy), checked };
   });
   return {
-    manifest: config.manifest,
+    installRoot,
     launcher: config.launcher,
     hiddenVariables: [...hiddenVariables],
     buddies,

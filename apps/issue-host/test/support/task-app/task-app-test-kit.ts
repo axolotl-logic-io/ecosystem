@@ -351,19 +351,8 @@ function machine(
     );
     return file;
   }
-  const registrations = new Map<string, string>();
+  // Installs a stub program under the task's own name in the install root.
   function install(task: string): void {
-    registrations.set(task, `${task}.mjs`);
-    fs.writeFileSync(
-      path.join(pipeline, "tasks.json"),
-      JSON.stringify({
-        version: 1,
-        tasks: [...registrations].map(([id, executable]) => ({
-          id,
-          executable,
-        })),
-      }),
-    );
     fs.writeFileSync(
       path.join(pipeline, `${task}.mjs`),
       `process.env.SAMPLE_TASK_ID = ${JSON.stringify(task)};\nawait import(${JSON.stringify(pathToFileURL(SAMPLE).href)});\n`,
@@ -555,7 +544,6 @@ function machine(
         JSON.stringify({
           version: 1,
           buddies: buddies.map(({ buddy, tasks }) => buddyFile(buddy, tasks)),
-          manifest: path.join(pipeline, "tasks.json"),
           launcher: BUDDY,
         }),
       );

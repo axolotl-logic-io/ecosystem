@@ -1,13 +1,13 @@
 // Bundles the distribution in programs.ts and its compiler/Python assets.
 // Usage: node build.ts [outdir] (defaults to this folder's dist/).
 
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import ts from "typescript";
-import { ASSETS, PROGRAMS, TASKS } from "./programs.ts";
+import { ASSETS, PROGRAMS } from "./programs.ts";
 
 const BACKEND_PACKAGE = path.dirname(
   fileURLToPath(import.meta.resolve("typescript/package.json")),
@@ -64,10 +64,6 @@ async function main(): Promise<void> {
           path.join(outDir, file),
         ),
       ),
-    );
-    await writeFile(
-      path.join(outDir, "tasks.json"),
-      `${JSON.stringify({ version: 1, tasks: TASKS.map((id) => ({ id, executable: `${id}.mjs` })) }, null, 2)}\n`,
     );
     await Promise.all(
       ASSETS.map(async ({ source, file }): Promise<void> => {

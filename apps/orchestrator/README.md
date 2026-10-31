@@ -10,10 +10,20 @@ The version 1 operator-owned JSON configuration names absolute paths:
 {
   "version": 1,
   "buddies": ["/private/buddies/first.json", "/private/buddies/second.json"],
-  "manifest": "/installed/ecosystem/tasks.json",
   "launcher": "/installed/ecosystem/launcher.mjs"
 }
 ```
+
+Point `launcher` at `launcher.mjs` in the install root. The orchestrator resolves
+the install root as the launcher does, from `ECOSYSTEM_INSTALL_ROOT` or its
+compatibility fallbacks. It validates every buddy's task programs there and
+passes the same root to each launcher as `ECOSYSTEM_INSTALL_ROOT`.
+
+Fleet files written before [#280](https://github.com/axolotl-logic-io/ecosystem/issues/280)
+also named a `manifest` path. The fleet file stays version 1, because its
+remaining fields keep their meaning. The orchestrator refuses a file that still
+has `manifest`, rather than ignoring it, so that a stale path can't appear to
+select programs. To migrate, delete the `manifest` line and validate the file.
 
 All entries are validated before startup. Duplicate buddy files, names or GitHub
 accounts are refused, including accounts in different configuration folders.
@@ -29,18 +39,18 @@ node "$ECOSYSTEM_INSTALL_ROOT/orchestrator.mjs" --config FLEET_FILE --check
 ```
 
 `FLEET_FILE` is the absolute path of the private fleet JSON file. Omit `--check`
-to start one launcher per entry. Keep the file, launcher, manifest, buddy files,
+to start one launcher per entry. Keep the file, launcher, buddy files,
 repository files and task programs owned by the operator and writable by nobody
 else. Symbolic links to these trusted files are refused. Unknown configuration
-fields, unsupported versions, empty fleets and missing task registrations refuse
-startup before any child starts. `--check` does not read tokens or contact GitHub;
-each launcher verifies its credential before discovery. All configured buddy
-credential variable names are removed from every launcher environment, alongside
-the shared credential filters. Tokens remain in private credential files and
-the task bootstrap credential pipe.
+fields, including `manifest`, unsupported versions, empty fleets and missing or
+untrusted task programs refuse startup before any child starts. `--check` does
+not read tokens or contact GitHub; each launcher verifies its credential before
+discovery. All configured buddy credential variable names are removed from every
+launcher environment, alongside the shared credential filters. Tokens remain in
+private credential files and the task bootstrap credential pipe.
 
 The orchestrator invokes the configured public launcher program with Node 24,
-`--config BUDDY_FILE --manifest MANIFEST_FILE`. It does not import task code or
+`--config BUDDY_FILE`. It does not import task code or
 perform issue discovery. A launcher revalidates its own inputs at startup. Do not
 edit configuration or replace installed programs while starting a fleet.
 

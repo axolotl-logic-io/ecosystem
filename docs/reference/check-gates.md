@@ -12,7 +12,7 @@ npm run check
 ```
 
 The distribution gate typechecks and lints root build/install code and tests,
-builds every manifest program and asset into root `dist/`, and checks installer
+builds every listed program and asset into root `dist/`, and checks installer
 and built-program syntax. Every workspace then runs its own `check` script.
 The issue host typechecks and lints source, adapters and test kits. Task,
 framework, shared runtime, launcher, orchestrator and dashboard workspaces also

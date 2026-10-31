@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import {
   apply,
   issueOf,
+  type Machine,
   machine,
   marked,
 } from "../../support/task-app/task-app-test-kit.ts";
@@ -17,10 +18,21 @@ const SAMPLE = path.resolve(
   import.meta.dirname,
   "../../support/task-app/sample-task-app.ts",
 );
-const MANIFEST_ERROR = /manifest|registration|version/u;
 const ACCOUNT_ERROR = /cannot verify the credential/u;
+const NO_PROGRAM = /no installed task app/u;
+const UNKNOWN_TASK = /Invalid option[^\n]*\n[^\n]*at tasks\[0\]/u;
+const SHARED_MODE = 0o664;
 
-test("discovery executes an arbitrary registered program without a buddy file or inherited credentials", async () => {
+// Every gh call the fake GitHub served, one JSON line each.
+function githubCalls(root: string): string[] {
+  const log = path.join(root, "gh.log");
+  if (!fs.existsSync(log)) {
+    return [];
+  }
+  return fs.readFileSync(log, "utf8").split("\n").filter(Boolean);
+}
+
+test("discovery runs the program installed under the task's name without a buddy file or inherited credentials", async () => {
   const box = machine(undefined, {
     environment: new Map([
       ["GH_TOKEN", "ambient-token"],
@@ -28,12 +40,10 @@ test("discovery executes an arbitrary registered program without a buddy file or
     ]),
   });
   try {
-    box.install("gherkin");
     const buddy = box.buddyFile("hippy");
-    const worker = path.join(box.pipeline, "registered-worker.mjs");
     const receipt = path.join(box.root, "child.json");
     fs.writeFileSync(
-      worker,
+      path.join(box.pipeline, "gherkin.mjs"),
       `
       import fs from "node:fs";
       fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ args: process.argv.slice(2), github: process.env.GH_TOKEN, privateToken: process.env.HIPPY_GITHUB_TOKEN }));
@@ -41,13 +51,12 @@ test("discovery executes an arbitrary registered program without a buddy file or
       await import(${JSON.stringify(pathToFileURL(SAMPLE).href)});
     `,
     );
-    fs.writeFileSync(
-      path.join(box.pipeline, "tasks.json"),
-      JSON.stringify({
-        version: 1,
-        tasks: [{ id: "gherkin", executable: "registered-worker.mjs" }],
-      }),
-    );
+    const checked = box.check("hippy", ["gherkin"]);
+    assert.equal(checked.status, 0, checked.stderr);
+    assert.deepEqual(JSON.parse(checked.stdout).apps, {
+      gherkin: path.join(box.pipeline, "gherkin.mjs"),
+    });
+    assert.deepEqual(githubCalls(box.root), []);
     const run = box.launch("hippy", { tasks: ["gherkin"] });
     const exit = await run.exit((item) => item.task === "gherkin");
     assert.equal(exit.exit, 0);
@@ -62,33 +71,60 @@ test("discovery executes an arbitrary registered program without a buddy file or
   }
 });
 
-const INVALID_MANIFESTS = [
-  { name: "unsupported version", manifest: { version: 2, tasks: [] } },
-  { name: "missing registration", manifest: { version: 1, tasks: [] } },
+const REFUSED_PROGRAMS: {
+  name: string;
+  tasks: string[];
+  prepare: (box: Machine) => void;
+  error: RegExp;
+}[] = [
   {
-    name: "duplicate registration",
-    manifest: {
-      version: 1,
-      tasks: [
-        { id: "gherkin", executable: "gherkin.mjs" },
-        { id: "gherkin", executable: "gherkin.mjs" },
-      ],
+    name: "an unknown task",
+    tasks: ["deploy"],
+    prepare: (box: Machine): void => {
+      box.install("gherkin");
     },
+    error: UNKNOWN_TASK,
+  },
+  {
+    name: "a missing program",
+    tasks: ["gherkin"],
+    prepare: (_box: Machine): void => undefined,
+    error: NO_PROGRAM,
+  },
+  {
+    name: "a program others can write",
+    tasks: ["gherkin"],
+    prepare: (box: Machine): void => {
+      box.install("gherkin");
+      fs.chmodSync(path.join(box.pipeline, "gherkin.mjs"), SHARED_MODE);
+    },
+    error: NO_PROGRAM,
+  },
+  {
+    name: "a symbolic link to a program",
+    tasks: ["gherkin"],
+    prepare: (box: Machine): void => {
+      box.install("gherkin");
+      const program = path.join(box.pipeline, "gherkin.mjs");
+      const target = path.join(box.pipeline, "elsewhere.mjs");
+      fs.renameSync(program, target);
+      fs.symlinkSync(target, program);
+    },
+    error: NO_PROGRAM,
   },
 ];
-for (const { name, manifest } of INVALID_MANIFESTS) {
-  test(`${name} refuses startup before GitHub effects`, async () => {
+for (const { name, tasks, prepare, error } of REFUSED_PROGRAMS) {
+  test(`${name} refuses check and startup before any GitHub contact`, async () => {
     const box = machine();
     try {
-      box.install("gherkin");
-      fs.writeFileSync(
-        path.join(box.pipeline, "tasks.json"),
-        JSON.stringify(manifest),
-      );
-      const end = await box.launch("hippy", { tasks: ["gherkin"] }).exited;
+      prepare(box);
+      const checked = box.check("hippy", tasks);
+      assert.equal(checked.status, 1);
+      assert.match(checked.stderr, error);
+      const end = await box.launch("hippy", { tasks }).exited;
       assert.equal(end.status, 1);
-      assert.match(end.stderr, MANIFEST_ERROR);
-      assert.equal(issueOf(box.world()).comments.length, 0);
+      assert.match(end.stderr, error);
+      assert.deepEqual(githubCalls(box.root), []);
       assert.ok(issueOf(box.world()).labels.includes("start:gherkin"));
       assert.equal(fs.existsSync(path.join(box.pipeline, "runs")), false);
     } finally {

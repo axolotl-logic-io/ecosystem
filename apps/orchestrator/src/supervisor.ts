@@ -8,7 +8,7 @@ import { checkOrchestrator } from "./config.ts";
 interface Launch {
   launcher: string;
   config: string;
-  manifest: string;
+  installRoot: string;
   hiddenVariables: readonly string[];
 }
 interface Event {
@@ -30,18 +30,18 @@ interface Ended {
 }
 
 function startLauncher(launch: Launch): ChildProcess {
-  const env = childEnvironment(process.env);
+  // The launcher resolves task programs from the root the fleet was checked against.
+  const env: Record<string, string> = {
+    ...childEnvironment(process.env),
+    ...Object.fromEntries([["ECOSYSTEM_INSTALL_ROOT", launch.installRoot]]),
+  };
   for (const variable of launch.hiddenVariables) {
     delete env[variable];
   }
-  return spawn(
-    process.execPath,
-    [launch.launcher, "--config", launch.config, "--manifest", launch.manifest],
-    {
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  return spawn(process.execPath, [launch.launcher, "--config", launch.config], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 function reportEvent(event: Event): void {
@@ -50,15 +50,17 @@ function reportEvent(event: Event): void {
   );
 }
 
-// All configuration is checked before the first start. A process-start error
+// All configuration is checked against the release at `installRoot`, which
+// each launcher then uses, before the first start. A process-start error
 // drains previously started children and rejects. Runtime exits never restart
 // a buddy or interrupt its healthy siblings. Abort stops discovery and drains.
 async function runOrchestrator(
   file: string,
+  installRoot: string,
   stop: AbortSignal,
   supervision: Supervision = { start: startLauncher, report: reportEvent },
 ): Promise<Ended> {
-  const fleet = checkOrchestrator(file);
+  const fleet = checkOrchestrator(file, installRoot);
   const live = new Map<ChildProcess, { buddy: string; ended: Promise<void> }>();
   const failed = new Set<string>();
   let draining = false;
@@ -85,7 +87,7 @@ async function runOrchestrator(
   async function start(config: string, buddy: string): Promise<void> {
     const child = supervision.start({
       config,
-      manifest: fleet.manifest,
+      installRoot: fleet.installRoot,
       launcher: fleet.launcher,
       hiddenVariables: fleet.hiddenVariables,
     });
