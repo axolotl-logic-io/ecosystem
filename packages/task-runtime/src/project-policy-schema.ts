@@ -5,7 +5,6 @@ const JSON_TOKEN = /"(?:[^"\\]|\\.)*"|[{}:]/gu;
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
 const PATH_SEPARATOR = /[\\/]/u;
 const FULL_SHA = /^[0-9a-f]{40}$/u;
-const SHA256 = /^[0-9a-f]{64}$/u;
 const TEXT = z
   .string()
   .refine(
@@ -48,14 +47,6 @@ const PROJECT_POLICY_SOURCE = z.strictObject({
   ),
   revision: z.string().regex(FULL_SHA, "must be a full immutable commit SHA"),
 });
-const POLICY_BINDING = z.object({
-  mode: z.literal("committed"),
-  settings: z.record(z.string(), z.unknown()),
-  revision: z.string().regex(FULL_SHA),
-  blob: z.string().regex(FULL_SHA),
-  sha256: z.string().regex(SHA256),
-  digest: z.string().regex(SHA256),
-});
 
 // JSON.parse silently takes the last duplicate member. Validate its syntax
 // first, then compare decoded object keys so escaping cannot hide duplicates.
@@ -80,13 +71,7 @@ function parseProjectSettings(text: string): z.infer<typeof PROJECT_SETTINGS> {
   return PROJECT_SETTINGS.parse(parsed);
 }
 
-type ProjectPolicyBinding = z.infer<typeof POLICY_BINDING>;
 type ProjectPolicySource = z.infer<typeof PROJECT_POLICY_SOURCE>;
 
-export type { ProjectPolicyBinding, ProjectPolicySource };
-export {
-  POLICY_BINDING,
-  PROJECT_POLICY_SOURCE,
-  PROJECT_SETTINGS,
-  parseProjectSettings,
-};
+export type { ProjectPolicySource };
+export { PROJECT_POLICY_SOURCE, PROJECT_SETTINGS, parseProjectSettings };

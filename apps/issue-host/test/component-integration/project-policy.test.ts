@@ -9,14 +9,12 @@ import { z } from "zod";
 
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const OBSERVED = z.strictObject({
-  digest: z.string(),
   test: z.string(),
 });
 const LOADER = `
 import { loadConfig } from './src/config.ts';
-import { configPolicyDigest } from '@ecosystem/task-runtime/project-policy';
 const cfg = loadConfig(process.argv[1]);
-console.log(JSON.stringify({digest: configPolicyDigest(cfg), test: cfg.commands.test}));
+console.log(JSON.stringify({test: cfg.commands.test}));
 `;
 
 function git(directory: string, args: string[]): string {
@@ -107,7 +105,6 @@ test("trusted settings follow the immutable policy pin, not the working tree", (
     const after = OBSERVED.parse(JSON.parse(changed.stdout));
     assert.equal(before.test, "npm test");
     assert.equal(after.test, "npm run check");
-    assert.notEqual(after.digest, before.digest);
   } finally {
     sandbox.cleanup();
   }
@@ -138,27 +135,6 @@ test("a missing or blank committed test command has no default", () => {
       assert.ok(result.stderr.includes("commands"));
       assert.equal(result.stdout, "");
     }
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test("repository Land permission changes the shared policy without changing settings", () => {
-  const sandbox = fixture();
-  try {
-    const revision = sandbox.pin({ commands: { test: "npm test" } });
-    const denied = load(
-      sandbox.configure(revision, { permissions: { land: false } }),
-    );
-    const allowed = load(
-      sandbox.configure(revision, { permissions: { land: true } }),
-    );
-    assert.equal(denied.status, 0, denied.stderr);
-    assert.equal(allowed.status, 0, allowed.stderr);
-    const before = OBSERVED.parse(JSON.parse(denied.stdout));
-    const after = OBSERVED.parse(JSON.parse(allowed.stdout));
-    assert.notEqual(before.digest, after.digest);
-    assert.equal(before.test, after.test);
   } finally {
     sandbox.cleanup();
   }

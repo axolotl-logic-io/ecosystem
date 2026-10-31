@@ -6,11 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readCredential } from "@ecosystem/task-runtime/credentials";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
-import {
-  computePolicyBinding,
-  resolveProjectSettings,
-} from "@ecosystem/task-runtime/project-policy";
-import type { ProjectPolicyBinding } from "@ecosystem/task-runtime/project-policy-schema";
+import { resolveProjectSettings } from "@ecosystem/task-runtime/project-policy";
 import { z } from "zod";
 import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
 import { dataRoot, expand } from "./host-paths.ts";
@@ -36,7 +32,6 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
   slug: string;
   // Verified task app transport, supplied in memory, never from JSON.
   gitAccount?: { account: string; env: ReadonlyMap<string, string> };
-  policyBinding?: ProjectPolicyBinding;
   checkout?: JobCheckout;
   mutation?: (write: () => RunResult, intent: WriteIntent) => RunResult;
 };
@@ -68,7 +63,6 @@ function loadConfig(configPath: string | undefined): Config {
   } = parsed.data;
   return {
     ...data,
-    policyBinding: computePolicyBinding(data),
     slug: data.repo.replace("/", "__"),
   };
 }

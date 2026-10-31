@@ -106,9 +106,9 @@ interface BuddyChoice {
 }
 
 // The machine's trusted repository configuration, fixed before any action:
-// whether it grants Land (`permissions.land`), which the shared checking
-// policy digest covers, and the pinned project policy's optional setup, teardown and test commands; the
-// test command otherwise logs the commit it checked (checksRun).
+// whether it grants Land (`permissions.land`) and the pinned project
+// policy's optional setup, teardown and test commands; the test command
+// otherwise logs the commit it checked (checksRun).
 interface MachineSetup {
   landPermission: boolean;
   separateData?: boolean;
@@ -278,8 +278,8 @@ function checksLog(root: string): string {
 }
 
 // The origin with `main` at one commit, a work clone to change it from,
-// and a pinned project policy whose shared pool has one model session and
-// whose test command passes, logging the commit it checked.
+// and a pinned project policy whose test command passes, logging the commit
+// it checked.
 function repository(
   root: string,
   configured: Pick<MachineSetup, "setup" | "teardown" | "test">,
