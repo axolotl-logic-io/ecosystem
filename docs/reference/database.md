@@ -1,6 +1,6 @@
 # Shared database
 
-The workflow dashboard and Project Buddy use the shared `@ecosystem/db` PostgreSQL client and its monitoring tables. The issue pipeline uses no database.
+The workflow dashboard and Project Buddy use the shared `@ecosystem/db` PostgreSQL client and its monitoring tables. Task execution uses no database.
 
 ## Start the service
 

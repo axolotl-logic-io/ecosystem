@@ -35,8 +35,8 @@ roots; absent that variable, the install root defaults to
 These defaults exist only at host/CLI boundaries. Explicit settings should be
 used for new deployments. Existing data does not move automatically.
 
-See [operations](../../docs/reference/operations.md) for installation, migration,
-validation, rollback and retained compatibility names. See
+See [operations](../../docs/reference/operations.md) for installation,
+validation and rollback. See
 [native runtime provisioning](runtime/README.md) before model execution.
 
 ## Validate source
@@ -49,7 +49,7 @@ npm run check
 npm run check:full
 ```
 
-The full gate is required before landing this cutover. It includes all
+The full gate is required before landing any change to the issue host. It includes all
 non-external host tests and distribution tests, with file concurrency 8 and
 per-test timeout 180000 ms. See [gate scope](../../docs/reference/check-gates.md)
 and [test kits](test/README.md).

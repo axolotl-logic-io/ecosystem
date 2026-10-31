@@ -1,6 +1,6 @@
 # Telemetry
 
-A task app writes `runs/SLUG/issue-N/task-runs/RUN_ID/run.json` only after winning its start claim. The record describes its lifecycle, account, process, timestamps and outcome. It grants no authorization. The launcher writes app exits and unreadable start listings to stderr and writes no buddy-run record.
+A task app writes `runs/SLUG/issue-N/task-runs/RUN_ID/run.json` only after winning its start claim. The record describes its lifecycle, account, process, timestamps and outcome. It grants no authorization. The launcher writes app exits and unreadable start listings to stderr.
 
 Model transcripts live alongside the task run in `sessions/`. A commit made through `pipeline_commit` carries a `Pipeline-Session` trailer with the launch key and session start. The trailer attributes a commit to a session; it does not prove that publication succeeded or allocate model cost.
 

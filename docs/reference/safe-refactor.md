@@ -188,7 +188,7 @@ The restricted tool API, not prompt compliance, prevents model-directed general 
 
 `test/component-integration/safe-refactor/type-operations.test.ts` exercises type edits through real files, TypeScript and Biome. It covers atomic named-type uses, annotations, generic declarations, runtime behavior, executable injection, failed or skipped projected checks, source/input freshness and pending-write holds. It also checks the existing rename/extraction operations, NodeNext module format and package export-map resolution. It also proves refusal when a type-only export changes a script's module emission or an alias changes decorator metadata in an unassigned consumer.
 
-`test/system/safe-refactor-types.test.ts` exercises the built CLI's exact-revision path and the restricted extension's generated schema, execution and tool boundary. These tests use disposable projects, not models or live credentials. Historical `test/safe-refactor/` tests and its native proof are no longer in the repository; do not report those old paths as current coverage.
+`test/system/safe-refactor-types.test.ts` exercises the built CLI's exact-revision path and the restricted extension's generated schema, execution and tool boundary. These tests use disposable projects, not models or live credentials.
 
 Run the focused tests from `apps/issue-host/` after building:
 

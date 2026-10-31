@@ -15,9 +15,8 @@ pinned-head checks and recoverable work. The repository root owns the build,
 installation record and distribution. Merging source activates nothing.
 
 The [reference index](docs/README.md) documents the architecture and tasks.
-[Operations](docs/reference/operations.md) covers host-owned paths, compatibility,
-drain, install, restart and rollback. Historical observations and persisted
-`.issue-pipeline.json` policy names remain compatible.
+[Operations](docs/reference/operations.md) covers host-owned paths, drain,
+install, restart and rollback.
 
 The separate [workflow dashboard](apps/workflow-dash/README.md) observes current
 task runs and historical buddy/action records. Its monitoring database and
@@ -36,8 +35,8 @@ npm run check:full
 The fast gate checks distribution types, lint, build and program syntax, then
 every workspace's gate. Workspace component tests include tasks, shared runtime,
 launcher, orchestrator and dashboard behavior. The full gate additionally runs
-all non-external host and distribution tests. It is required before landing the
-modular distribution cutover. See [gate scope](docs/reference/check-gates.md).
+all non-external host and distribution tests. It is required before landing any
+change to task execution or distribution. See [gate scope](docs/reference/check-gates.md).
 
 The separate `npm run test:database` needs disposable PostgreSQL and
 `TEST_DATABASE_URL`; see [database tests](docs/reference/database.md#test-the-database-contract).
