@@ -1,4 +1,5 @@
-// Installed compatibility bootstrap. Task decisions live in tasks/implement.
+// The installed `implement.mjs`: provisions Implement's checkout, sessions and
+// inputs. Task decisions live in tasks/implement.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";

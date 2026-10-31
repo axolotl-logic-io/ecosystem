@@ -1,4 +1,4 @@
-// Installed compatibility bootstrap; Land owns domain reads and effects.
+// The installed `land.mjs`; Land owns domain reads and effects.
 import { land } from "@ecosystem/land";
 import { main, type TaskRun } from "../task-app/task-app.ts";
 import { execute } from "./execute.ts";

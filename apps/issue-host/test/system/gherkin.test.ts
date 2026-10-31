@@ -323,39 +323,6 @@ test("an issue by someone the pipeline doesn't trust starts no session", async (
   }
 });
 
-// #264: every manual task entrypoint enforces configured responsibilities.
-for (const task of ["gherkin", "implement", "verify", "fix", "land"]) {
-  test(`${task} refuses an unassigned task before claiming or writing`, async () => {
-    const box = machine(started);
-    try {
-      box.change((world) => {
-        const [issue] = world.issues;
-        if (issue !== undefined) {
-          issue.labels = [`start:${task}`];
-        }
-      });
-      const before = box.world();
-      let responsibility = "gherkin";
-      if (task === responsibility) {
-        responsibility = "implement";
-      }
-      const run = await box.runTaskApp(
-        task,
-        { account: "hippy", tasks: [responsibility] },
-        [],
-      );
-      assert.equal(run.status, 1);
-      assert.ok(
-        run.stderr.includes(`task ${task} is not in the buddy's tasks`),
-      );
-      assert.deepEqual(box.world(), before);
-      assert.deepEqual(box.launches(), []);
-    } finally {
-      box.cleanup();
-    }
-  });
-}
-
 test("each questions reply posts a fresh comment without replacing earlier questions", async () => {
   const box = machine(started);
   try {

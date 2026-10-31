@@ -1,4 +1,5 @@
-// Compatibility host grants recovery a destination and command-scoped remote access.
+// Saves a checkout's unpublished code to the run folder, with command-scoped
+// remote access.
 import {
   saveCodeRecovery as saveCode,
   saveMergeRecovery as saveMerge,

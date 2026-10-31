@@ -1,5 +1,5 @@
 // Disposable task-app machine: real Git, fake GitHub and fake model sessions.
-import { spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -21,6 +21,7 @@ import {
   LANDING,
   REPO,
 } from "../../support/signals/signal-test-kit.ts";
+import { invokeTaskApp } from "../../support/task-app/invoke.ts";
 
 const SOURCE = path.resolve(import.meta.dirname, "../../..");
 const FAKE_PI = path.join(import.meta.dirname, "fake-pi.ts");
@@ -429,27 +430,46 @@ function marked(
   });
 }
 
-// Writes a trusted version 2 launcher buddy file with explicit tasks,
-// repository scope and its account token in `credentials`.
+// The name, account, token and credential variable of `buddy`.
+function accountOf(buddy: BuddyChoice): {
+  name: string;
+  account: string;
+  token: string;
+  variable: string;
+} {
+  if (buddy.account === "lawd") {
+    return {
+      name: "lawd",
+      account: LANDING,
+      token: "landing-token",
+      variable: "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN",
+    };
+  }
+  return {
+    name: "hippy",
+    account: DEVELOPER,
+    token: "dev-token",
+    variable: "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
+  };
+}
+
+// Writes a trusted launcher buddy file with explicit tasks, repository
+// scope and its account token in `credentials`.
 function writeLauncherBuddy(
   file: string,
   setup: { repositoryConfig: string; credentials: string },
   buddy: BuddyChoice,
 ): void {
-  let name = "hippy";
-  let login = DEVELOPER;
-  let variable = "ISSUE_PIPELINE_DEV_GITHUB_TOKEN";
-  if (buddy.account === "lawd") {
-    name = "lawd";
-    login = LANDING;
-    variable = "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN";
-  }
+  const { name, account, variable } = accountOf(buddy);
   writePrivate(file, {
     version: 2,
     name,
     scope: { repositories: [setup.repositoryConfig] },
     tasks: buddy.tasks,
-    account: { login, credentials: { file: setup.credentials, variable } },
+    account: {
+      login: account,
+      credentials: { file: setup.credentials, variable },
+    },
     pollSeconds: 1,
   });
 }
@@ -557,21 +577,31 @@ function machine(
     const buddyConfig = path.join(root, name);
     writeLauncherBuddy(buddyConfig, { repositoryConfig, credentials }, buddy);
     fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
-    let args = [
-      path.join(pipeline, `${app}.mjs`),
-      "--config",
-      buddyConfig,
-      "--issue",
-      `${REPO}#${ISSUE}`,
-    ];
+    let child: ChildProcess;
     if (setup.throughLauncher === true) {
-      args = [path.join(pipeline, "launcher.mjs"), "--config", buddyConfig];
+      child = spawn(
+        process.execPath,
+        [path.join(pipeline, "launcher.mjs"), "--config", buddyConfig],
+        { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] },
+      );
+    } else {
+      const { account, token, variable } = accountOf(buddy);
+      child = invokeTaskApp(
+        {
+          program: path.join(pipeline, `${app}.mjs`),
+          task: app,
+          repo: REPO,
+          issue: ISSUE,
+          config: repositoryConfig,
+          base: "main",
+          claimWaitsMs: [1, 1, 1],
+          account,
+          token,
+          variable,
+        },
+        { cwd: root, env, dir: root },
+      );
     }
-    const child = spawn(process.execPath, args, {
-      cwd: root,
-      env,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
     let stderr = "";
     let pending = "";
     let taskExit: number | null = null;
@@ -579,8 +609,8 @@ function machine(
       task: z.string(),
       exit: z.number().nullable(),
     });
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
       stderr += chunk;
       if (setup.throughLauncher === true) {
         pending += chunk;

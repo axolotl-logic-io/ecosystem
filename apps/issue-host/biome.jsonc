@@ -10,15 +10,13 @@
   },
   "overrides": [
     // Process-boundary modules may read arguments, environment, stdin, files
-    // and the terminal: build/install and standalone scripts, CLI entries,
+    // and the terminal: standalone scripts, CLI entries,
     // runtime lifecycle/observations, deterministic filesystem/process ops,
     // model-session infrastructure, pi extensions and real-entrypoint tests.
     // Domain, signal, task and protocol modules keep the full policy.
     {
       "includes": [
-        "install.ts",
         "test/**",
-        "build.ts",
         "scripts/**",
         "src/safe-refactor/**",
         "src/standards/source.ts",
@@ -46,11 +44,6 @@
         "src/job/checkout.ts",
         "src/job/checkout-close.ts",
         "src/job/code-recovery.ts",
-        "src/task-app/stop.ts",
-        "src/trusted-file.ts",
-        "src/task-app/buddy-file.ts",
-        "src/task-app/identity.ts",
-        "src/task-app/launcher.ts",
         "src/task-app/run-record.ts",
         "src/task-app/session.ts",
         "src/task-app/task-app.ts",

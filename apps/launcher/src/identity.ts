@@ -9,10 +9,9 @@ import {
   GH_TIMEOUT_MS,
   githubRead,
 } from "@ecosystem/task-runtime/issue/github-read";
-import type { Identity } from "@ecosystem/task-runtime/issue/invocation";
 import { credentialedRun } from "@ecosystem/task-runtime/issue/transport";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
-import { type BuddyFile, readBuddyFile } from "./buddy-file.ts";
+import type { BuddyFile } from "./buddy-file.ts";
 
 interface Account {
   account: string;
@@ -55,23 +54,5 @@ function accountOf(buddy: BuddyFile): Account {
   return { account, env };
 }
 
-// The identity `buddyFile` gives for work in repository `repo`.
-function loadIdentity(buddyFile: string, repo: string, task: string): Identity {
-  const buddy = readBuddyFile(buddyFile);
-  if (!buddy.tasks.some((responsibility) => responsibility === task)) {
-    throw new OpsError(`task ${task} is not in the buddy's tasks`);
-  }
-  const repository = buddy.repositories.find((item) => same(item.repo, repo));
-  if (repository === undefined) {
-    throw new OpsError(`${repo} is not in the buddy's scope`);
-  }
-  return {
-    ...accountOf(buddy),
-    config: repository.config,
-    base: repository.base,
-    claimWaitsMs: buddy.claimWaitsMs,
-  };
-}
-
 export type { Account };
-export { accountOf, loadIdentity };
+export { accountOf };

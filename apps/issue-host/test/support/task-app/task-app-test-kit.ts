@@ -23,6 +23,7 @@ import {
   type World,
   writeWorld,
 } from "../signals/fake-github-world.ts";
+import { invokeTaskApp } from "./invoke.ts";
 
 const { PATH: searchPath }: NodeJS.ProcessEnv = process.env;
 const SAMPLE = path.join(import.meta.dirname, "sample-task-app.ts");
@@ -331,7 +332,6 @@ function machine(
   writePrivate(repository, JSON.stringify({ repo: REPO, baseBranch: "main" }));
   const children: ChildProcess[] = [];
   let runs = 0;
-  // A task app reads only the account and scope; a launcher also its tasks.
   function buddyFile(buddy: Buddy, tasks: string[] = ["gherkin"]): string {
     const file = path.join(root, `${buddy}.json`);
     writePrivate(
@@ -384,19 +384,20 @@ function machine(
   }
   function start(buddy: Buddy, options: RunOptions = {}): AppRun {
     const held = gateOf(options.gate);
-    const child = spawn(
-      process.execPath,
-      [
-        served.app ?? SAMPLE,
-        "--config",
-        buddyFile(buddy, [served.task ?? "gherkin"]),
-        "--issue",
-        `${REPO}#${ISSUE}`,
-      ],
+    const child = invokeTaskApp(
       {
-        env: appEnv(held, options.fail),
-        stdio: ["ignore", "ignore", "pipe"],
+        program: served.app ?? SAMPLE,
+        task: served.task ?? "gherkin",
+        repo: REPO,
+        issue: ISSUE,
+        config: repository,
+        base: "main",
+        claimWaitsMs: [1, 1, 1],
+        account: BUDDIES[buddy],
+        token: TOKENS[buddy],
+        variable: VARIABLES[buddy],
       },
+      { env: appEnv(held, options.fail), dir: root },
     );
     children.push(child);
     let stderr = "";

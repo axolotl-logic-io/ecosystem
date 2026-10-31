@@ -1,4 +1,5 @@
-// Installed compatibility bootstrap. Task code receives no buddy configuration.
+// The installed `gherkin.mjs`: provisions Gherkin's inputs, model session and
+// artifacts from the repository config. Task code receives no buddy configuration.
 import { gherkin } from "@ecosystem/gherkin";
 import { executeTask } from "@ecosystem/task-framework";
 import { issueArtifacts } from "@ecosystem/task-runtime/issue/artifacts";

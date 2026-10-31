@@ -1,4 +1,4 @@
-// Compatibility host for Gherkin's repository and credential-free model access.
+// Gherkin's repository checkout and credential-free model session.
 
 import fs from "node:fs";
 import path from "node:path";

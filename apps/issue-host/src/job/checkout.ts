@@ -1,4 +1,5 @@
-// Compatibility host translates private configuration into checkout operations.
+// Opens a job checkout from the repository config's mirror, branch and commit
+// identity.
 
 import type {
   GitAccess,

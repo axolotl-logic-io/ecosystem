@@ -1,4 +1,5 @@
-// Installed compatibility bootstrap. Verify owns review and retry decisions.
+// The installed `verify.mjs`: provisions Verify's checks, session and review
+// submission. Verify owns review and retry decisions.
 
 import { reviewArtifact } from "@ecosystem/task-runtime/issue/review-artifact";
 import {
