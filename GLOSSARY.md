@@ -321,7 +321,7 @@ Use run count or capacity when those are the actual meaning; do not call them la
 
 These contracts remain open:
 
-- The hidden markers that task apps use to find their own comments.
-- Observation schemas.
+- The hidden markers that task apps use to find their own comments ([#290](https://github.com/axolotl-logic-io/ecosystem/issues/290)).
+- Observation schemas ([#291](https://github.com/axolotl-logic-io/ecosystem/issues/291)).
 
 Resolve these contracts before implementing dependent changes. Do not fill missing facts or permissions with inferred defaults.
