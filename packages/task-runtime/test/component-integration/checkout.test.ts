@@ -246,7 +246,6 @@ test("policy reads the pinned Git object and refuses a different repository iden
   fs.writeFileSync(
     document,
     JSON.stringify({
-      resources: { modelSessions: 1 },
       commands: { test: "npm test" },
     }),
   );
@@ -259,8 +258,8 @@ test("policy reads the pinned Git object and refuses a different repository iden
   fs.writeFileSync(document, "untrusted candidate bytes");
   assert.equal(
     readTrustedProjectSettings(source, "https://github.com/owner/repo.git")
-      .resources.modelSessions,
-    1,
+      .commands.test,
+    "npm test",
   );
   assert.throws(
     () =>

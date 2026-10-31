@@ -14,6 +14,7 @@ import {
   resultOf,
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
+import { modelEnvironment } from "@ecosystem/task-runtime/model-environment";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import type { VerifyReply } from "@ecosystem/verify/reply";
 import { VERIFY_REPLY } from "@ecosystem/verify/reply";
@@ -22,7 +23,6 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { writeIssueContext } from "../issue-context.ts";
-import { agentEnvOf } from "../job/agent-env.ts";
 import { runSession } from "../job/launch.ts";
 import { promptsDir } from "../job/prompts.ts";
 import type { HeadCheckout } from "./head-checkout.ts";
@@ -45,7 +45,7 @@ interface Review {
 
 function hooksOf(review: Review): LaunchHooks {
   const { cfg, issue, run, checkout } = review;
-  const env = agentEnvOf(cfg.jobRoles, process.env);
+  const env = modelEnvironment(process.env, []);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(

@@ -4,7 +4,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { hideCredentialVariable } from "@ecosystem/task-runtime/child-env";
 import { readCredential } from "@ecosystem/task-runtime/credentials";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import {
@@ -67,11 +66,6 @@ function loadConfig(configPath: string | undefined): Config {
     buddyAuthorization: _buddyAuthorization,
     ...data
   } = parsed.data;
-  for (const settings of Object.values(data.jobRoles ?? {})) {
-    if (settings?.tokenEnv !== undefined) {
-      hideCredentialVariable(settings.tokenEnv);
-    }
-  }
   return {
     ...data,
     policyBinding: computePolicyBinding(data),

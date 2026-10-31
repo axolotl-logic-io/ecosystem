@@ -19,22 +19,7 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   migrations: null,
 };
 
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const OPTIONAL_TEXT = z.string().nullish();
-// Access-profile metadata and credential-variable names to strip from model
-// children (src/job/agent-env.ts). Declared hosts do not enforce a sandbox.
-const ACCESS_SETTINGS = z
-  .object({
-    tokenEnv: z.string().regex(ENV_NAME, "must be an env var name").optional(),
-    network: z.array(z.string().min(1)).optional(),
-  })
-  .optional();
-// Legacy operator key shape; keep every tokenEnv restriction readable.
-const LEGACY_ACCESS = z.object({
-  reader: ACCESS_SETTINGS,
-  writer: ACCESS_SETTINGS,
-  lander: ACCESS_SETTINGS,
-});
 // The model a session gets when the config names none for it.
 const DEFAULT_MODEL = "openai/gpt-6.1-sol";
 const MODEL = z.string().min(1).default(DEFAULT_MODEL);
@@ -68,7 +53,6 @@ const CONFIG_SCHEMA = z.looseObject({
   }),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
-  jobRoles: LEGACY_ACCESS.nullish(),
   models: MODELS,
   runtime: RUNTIME_SCHEMA,
   practices: z.array(z.string()),
@@ -174,7 +158,5 @@ function checkRequired(
   checkPractices(configPath, practices);
 }
 
-type LegacyAccessConfig = z.infer<typeof LEGACY_ACCESS>;
-
-export type { LegacyAccessConfig, SessionProfile };
+export type { SessionProfile };
 export { CONFIG_SCHEMA, checkRequired, DEFAULTS };

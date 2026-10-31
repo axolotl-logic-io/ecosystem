@@ -315,7 +315,6 @@ function repository(
   }
   const projectPolicy = committedPolicy(policy, origin, {
     commands,
-    resources: { modelSessions: 1 },
   });
   return { origin, work, projectPolicy };
 }

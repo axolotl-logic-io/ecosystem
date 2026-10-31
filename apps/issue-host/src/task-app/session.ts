@@ -15,10 +15,10 @@ import {
   resultOf,
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
+import { modelEnvironment } from "@ecosystem/task-runtime/model-environment";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import { agentEnvOf } from "../job/agent-env.ts";
 import { openBaseCheckout } from "../job/checkout.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
@@ -29,7 +29,7 @@ import type { TaskRun } from "./task-app.ts";
 const MINUTE_MS = 60_000;
 
 function hooksOf(cfg: Config, dir: string, repo: string): LaunchHooks {
-  const env = agentEnvOf(cfg.jobRoles, process.env);
+  const env = modelEnvironment(process.env, []);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(dir, "sessions", `${key}.jsonl`),

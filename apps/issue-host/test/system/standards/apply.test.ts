@@ -100,7 +100,6 @@ function world(): World {
       allowedUsers: ["alice"],
       credentialsEnvFile: credentials,
       projectPolicy: committedPolicy(path.join(directory, "policy"), origin, {
-        resources: { modelSessions: 1 },
         commands: { test: "true" },
       }),
     }),

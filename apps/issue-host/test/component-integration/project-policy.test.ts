@@ -5,19 +5,18 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { RESOURCE_CAPACITY } from "@ecosystem/task-runtime/project-policy-schema";
 import { z } from "zod";
 
 const SOURCE = path.resolve(import.meta.dirname, "../..");
 const OBSERVED = z.strictObject({
   digest: z.string(),
-  resources: RESOURCE_CAPACITY,
+  test: z.string(),
 });
 const LOADER = `
 import { loadConfig } from './src/config.ts';
 import { configPolicyDigest } from '@ecosystem/task-runtime/project-policy';
 const cfg = loadConfig(process.argv[1]);
-console.log(JSON.stringify({digest: configPolicyDigest(cfg), resources: cfg.resources}));
+console.log(JSON.stringify({digest: configPolicyDigest(cfg), test: cfg.commands.test}));
 `;
 
 function git(directory: string, args: string[]): string {
@@ -88,70 +87,55 @@ function load(file: string): SpawnSyncReturns<string> {
   );
 }
 
-test("trusted capacity follows the immutable policy pin, not the working tree", () => {
+test("trusted settings follow the immutable policy pin, not the working tree", () => {
   const sandbox = fixture();
   try {
-    const first = sandbox.pin({
-      commands: { test: "npm test" },
-      resources: { modelSessions: 1 },
-    });
+    const first = sandbox.pin({ commands: { test: "npm test" } });
     const initial = load(sandbox.configure(first));
     assert.equal(initial.status, 0, initial.stderr);
     const before = OBSERVED.parse(JSON.parse(initial.stdout));
     fs.writeFileSync(
       sandbox.policyFile,
-      JSON.stringify({
-        commands: { test: "npm test" },
-        resources: { modelSessions: 9 },
-      }),
+      JSON.stringify({ commands: { test: "npm run working-tree" } }),
     );
     const unchanged = load(sandbox.configure(first));
     assert.equal(unchanged.status, 0, unchanged.stderr);
     assert.deepEqual(OBSERVED.parse(JSON.parse(unchanged.stdout)), before);
-    const second = sandbox.pin({
-      commands: { test: "npm test" },
-      resources: { modelSessions: 2 },
-    });
+    const second = sandbox.pin({ commands: { test: "npm run check" } });
     const changed = load(sandbox.configure(second));
     assert.equal(changed.status, 0, changed.stderr);
     const after = OBSERVED.parse(JSON.parse(changed.stdout));
-    assert.equal(before.resources.modelSessions, 1);
-    assert.equal(after.resources.modelSessions, 2);
+    assert.equal(before.test, "npm test");
+    assert.equal(after.test, "npm run check");
     assert.notEqual(after.digest, before.digest);
   } finally {
     sandbox.cleanup();
   }
 });
 
-test("committed policy rejects an operator capacity override", () => {
+test("committed policy rejects an operator override", () => {
   const sandbox = fixture();
   try {
-    const revision = sandbox.pin({
-      commands: { test: "npm test" },
-      resources: { modelSessions: 1 },
-    });
+    const revision = sandbox.pin({ commands: { test: "npm test" } });
     const result = load(
-      sandbox.configure(revision, { resources: { modelSessions: 99 } }),
+      sandbox.configure(revision, { commands: { test: "true" } }),
     );
     assert.notEqual(result.status, 0);
-    assert.ok(result.stderr.includes("resources must not also appear"));
+    assert.ok(result.stderr.includes("commands must not also appear"));
     assert.equal(result.stdout, "");
   } finally {
     sandbox.cleanup();
   }
 });
 
-test("missing or invalid committed capacity has no default or flat fallback", () => {
+test("a missing or blank committed test command has no default", () => {
   const sandbox = fixture();
   try {
-    for (const resources of [undefined, { modelSessions: 0 }]) {
-      const revision = sandbox.pin({
-        commands: { test: "npm test" },
-        resources,
-      });
+    for (const commands of [undefined, { test: "" }]) {
+      const revision = sandbox.pin({ commands });
       const result = load(sandbox.configure(revision));
       assert.notEqual(result.status, 0);
-      assert.ok(result.stderr.includes("resources"));
+      assert.ok(result.stderr.includes("commands"));
       assert.equal(result.stdout, "");
     }
   } finally {
@@ -159,13 +143,10 @@ test("missing or invalid committed capacity has no default or flat fallback", ()
   }
 });
 
-test("repository Land permission changes the shared policy without changing capacity", () => {
+test("repository Land permission changes the shared policy without changing settings", () => {
   const sandbox = fixture();
   try {
-    const revision = sandbox.pin({
-      commands: { test: "npm test" },
-      resources: { modelSessions: 1 },
-    });
+    const revision = sandbox.pin({ commands: { test: "npm test" } });
     const denied = load(
       sandbox.configure(revision, { permissions: { land: false } }),
     );
@@ -177,7 +158,7 @@ test("repository Land permission changes the shared policy without changing capa
     const before = OBSERVED.parse(JSON.parse(denied.stdout));
     const after = OBSERVED.parse(JSON.parse(allowed.stdout));
     assert.notEqual(before.digest, after.digest);
-    assert.deepEqual(before.resources, after.resources);
+    assert.equal(before.test, after.test);
   } finally {
     sandbox.cleanup();
   }

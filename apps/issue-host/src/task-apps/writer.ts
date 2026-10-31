@@ -20,6 +20,7 @@ import {
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
 import type { LaunchStart } from "@ecosystem/task-runtime/job/status";
+import { modelEnvironment } from "@ecosystem/task-runtime/model-environment";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { publishCheckout } from "@ecosystem/task-runtime/publish-checkout";
 import { conflictStages } from "@ecosystem/task-runtime/rebase";
@@ -28,7 +29,6 @@ import { setUpCheckout } from "../checkouts.ts";
 import { type Config, loadConfig, paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { git } from "../github.ts";
-import { agentEnvOf } from "../job/agent-env.ts";
 import { openJobCheckout } from "../job/checkout.ts";
 import { runSession } from "../job/launch.ts";
 import { promptsDir } from "../job/prompts.ts";
@@ -156,7 +156,7 @@ async function writeSession<T>(
     },
     execution,
   );
-  const env = agentEnvOf(cfg.jobRoles, process.env);
+  const env = modelEnvironment(process.env, []);
   const scope = {
     root: dirs.root,
     repo: { dir: "repo", access: "write" },

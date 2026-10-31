@@ -171,7 +171,6 @@ interface PolicySnapshot {
   ciWaitMinutes?: unknown;
   commandTimeoutMinutes?: unknown;
   permissions?: unknown;
-  resources?: unknown;
 }
 
 function computePolicyBinding(cfg: PolicySnapshot): ProjectPolicyBinding {
@@ -184,7 +183,6 @@ function computePolicyBinding(cfg: PolicySnapshot): ProjectPolicyBinding {
     ciWaitMinutes,
     commandTimeoutMinutes,
     permissions,
-    resources,
   } = cfg;
   const effective = {
     commands,
@@ -195,7 +193,6 @@ function computePolicyBinding(cfg: PolicySnapshot): ProjectPolicyBinding {
     ciWaitMinutes,
     commandTimeoutMinutes,
     permissions,
-    resources,
   };
   const source = cfg.projectPolicy;
   const entry = gitObject(source, ["ls-tree", source.revision, "--", DOCUMENT]);

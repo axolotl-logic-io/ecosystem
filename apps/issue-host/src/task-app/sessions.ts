@@ -23,10 +23,10 @@ import {
   resultOf,
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
+import { modelEnvironment } from "@ecosystem/task-runtime/model-environment";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { SessionProfile } from "../config-schema.ts";
-import { agentEnvOf } from "../job/agent-env.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
 import { promptsDir } from "../job/prompts.ts";
@@ -77,7 +77,7 @@ async function openSessions(
     binding,
   );
   const startedAt = new Date().toISOString();
-  const shared = agentEnvOf(cfg.jobRoles, process.env);
+  const shared = modelEnvironment(process.env, []);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(setting.dir, "sessions", `${key}.jsonl`),
