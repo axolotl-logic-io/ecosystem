@@ -15,7 +15,8 @@ import {
 const DUPLICATE_ACCOUNT = /duplicate buddy name or account/u;
 const DUPLICATE_FILE = /duplicate buddy entry/u;
 const DUPLICATE_NAME = /duplicate buddy name/u;
-const REGISTRATION = /registration/u;
+const NO_PROGRAM = /no installed task app/u;
+const RETIRED = /manifest field is retired/u;
 const UNKNOWN = /Unrecognized/u;
 const MISSING = /ENOENT/u;
 
@@ -37,13 +38,7 @@ function fixture(): {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "orchestrator-"));
   const launcher = path.join(root, "launcher.mjs");
   fs.writeFileSync(launcher, CHILD);
-  const task = path.join(root, "task.mjs");
-  fs.writeFileSync(task, "");
-  const manifest = path.join(root, "tasks.json");
-  fs.writeFileSync(
-    manifest,
-    JSON.stringify({ version: 1, tasks: [{ id: "fix", executable: task }] }),
-  );
+  fs.writeFileSync(path.join(root, "fix.mjs"), "");
   const repo = path.join(root, "repo.json");
   fs.writeFileSync(repo, JSON.stringify({ repo: "acme/widgets" }));
   const buddies = ["first", "second"].map((name) => {
@@ -67,10 +62,7 @@ function fixture(): {
     return file;
   });
   const file = path.join(root, "fleet.json");
-  fs.writeFileSync(
-    file,
-    JSON.stringify({ version: 1, buddies, manifest, launcher }),
-  );
+  fs.writeFileSync(file, JSON.stringify({ version: 1, buddies, launcher }));
   return {
     root,
     file,
@@ -104,13 +96,7 @@ function harness(): {
     start: (launch: Launch): ChildProcess => {
       const child = spawn(
         process.execPath,
-        [
-          launch.launcher,
-          "--config",
-          launch.config,
-          "--manifest",
-          launch.manifest,
-        ],
+        [launch.launcher, "--config", launch.config],
         { stdio: ["ignore", "pipe", "pipe", "ipc"] },
       );
       const ready = Promise.withResolvers<void>();
@@ -158,7 +144,12 @@ test("invalid fleet refuses all starts, including cross-folder account reuse", a
     fleet.buddies = [first, other];
     fs.writeFileSync(sandbox.file, JSON.stringify(fleet));
     await assert.rejects(
-      runOrchestrator(sandbox.file, new AbortController().signal, running),
+      runOrchestrator(
+        sandbox.file,
+        sandbox.root,
+        new AbortController().signal,
+        running,
+      ),
       DUPLICATE_ACCOUNT,
     );
     assert.equal(running.children.length, 0);
@@ -168,7 +159,7 @@ test("invalid fleet refuses all starts, including cross-folder account reuse", a
   }
 });
 
-test("duplicate files, names, missing registrations and unknown fields refuse validation", () => {
+test("duplicate files, names, missing programs, a retired manifest and unknown fields refuse validation", () => {
   const sandbox = fixture();
   try {
     const fleet = JSON.parse(fs.readFileSync(sandbox.file, "utf8"));
@@ -177,20 +168,35 @@ test("duplicate files, names, missing registrations and unknown fields refuse va
     assert.ok(second);
     fleet.buddies = [first, first];
     fs.writeFileSync(sandbox.file, JSON.stringify(fleet));
-    assert.throws(() => checkOrchestrator(sandbox.file), DUPLICATE_FILE);
+    assert.throws(
+      () => checkOrchestrator(sandbox.file, sandbox.root),
+      DUPLICATE_FILE,
+    );
     fleet.buddies = sandbox.buddies;
     const buddy = JSON.parse(fs.readFileSync(second, "utf8"));
     buddy.name = "first";
     fs.writeFileSync(second, JSON.stringify(buddy));
     fs.writeFileSync(sandbox.file, JSON.stringify(fleet));
-    assert.throws(() => checkOrchestrator(sandbox.file), DUPLICATE_NAME);
+    assert.throws(
+      () => checkOrchestrator(sandbox.file, sandbox.root),
+      DUPLICATE_NAME,
+    );
     buddy.name = "second";
     buddy.tasks = ["implement"];
     fs.writeFileSync(second, JSON.stringify(buddy));
-    assert.throws(() => checkOrchestrator(sandbox.file), REGISTRATION);
+    assert.throws(
+      () => checkOrchestrator(sandbox.file, sandbox.root),
+      NO_PROGRAM,
+    );
+    buddy.tasks = ["fix"];
+    fs.writeFileSync(second, JSON.stringify(buddy));
+    fleet.manifest = path.join(sandbox.root, "tasks.json");
+    fs.writeFileSync(sandbox.file, JSON.stringify(fleet));
+    assert.throws(() => checkOrchestrator(sandbox.file, sandbox.root), RETIRED);
+    fleet.manifest = undefined;
     fleet.extra = true;
     fs.writeFileSync(sandbox.file, JSON.stringify(fleet));
-    assert.throws(() => checkOrchestrator(sandbox.file), UNKNOWN);
+    assert.throws(() => checkOrchestrator(sandbox.file, sandbox.root), UNKNOWN);
   } finally {
     sandbox.cleanup();
   }
@@ -201,7 +207,12 @@ test("two launchers drain independently and shutdown waits for in-flight work", 
   const running = harness();
   try {
     const stop = new AbortController();
-    const result = runOrchestrator(sandbox.file, stop.signal, running);
+    const result = runOrchestrator(
+      sandbox.file,
+      sandbox.root,
+      stop.signal,
+      running,
+    );
     await Promise.all(running.children.map(({ ready }) => ready));
     assert.equal(running.children.length, 2);
     const pids = new Set(running.children.map(({ child }) => child.pid));
@@ -231,7 +242,12 @@ test("failed launcher is reported without restarting or stopping its healthy sib
   const running = harness();
   try {
     const stop = new AbortController();
-    const result = runOrchestrator(sandbox.file, stop.signal, running);
+    const result = runOrchestrator(
+      sandbox.file,
+      sandbox.root,
+      stop.signal,
+      running,
+    );
     await Promise.all(running.children.map(({ ready }) => ready));
     const [first, second] = running.children;
     assert.ok(first);
@@ -256,16 +272,21 @@ test("partial process-start failure cleans up already started children", async (
   const running = harness();
   try {
     let attempts = 0;
-    const result = runOrchestrator(sandbox.file, new AbortController().signal, {
-      report: running.report,
-      start: (launch: Launch): ChildProcess => {
-        attempts += 1;
-        if (attempts === 2) {
-          return spawn(path.join(sandbox.root, "missing-program"));
-        }
-        return running.start(launch);
+    const result = runOrchestrator(
+      sandbox.file,
+      sandbox.root,
+      new AbortController().signal,
+      {
+        report: running.report,
+        start: (launch: Launch): ChildProcess => {
+          attempts += 1;
+          if (attempts === 2) {
+            return spawn(path.join(sandbox.root, "missing-program"));
+          }
+          return running.start(launch);
+        },
       },
-    });
+    );
     await assert.rejects(result, MISSING);
     assert.equal(attempts, 2);
     for (const { child } of running.children) {
@@ -282,10 +303,13 @@ test("an already stopped orchestrator starts no children", async () => {
   const running = harness();
   try {
     const stop = AbortSignal.abort();
-    assert.deepEqual(await runOrchestrator(sandbox.file, stop, running), {
-      kind: "stopped",
-      failed: [],
-    });
+    assert.deepEqual(
+      await runOrchestrator(sandbox.file, sandbox.root, stop, running),
+      {
+        kind: "stopped",
+        failed: [],
+      },
+    );
     assert.equal(running.children.length, 0);
   } finally {
     running.cleanup();

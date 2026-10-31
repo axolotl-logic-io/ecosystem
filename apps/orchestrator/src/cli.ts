@@ -1,8 +1,11 @@
 import process from "node:process";
 import { parseArgs } from "node:util";
+import { installRootOf } from "@ecosystem/launcher/install-root";
 import { openStop } from "@ecosystem/launcher/stop";
 import { checkOrchestrator } from "./config.ts";
 import { runOrchestrator } from "./supervisor.ts";
+
+const ROOT = installRootOf(process.env);
 
 async function main(): Promise<0 | 1> {
   const stop = openStop();
@@ -22,11 +25,11 @@ async function main(): Promise<0 | 1> {
     }
     if (values.check) {
       process.stdout.write(
-        `${JSON.stringify(checkOrchestrator(values.config))}\n`,
+        `${JSON.stringify(checkOrchestrator(values.config, ROOT))}\n`,
       );
       return 0;
     }
-    const ended = await runOrchestrator(values.config, stop.buddy);
+    const ended = await runOrchestrator(values.config, ROOT, stop.buddy);
     process.stdout.write(`${JSON.stringify(ended)}\n`);
     if (ended.failed.length > 0) {
       return 1;

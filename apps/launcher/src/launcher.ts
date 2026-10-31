@@ -1,5 +1,6 @@
-// One buddy discovers starts and launches registered subprocesses. Claims belong to children.
+// One buddy discovers starts and launches task subprocesses. Claims belong to children.
 import { type ChildProcess, spawn } from "node:child_process";
+import path from "node:path";
 import process from "node:process";
 import { childEnvironment } from "@ecosystem/task-runtime/child-env";
 import {
@@ -9,6 +10,7 @@ import {
 import { issueInvocation } from "@ecosystem/task-runtime/issue/invocation";
 import { wire } from "@ecosystem/task-runtime/issue/wire";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
+import { untrustedFile } from "@ecosystem/task-runtime/trusted-file";
 import { z } from "zod";
 
 import {
@@ -19,7 +21,6 @@ import {
   sharingAccount,
 } from "./buddy-file.ts";
 import { accountOf } from "./identity.ts";
-import { readManifest } from "./manifest.ts";
 import { pause } from "./stop.ts";
 
 const MS_PER_SECOND = 1000;
@@ -52,41 +53,58 @@ function log(line: object): void {
 }
 
 function programFor(
-  programs: ReadonlyMap<string, string>,
-  task: string,
+  programs: ReadonlyMap<LaunchedTask, string>,
+  task: LaunchedTask,
 ): string {
   const program = programs.get(task);
   if (program === undefined) {
-    throw new OpsError(`task ${task} has no installed task app registration`);
+    throw new OpsError(`task ${task} has no installed task app`);
   }
   return program;
 }
 
+// The installed program for each of `tasks`: `TASK.mjs` in the release at
+// `installRoot`. The buddy file accepts only the launcher's compiled task
+// list, so no registration maps ids to programs. Each program must be an
+// operator-owned regular file, not a link, that nobody else can write.
+function programsOf(
+  installRoot: string,
+  tasks: readonly LaunchedTask[],
+): ReadonlyMap<LaunchedTask, string> {
+  const programs = new Map<LaunchedTask, string>();
+  for (const task of tasks) {
+    const program = path.join(installRoot, `${task}.mjs`);
+    if (untrustedFile(program) !== null) {
+      throw new OpsError(
+        `task ${task} has no installed task app at ${program}; it must be an operator-owned regular file writable only by its owner`,
+      );
+    }
+    programs.set(task, program);
+  }
+  return programs;
+}
+
 // The launcher buddy file at `file`, refused unless it is the only one in
-// its folder with its account and every one of its tasks has an app.
+// its folder with its account and every one of its tasks has a trusted
+// program in the release at `installRoot`.
 function launcherOf(
   file: string,
-  manifest: string,
-): { buddy: BuddyFile; programs: ReadonlyMap<string, string> } {
+  installRoot: string,
+): { buddy: BuddyFile; programs: ReadonlyMap<LaunchedTask, string> } {
   const buddy = readBuddyFile(file);
-  const programs = readManifest(manifest);
   const other = sharingAccount(buddy);
   if (other !== null) {
     throw new OpsError(
       `buddy config ${buddy.file}: buddy config ${other} is configured with the same account @${buddy.account}; each buddy needs its own`,
     );
   }
-  for (const task of buddy.tasks) {
-    if (!programs.has(task)) {
-      throw new OpsError(`task ${task} has no installed task app registration`);
-    }
-  }
-  return { buddy, programs };
+  return { buddy, programs: programsOf(installRoot, buddy.tasks) };
 }
 
-// Validates the launcher buddy at `file` without contacting GitHub.
-function checkLauncher(file: string, manifest: string): Checked {
-  const { buddy, programs } = launcherOf(file, manifest);
+// Validates the launcher buddy at `file` against the release at `installRoot`
+// without reading its token or contacting GitHub.
+function checkLauncher(file: string, installRoot: string): Checked {
+  const { buddy, programs } = launcherOf(file, installRoot);
   return {
     buddy: buddy.name,
     account: buddy.account,
@@ -102,15 +120,16 @@ function checkLauncher(file: string, manifest: string): Checked {
   };
 }
 
-// Runs the launcher buddy at `file` until `stop` aborts, then waits for the
-// task apps it launched to end. Each app ends on its own terms; the stop
+// Runs the launcher buddy at `file` with task programs from the release at
+// `installRoot` until `stop` aborts, then waits for the task apps it
+// launched to end. Each app ends on its own terms; the stop
 // only ends the polling.
 async function runLauncher(
   file: string,
-  manifest: string,
+  installRoot: string,
   stop: AbortSignal,
 ): Promise<Ended> {
-  const { buddy, programs } = launcherOf(file, manifest);
+  const { buddy, programs } = launcherOf(file, installRoot);
   const { env } = accountOf(buddy);
   // Each app still running, with its end.
   const live = new Map<ChildProcess, Promise<void>>();
