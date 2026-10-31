@@ -15,15 +15,9 @@ The version 1 operator-owned JSON configuration names absolute paths:
 ```
 
 Point `launcher` at `launcher.mjs` in the install root. The orchestrator resolves
-the install root as the launcher does, from `ECOSYSTEM_INSTALL_ROOT` or its
-compatibility fallbacks. It validates every buddy's task programs there and
+the install root as the launcher does, from the required `ECOSYSTEM_INSTALL_ROOT`.
+It validates every buddy's task programs there and
 passes the same root to each launcher as `ECOSYSTEM_INSTALL_ROOT`.
-
-Fleet files written before [#280](https://github.com/axolotl-logic-io/ecosystem/issues/280)
-also named a `manifest` path. The fleet file stays version 1, because its
-remaining fields keep their meaning. The orchestrator refuses a file that still
-has `manifest`, rather than ignoring it, so that a stale path can't appear to
-select programs. To migrate, delete the `manifest` line and validate the file.
 
 All entries are validated before startup. Duplicate buddy files, names or GitHub
 accounts are refused, including accounts in different configuration folders.
@@ -42,7 +36,7 @@ node "$ECOSYSTEM_INSTALL_ROOT/orchestrator.mjs" --config FLEET_FILE --check
 to start one launcher per entry. Keep the file, launcher, buddy files,
 repository files and task programs owned by the operator and writable by nobody
 else. Symbolic links to these trusted files are refused. Unknown configuration
-fields, including `manifest`, unsupported versions, empty fleets and missing or
+fields, unsupported versions, empty fleets and missing or
 untrusted task programs refuse startup before any child starts. `--check` does
 not read tokens or contact GitHub; each launcher verifies its credential before
 discovery. All configured buddy credential variable names are removed from every

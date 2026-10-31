@@ -36,18 +36,16 @@ Verify's account must differ from the account that opened the PR, because GitHub
 
 ## Task app contract
 
-To run a task app, run:
+A buddy runs each task app as:
 
 ```bash
-node "$ISSUE_PIPELINE_ROOT/TASK.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
+node "$ECOSYSTEM_INSTALL_ROOT/TASK.mjs" --invocation
 ```
 
-- `ISSUE_PIPELINE_ROOT` is the installed pipeline's directory.
+- `ECOSYSTEM_INSTALL_ROOT` is the installed release's directory.
 - `TASK` is the task identifier, such as `gherkin` or `implement`.
-- `BUDDY_FILE` is the buddy's configuration file, which names its GitHub account and credentials.
-- `OWNER/REPO#N` is the issue.
 
-A buddy runs these programs, and an operator can run one by hand. A task app exits 0 when its run ends normally, including when it loses its claim. It exits nonzero when the run fails.
+Standard input holds the invocation: the task, the issue, the buddy's account and the repository settings. Descriptor 3 holds the account's verified credentials. A task app exits 0 when its run ends normally, including when it loses its claim. It exits nonzero when the run fails.
 
 ## Lifecycle
 

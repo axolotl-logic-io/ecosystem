@@ -72,11 +72,11 @@ After a local commit, the tool asks its task app over a local control socket to 
 
 Read the task run's end comment, session transcript, PR and retained checkout. Preserve local commits, untracked files and patches before retrying with a new start label. Recovery comes from GitHub artifacts and retained work.
 
-## Compatibility
+## Session names and credentials
 
-`models.gherkin`, `models.developer` and `models.reviewer`, the installed `issue-pipeline-*` agent names, prompt filenames and task CLI entrypoints remain unchanged. They select concrete sessions, not buddy responsibilities. No operator key is renamed in #264, and no private configuration or live record is migrated.
+`models.gherkin`, `models.developer` and `models.reviewer` and the installed `issue-pipeline-*` agent names select concrete sessions, not buddy responsibilities.
 
-The legacy operator key `jobRoles` retains its `reader`, `writer` and `lander` entries. Every `tokenEnv` in those entries is stripped from model children, regardless of the session. Their `network` lists remain descriptive metadata and grant no access. There is no replacement access hierarchy or implicit mapping of tasks to these entries. Commit permissions still come from each session's explicit scoped commit interface; read-only sessions cannot commit.
+Model children receive no GitHub, database or Git credential variables, no buddy credential variable and no inherited commit scope. Commit permissions come from each session's explicit scoped commit interface; read-only sessions cannot commit.
 
 Historical session observations retain the wire field `role` for existing readers. Historical pipeline comment markers also retain `role=` parsing. GitHub membership, PostgreSQL and provider message fields named `role` remain external protocol fields. Historical documents and records preserve the vocabulary of the release they describe.
 

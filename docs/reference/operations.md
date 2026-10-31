@@ -9,23 +9,23 @@ Root `programs.ts` declares the distribution list: programs and packaged assets.
 Root `build.ts` bundles them into `dist/`, independent of workspace location.
 Root `install.ts` installs only the declared programs, assets, vendored compiler,
 README and installation record. It never removes files.
-`apps/issue-pipeline` contains only forwarding source commands for older operator
-automation; it is no longer an application or npm workspace.
 
 Task definitions live in `tasks/{gherkin,implement,fix,verify,land}`. The
 [issue host](../../apps/issue-host/README.md) provisions capabilities for their
 GitHub adapters. The [launcher](../../apps/launcher/README.md) runs one buddy;
 the [orchestrator](../../apps/orchestrator/README.md) supervises launchers.
 
-Installed delivery programs are `orchestrator.mjs`, `launcher.mjs`, compatible
-`buddy.mjs` and one program for each task, named `TASK.mjs` after its task. Session support includes
+Installed delivery programs are `orchestrator.mjs`, `launcher.mjs` and one
+program for each task, named `TASK.mjs` after its task. Session support includes
 `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs` and
 `git-review.mjs`. Safe Refactor and standards upgrade retain their standalone
 entrypoints, the vendored compiler and pinned Python-tool asset.
 
 ## Host paths
 
-Set these absolute paths in the operator's service environment:
+Set these absolute paths in the operator's service environment. The install and
+data roots are required and have no default. A program refuses to start, or to
+reach a path under a root, when its root is unset or relative:
 
 | Variable | Ownership |
 | --- | --- |
@@ -39,26 +39,24 @@ configurations. It does not rewrite private files, move runtime data, select
 policy pins or provision a model provider, discovery cache or credentials.
 See [native runtime provisioning](../../apps/issue-host/runtime/README.md).
 
-`ISSUE_PIPELINE_ROOT` is a retained compatibility fallback for both roots. Without
-it, the install root defaults to `~/.pi/agent/issue-pipeline`; the data root defaults
-to the install root. New services should set both explicit roots. To preserve
-existing work during migration, initially point the data root at the existing
-root. Move data only after draining, preserve its permissions and update the
-dashboard's `runs` setting if its location changes. The host resolves paths before
-calling task or package code; neither discovers an implicit root.
+The two roots can name the same directory. The orchestrator passes its install
+root to each launcher, and each launcher passes its environment to the task
+programs it starts. The host resolves paths before calling task or package code;
+neither discovers an implicit root.
 
-## Configuration and compatibility
+## Configuration
 
 Use [version 2 buddy files](runtime-runs.md#launcher-buddy-file). Each buddy has
 its own GitHub account, scope, tasks and private credential entry. Credentials
 remain outside managed worktrees and never reach model children. The launcher
-verifies the account before discovery. Repository compatibility credentials
-remain necessary for shared readers and standalone tools.
+verifies the account before discovery. A repository config's `devAccount`,
+`landingAccount` and `credentialsEnvFile` serve the readers and standalone tools
+that [authority](authority.md) lists.
 
-The installed task CLI `TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N`
-remains supported. Launcher-created children use validated `--invocation` input
-and a separate credential pipe. The launcher runs task `TASK` as `TASK.mjs` in
-the install root, and accepts only the tasks compiled into it.
+The launcher runs task `TASK` as `TASK.mjs --invocation` in the install root,
+and accepts only the tasks compiled into it. The task program reads its
+validated invocation from standard input and the buddy's credentials from a
+separate pipe. It accepts no other arguments.
 
 Persisted names stay unchanged: `.issue-pipeline.json`, its trusted commit pins,
 operator credential keys, task comment markers, agent names and
@@ -107,42 +105,6 @@ licenses deletion of unlisted files. Installation is not a transaction across al
 files: keep launchers drained if an I/O error interrupts it, then restore or
 reinstall a complete verified release before activation.
 
-Existing `mise //apps/issue-pipeline:install` and `:install:dry-run` commands still
-forward to this installer. New automation should use the root npm scripts.
-
-## Retire tasks.json
-
-Releases before [#280](https://github.com/axolotl-logic-io/ecosystem/issues/280)
-installed a task manifest, `$ECOSYSTEM_INSTALL_ROOT/tasks.json`, and their fleet
-files and service commands named it. Current releases neither build nor read it.
-The installer never removes files, so an upgrade leaves `tasks.json` in place,
-outside the new ownership list. It is harmless but misleading. To retire it after
-installing, while the launchers are still drained:
-
-1. Confirm that the new `INSTALLED.json` ownership list doesn't name `tasks.json`:
-
-   ```sh
-   grep -q '/tasks.json"' "$ECOSYSTEM_INSTALL_ROOT/INSTALLED.json" && echo "owned: stop" || echo "orphan"
-   ```
-
-   Continue only if it prints `orphan`.
-
-2. Move `tasks.json` into the new installation's backup directory, at its absolute path, where a backup-based rollback finds it:
-
-   ```sh
-   backup="$(node -p 'require(process.argv[1]).backup' "$ECOSYSTEM_INSTALL_ROOT/INSTALLED.json")"
-   mkdir -p "$backup$ECOSYSTEM_INSTALL_ROOT"
-   mv "$ECOSYSTEM_INSTALL_ROOT/tasks.json" "$backup$ECOSYSTEM_INSTALL_ROOT/tasks.json"
-   ```
-
-3. Remove `--manifest MANIFEST_FILE` from every launcher or `buddy.mjs` service command. The launcher refuses it as an unknown option.
-4. Delete the `manifest` line from every fleet file. Fleet files stay version 1; the orchestrator refuses a file that still has `manifest`.
-
-`ECOSYSTEM_INSTALL_ROOT` must be the absolute install path, without a trailing
-slash. To roll back to a release before #280, run that revision's installer,
-which writes `tasks.json` again, and restore the `manifest` fleet field and
-`--manifest` arguments from your recorded configuration.
-
 ## Validate and restart
 
 Validate every configured buddy before contacting GitHub:
@@ -166,8 +128,8 @@ node "$ECOSYSTEM_INSTALL_ROOT/orchestrator.mjs" --config FLEET_FILE --check
 ```
 
 `FLEET_FILE` is its absolute path. Omit `--check` to start one launcher per buddy.
-The orchestrator rejects duplicate files, names and accounts, and a leftover
-`manifest` field, before any start.
+The orchestrator rejects duplicate files, names, accounts and unknown fields
+before any start.
 It never automatically restarts a failed launcher. Healthy siblings continue;
 inspect JSON stderr reports and restart a failed buddy separately after fixing
 its cause. See the [failure and shutdown contract](../../apps/orchestrator/README.md#child-failures-and-restart-policy).

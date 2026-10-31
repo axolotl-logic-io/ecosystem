@@ -15,9 +15,8 @@ pinned-head checks and recoverable work. The repository root owns the build,
 installation record and distribution. Merging source activates nothing.
 
 The [reference index](docs/README.md) documents the architecture and tasks.
-[Operations](docs/reference/operations.md) covers host-owned paths, compatibility,
-drain, install, restart and rollback. Historical observations and persisted
-`.issue-pipeline.json` policy names remain compatible.
+[Operations](docs/reference/operations.md) covers host-owned paths, drain,
+install, restart and rollback.
 
 The separate [workflow dashboard](apps/workflow-dash/README.md) observes current
 task runs and historical buddy/action records. Its monitoring database and
@@ -58,8 +57,6 @@ templates, standalone-tool assets and the vendored TypeScript compiler. The
 installer replaces only installer-owned files, backs up replaced bytes and records
 installed identity and ownership in `INSTALLED.json`. Drain the old release before installing.
 
-mise is optional and pins Node 24. Existing
-`mise //apps/issue-pipeline:install` commands remain forwarding compatibility
-commands; new automation should use the root npm scripts. Read
+mise is optional and pins Node 24. Read
 [AGENTS.md](AGENTS.md) and the [project practices](docs/project-practices.md)
 before changing code.

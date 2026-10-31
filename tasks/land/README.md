@@ -24,10 +24,9 @@ state before closing the issue. A retry of a merged PR returns `no-change` and
 reconciles closure without merging again. Reports of a confirmed merge are
 published before closure so a failed close retains evidence for the next attempt.
 
-## Validation and compatibility
+## Validation
 
 Run `npm run check --workspace @ecosystem/land` for types, lint and direct
-capability tests. The root full gate also exercises the installed compatibility
-CLI against fake GitHub/model services and real local Git. Existing executable
-names and installed prompt names remain functional. A source merge activates
+capability tests. The root full gate also runs the installed `land.mjs` program
+against fake GitHub/model services and real local Git. A source merge activates
 nothing; follow the [pipeline install procedure](../../docs/reference/operations.md#install-a-release).

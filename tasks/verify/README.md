@@ -23,12 +23,11 @@ Full checks and required CI judge the pinned head. Any Security finding blocks,
 even if the model calls it a nit. Before submission Verify refreshes PR state and
 requires the same open head. Submission binds `commit_id` to that head; the runtime
 adapter owns persistence markers. Failed reviews retain the checkout; successful
-and stopped runs follow the compatibility host's cleanup policy.
+and stopped runs follow the issue host's cleanup policy.
 
-## Validation and compatibility
+## Validation
 
 Run `npm run check --workspace @ecosystem/verify` for types, lint and direct
-capability tests. The root full gate also exercises the installed compatibility
-CLI against fake GitHub/model services and real local Git. Existing executable
-names and installed prompt names remain functional. A source merge activates
+capability tests. The root full gate also runs the installed `verify.mjs` program
+against fake GitHub/model services and real local Git. A source merge activates
 nothing; follow the [pipeline install procedure](../../docs/reference/operations.md#install-a-release).

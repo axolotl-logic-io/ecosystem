@@ -4,7 +4,7 @@ Task apps use private checkouts for each run. A shared local mirror supplies Git
 
 ## Layout
 
-Under `$ISSUE_PIPELINE_ROOT`, `mirrors/` holds fetched repositories, `work/SLUG/jobs/` holds private writer checkouts and `runs/SLUG/issue-N/` holds task-run observations, session transcripts and recovery files. `SLUG` replaces the repository's `/` with `__`.
+Under `$ECOSYSTEM_DATA_ROOT`, `clones/SLUG/` and `work/SLUG/mirror.git` hold fetched repositories, `work/SLUG/jobs/` holds private writer checkouts and `runs/SLUG/issue-N/` holds task-run observations, session transcripts and recovery files. `SLUG` replaces the repository's `/` with `__`.
 
 Gherkin uses a detached base checkout. Verify uses a detached PR-head checkout and retains it if checks change tracked files. Implement and Fix start from the issue branch's pushed head, or from the base when the branch does not exist.
 
@@ -12,7 +12,7 @@ Gherkin uses a detached base checkout. Verify uses a detached PR-head checkout a
 
 A failed or stopped writer keeps its checkout. Successful cleanup preserves uncommitted patches and bundles local commits before removing a disposable checkout; failed preservation keeps it. Pushes only fast-forward the issue branch. A diverging push preserves the run's work on its own recovery branch.
 
-Lane slots and their lease store are retired. Repository configs with `laneSlots` are refused so an old port allocation cannot silently turn into an uncoordinated setup. Task apps do not run `commands.teardown`; writers refuse a config that sets it. Remove or replace those operator settings only after draining the old release.
+Task apps do not run `commands.teardown`; writers refuse a config that sets it.
 
 ## Recover a retained checkout
 

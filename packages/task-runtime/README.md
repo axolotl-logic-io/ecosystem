@@ -18,8 +18,7 @@ Applications and tasks may import packages. Packages never import applications.
 Task definitions do not import application adapters or receive credential maps.
 A host translates its private layout once; public service inputs name a repository,
 a destination, trusted resources or a capability rather than a pipeline root.
-The issue-pipeline adapters remain operational during migration. They resolve
-legacy configuration into these service inputs without changing installed CLIs.
+The issue host resolves its repository configuration into these service inputs.
 
 ## Checkout and recovery services
 
@@ -73,9 +72,7 @@ isolation does not create an OS or same-user filesystem sandbox.
 The source is an absolute repository path and full immutable commit SHA. The
 service verifies the origin, commit object, regular-file mode, document size,
 UTF-8 and strict schema. It reads Git objects with replacement objects disabled;
-candidate working-tree settings never activate policy. Existing digest/binding
-operations remain available to compatibility callers and keep their provenance
-and effective-settings binding.
+candidate working-tree settings never activate policy.
 
 ## Issue and artifact adapters
 

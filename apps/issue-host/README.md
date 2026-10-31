@@ -17,26 +17,21 @@ GitHub comments, branches, PRs and reviews remain recovery authority.
 
 The repository root owns `programs.ts`, `build.ts`, `install.ts` and `dist/`.
 Its distribution list bundles independently located apps and host bootstraps, and
-packages task-owned prompts and agent templates. Installed commands remain `gherkin.mjs`,
-`implement.mjs`, `fix.mjs`, `verify.mjs`, `land.mjs`, `launcher.mjs`,
-`orchestrator.mjs` and compatible `buddy.mjs`. Safe Refactor and standards upgrade
-retain their standalone commands and support assets.
+packages task-owned prompts and agent templates. Installed commands are `gherkin.mjs`,
+`implement.mjs`, `fix.mjs`, `verify.mjs`, `land.mjs`, `launcher.mjs` and
+`orchestrator.mjs`. Safe Refactor and standards upgrade have their own standalone
+commands and support assets.
 
 Set `ECOSYSTEM_INSTALL_ROOT` to the absolute installed-program directory and
 `ECOSYSTEM_DATA_ROOT` to the absolute operator-owned writable directory. The host
 uses the latter for clones, work, observations and its default model runtime
-HOME. `PI_CODING_AGENT_DIR` still names the separately installed agent directory.
+HOME. Both roots are required and have no default. `PI_CODING_AGENT_DIR` names
+the separately installed agent directory.
 No private repository, buddy, fleet or credential file is installed or rewritten.
 The host resolves paths before calling package services or tasks.
 
-For existing installations, `ISSUE_PIPELINE_ROOT` remains the fallback for both
-roots; absent that variable, the install root defaults to
-`~/.pi/agent/issue-pipeline` and the data root defaults to the install root.
-These defaults exist only at host/CLI boundaries. Explicit settings should be
-used for new deployments. Existing data does not move automatically.
-
-See [operations](../../docs/reference/operations.md) for installation, migration,
-validation, rollback and retained compatibility names. See
+See [operations](../../docs/reference/operations.md) for installation,
+validation and rollback. See
 [native runtime provisioning](runtime/README.md) before model execution.
 
 ## Validate source
@@ -53,6 +48,3 @@ The full gate is required before landing this cutover. It includes all
 non-external host tests and distribution tests, with file concurrency 8 and
 per-test timeout 180000 ms. See [gate scope](../../docs/reference/check-gates.md)
 and [test kits](test/README.md).
-
-The earlier `apps/issue-pipeline` source install commands forward to the root
-installer for existing operator automation. They do not own a second distribution.
