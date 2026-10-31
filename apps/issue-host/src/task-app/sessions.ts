@@ -57,7 +57,6 @@ interface SessionSetting {
   checkout: JobDirs;
   binding: InvocationBinding;
   push: () => PushReply;
-  env?: Readonly<Record<string, string>>;
 }
 
 // Opens the sessions of `cfg`'s repository in `setting`.
@@ -78,10 +77,7 @@ async function openSessions(
     binding,
   );
   const startedAt = new Date().toISOString();
-  const shared = {
-    ...agentEnvOf(cfg.jobRoles, process.env),
-    ...setting.env,
-  };
+  const shared = agentEnvOf(cfg.jobRoles, process.env);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(setting.dir, "sessions", `${key}.jsonl`),

@@ -106,14 +106,12 @@ interface BuddyChoice {
 
 // The machine's trusted repository configuration, fixed before any action:
 // whether it grants Land (`permissions.land`), which the shared checking
-// policy digest covers, its optional lane slot pool (`laneSlots`) and the
-// pinned project policy's optional setup, teardown and test commands; the
+// policy digest covers, and the pinned project policy's optional setup, teardown and test commands; the
 // test command otherwise logs the commit it checked (checksRun).
 interface MachineSetup {
   landPermission: boolean;
   separateData?: boolean;
   throughLauncher?: boolean;
-  laneSlots?: number;
   // Operator CI policy; absence keeps the production default.
   requireCi?: boolean;
   setup?: string;
@@ -457,14 +455,6 @@ function writeLauncherBuddy(
   });
 }
 
-// The repository config's lane slot pool, when the machine has one.
-function laneSlotsOf(setup: MachineSetup): { laneSlots?: number } {
-  if (setup.laneSlots === undefined) {
-    return {};
-  }
-  return { laneSlots: setup.laneSlots };
-}
-
 // A machine whose buddies work on REPO in ORGANIZATION. Its own trusted
 // buddy file, buddy.json, is the Developer hippy's, responsible for
 // Implement. `edit` adjusts the initial world; `setup` fixes the trusted
@@ -508,7 +498,6 @@ function machine(
     allowedUsers: [HUMAN],
     permissions: { land: setup.landPermission },
     requireCi: setup.requireCi,
-    ...laneSlotsOf(setup),
     models: { gherkin: model, developer: model, reviewer: model },
     runtime: provisionRuntime(root, provider),
     projectPolicy,

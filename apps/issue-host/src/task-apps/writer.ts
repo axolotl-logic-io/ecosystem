@@ -60,9 +60,6 @@ function openWriter(taskRun: TaskRun, head: string, base: string): Writer {
     gitAccount: taskRun.gitAccount,
     devAccount: taskRun.account,
   };
-  if (cfg.laneSlots !== undefined) {
-    throw new OpsError("task app writing does not support laneSlots yet");
-  }
   taskRun.checkStop();
   const dirs = openJobCheckout(cfg, taskRun.issue.number, {
     stage: `${taskRun.task}-${taskRun.run}`,

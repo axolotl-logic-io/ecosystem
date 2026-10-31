@@ -7,8 +7,6 @@
 // config is read only for its `repo` and `baseBranch`; the buddy's own
 // account makes every write, so the repository's account pairing plays no
 // part.
-//
-// Files of any other version are refused.
 import fs from "node:fs";
 import path from "node:path";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
@@ -74,15 +72,10 @@ const REPOSITORY_CONFIG = z.looseObject({
   repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/u),
   baseBranch: z.string().min(1).default("main"),
 });
-// The account any buddy file in a folder names: a launcher buddy's
-// `account.login`, or an earlier buddy file's `identity.account.login`.
-const ACCOUNT = z.looseObject({ login: z.string() });
-const ANY_BUDDY = z.union([
-  z.looseObject({ account: ACCOUNT }).transform(({ account }) => account),
-  z
-    .looseObject({ identity: z.looseObject({ account: ACCOUNT }) })
-    .transform(({ identity }) => identity.account),
-]);
+// The account any buddy file in a folder names in its `account.login`.
+const ANY_BUDDY = z
+  .looseObject({ account: z.looseObject({ login: z.string() }) })
+  .transform(({ account }) => account);
 
 type LaunchedTask = z.infer<typeof TASK>;
 interface BuddyRepository {

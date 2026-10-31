@@ -154,7 +154,7 @@ function world(): World {
   };
 }
 
-test("standards apply reports a separate human start request without writing or printing the retired launcher", () => {
+test("standards apply reports a separate human start request without writing", () => {
   const sandbox = world();
   try {
     const result = sandbox.apply();
@@ -164,7 +164,6 @@ test("standards apply reports a separate human start request without writing or 
     assert.equal(handoff.branch, `agent/issue-${ISSUE}`);
     assert.ok(handoff.next.includes("start:implement"));
     assert.ok(handoff.next.includes("grants no execution permission"));
-    assert.equal(result.stdout.includes("caller-jobs"), false);
     assert.equal(git(sandbox.origin, ["rev-parse", "main"]), sandbox.head);
     const calls = sandbox.calls();
     assert.ok(calls.length > 0);

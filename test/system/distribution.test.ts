@@ -25,9 +25,6 @@ const DEPENDENCIES = path.resolve(SOURCE, "node_modules");
 const TEST_TIMEOUT_MS = 120_000;
 const RETAINED_BYTES = Buffer.from("00ff01", "hex");
 const SYMLINK_REFUSAL = /refusing symlink destination/u;
-const RETIRED_MANIFEST = /manifest field is retired/u;
-// The task manifest that releases before #280 installed.
-const RETIRED_TASKS = '{"version":1,"tasks":[]}\n';
 
 function command(
   cwd: string,
@@ -86,7 +83,6 @@ test("build writes every program and leaves other output files alone", () => {
     }
     assert.equal(fs.readFileSync(evidence, "utf8"), "preserved bytes\n");
     assert.ok(fs.existsSync(path.join(output, "standards-python-tools.txt")));
-    assert.equal(fs.existsSync(path.join(output, "tasks.json")), false);
   } finally {
     sandbox.cleanup();
   }
@@ -148,11 +144,6 @@ test("installer accepts uncommitted source and records its dirty identity", () =
         },
       }),
     );
-    assert.equal(fs.existsSync(path.join(root, "tasks.json")), false);
-    assert.equal(
-      installed.files.includes(path.join(root, "tasks.json")),
-      false,
-    );
     // The operator's service environment names the install root.
     const service = {
       ...process.env,
@@ -183,22 +174,6 @@ test("installer accepts uncommitted source and records its dirty identity", () =
     const checkedFleet = FLEET.parse(JSON.parse(orchestrator));
     assert.equal(checkedFleet.buddies.length, 1);
     assert.equal(checkedFleet.installRoot, root);
-    fs.writeFileSync(
-      fleet,
-      JSON.stringify({
-        version: 1,
-        buddies: [config],
-        manifest: path.join(root, "tasks.json"),
-        launcher: path.join(root, "launcher.mjs"),
-      }),
-    );
-    const stale = spawnSync(
-      process.execPath,
-      [path.join(root, "orchestrator.mjs"), "--config", fleet, "--check"],
-      { encoding: "utf8", timeout: TEST_TIMEOUT_MS, env: service },
-    );
-    assert.equal(stale.status, 1);
-    assert.match(stale.stderr, RETIRED_MANIFEST);
     assert.ok(launcher.includes(path.join(root, "gherkin.mjs")));
   } finally {
     sandbox.cleanup();
@@ -211,8 +186,8 @@ test("installer dry run plans the buddy distribution and preserves operator file
     const root = path.join(sandbox.root, "operator-root");
     const agent = path.join(sandbox.root, "agent");
     fs.mkdirSync(root);
-    const historical = path.join(root, "work.json");
-    fs.writeFileSync(historical, "do not change\n");
+    const operatorFile = path.join(root, "work.json");
+    fs.writeFileSync(operatorFile, "do not change\n");
     const result = spawnSync(process.execPath, ["install.ts", "--dry-run"], {
       cwd: sandbox.source,
       encoding: "utf8",
@@ -232,14 +207,14 @@ test("installer dry run plans the buddy distribution and preserves operator file
     }
     assert.ok(result.stdout.includes("standards-python-tools.txt"));
     assert.ok(result.stdout.includes("vendor/node_modules/typescript-"));
-    assert.equal(fs.readFileSync(historical, "utf8"), "do not change\n");
+    assert.equal(fs.readFileSync(operatorFile, "utf8"), "do not change\n");
     assert.equal(fs.existsSync(agent), false);
   } finally {
     sandbox.cleanup();
   }
 });
 
-test("replacement backs up every managed file and preserves private and historical bytes", () => {
+test("replacement backs up every managed file and preserves private and operator bytes", () => {
   const sandbox = fixture();
   try {
     const root = path.join(sandbox.root, "operator-root");
@@ -256,9 +231,7 @@ test("replacement backs up every managed file and preserves private and historic
     for (const [file, text] of previous) {
       fs.writeFileSync(file, text);
     }
-    const orphan = path.join(root, "tasks.json");
-    fs.writeFileSync(orphan, RETIRED_TASKS);
-    const retained = path.join(root, "runs/historical/retained.bin");
+    const retained = path.join(root, "runs/acme__widgets/retained.bin");
     const privateConfig = path.join(root, "repos/private.json");
     const privateAgent = path.join(templates, "operator.md");
     for (const file of [retained, privateConfig, privateAgent]) {
@@ -298,8 +271,6 @@ test("replacement backs up every managed file and preserves private and historic
       assert.deepEqual(fs.readFileSync(file), RETAINED_BYTES);
       assert.equal(installed.files.includes(file), false);
     }
-    assert.equal(fs.readFileSync(orphan, "utf8"), RETIRED_TASKS);
-    assert.equal(installed.files.includes(orphan), false);
     assert.equal(installed.dirty, false);
     assert.ok(
       fs
@@ -367,7 +338,6 @@ test("concurrent installs use private builds and leave source distribution outpu
             ]),
           },
         });
-        assert.equal(fs.existsSync(path.join(root, "tasks.json")), false);
         command(root, process.execPath, [
           "--check",
           path.join(root, "launcher.mjs"),

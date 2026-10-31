@@ -66,8 +66,6 @@ const CONFIG_SCHEMA = z.looseObject({
     prune: OPTIONAL_TEXT,
     test: z.string(),
   }),
-  // Old lane configurations need an operator cutover before task apps run.
-  laneSlots: z.never().optional(),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
   jobRoles: LEGACY_ACCESS.nullish(),

@@ -12,9 +12,6 @@ const CONFIG = z.strictObject({
   buddies: z.array(ABSOLUTE).min(1),
   launcher: ABSOLUTE,
 });
-// Fleet files written before #280 named a task manifest. Task programs now
-// come from the install root, so a leftover path is refused, never ignored.
-const RETIRED = z.looseObject({ manifest: z.unknown() });
 interface Fleet {
   installRoot: string;
   launcher: string;
@@ -37,13 +34,7 @@ function checkOrchestrator(file: string, installRoot: string): Fleet {
     throw new Error("--config must be an absolute path");
   }
   trusted(file);
-  const raw: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-  if (RETIRED.safeParse(raw).success) {
-    throw new Error(
-      `${file}: the manifest field is retired; remove it, launchers find task programs in the install root ${installRoot}`,
-    );
-  }
-  const config = CONFIG.parse(raw);
+  const config = CONFIG.parse(JSON.parse(fs.readFileSync(file, "utf8")));
   trusted(config.launcher);
   const files = new Set<string>();
   const names = new Set<string>();

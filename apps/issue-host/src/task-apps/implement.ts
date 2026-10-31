@@ -83,7 +83,6 @@ async function work(run: TaskRun): Promise<void> {
           base: cfg.baseBranch,
         },
         push,
-        env: checkout.env,
       });
     },
     retained: (error: unknown): void => {
