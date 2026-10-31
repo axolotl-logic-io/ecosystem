@@ -35,8 +35,8 @@ roots; absent that variable, the install root defaults to
 These defaults exist only at host/CLI boundaries. Explicit settings should be
 used for new deployments. Existing data does not move automatically.
 
-See [operations](../../docs/reference/operations.md) for installation, migration,
-validation, rollback and retained compatibility names. See
+See [operations](../../docs/reference/operations.md) for installation,
+validation and rollback. See
 [native runtime provisioning](runtime/README.md) before model execution.
 
 ## Validate source
