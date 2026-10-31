@@ -1,5 +1,5 @@
 // A task app's run, end to end: the sample task app on the task framework
-// runs as a buddy runs it, against fake GitHub, and writes its run record.
+// runs as a buddy launches it, against fake GitHub, and writes its run record.
 // The collector runs as its own process and imports it into a disposable
 // database, and the view and the task_runs tool read it back.
 import assert from "node:assert/strict";

@@ -149,7 +149,7 @@ A task app's model sessions write their JSONL files to `sessions/` in the same f
 
 `claim.start` is the `labeled` event of the start the run took, or null when the timeline doesn't show one, and `claim.removal` is its claim's `unlabeled` event. `step` is the lifecycle step the run is in. `reason` names the error of a failed run. The schema is exported as `TASK_RUN` from `src/task-app/run-record.ts`.
 
-The [workflow dashboard](../../apps/workflow-dash/README.md) shows each task run as an action. It shows a run recorded as running whose process is gone, or doesn't run on this host, as unavailable.
+The [workflow dashboard](../../apps/workflow-dash/README.md) shows each task run with its task, account, step and outcome. It shows a run recorded as running whose process is gone, or doesn't run on the collector's host, as unavailable.
 
 ### Implement
 
