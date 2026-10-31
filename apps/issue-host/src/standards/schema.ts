@@ -2,14 +2,12 @@
 // (docs/reference/standards-upgrade.md): what `standards-upgrade assess`
 // writes as assessment.json, and the marker a plan carries into its upgrade
 // issue. Every assessment is parsed with ASSESSMENT before it's written, so a
-// reader can trust its shape. Version 2 adds the sandbox and the commands run
-// in it; readers still accept version 1, which ran nothing.
+// reader can trust its shape.
 
 import { z } from "zod";
 
 // The maintained standard's version. A change to what any criterion checks
-// gives a new version, so a plan bound to the old one goes stale. v2 runs
-// install, tests and the advisory scan instead of leaving them unverified.
+// gives a new version, so a plan bound to the old one goes stale.
 const POLICY_VERSION = "standards-v2";
 
 const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
@@ -74,9 +72,10 @@ const SANDBOX = z.strictObject({
   npm: z.string().nullable(),
 });
 
-const ASSESSMENT_V1 = z.strictObject({
-  version: z.literal(1),
-  policy: z.literal("standards-v1"),
+// What `assess` writes.
+const ASSESSMENT = z.strictObject({
+  version: z.literal(2),
+  policy: z.literal(POLICY_VERSION),
   repo: REPO,
   requestedRef: z.string().nullable(),
   sourceRef: z.string().min(1),
@@ -106,20 +105,11 @@ const ASSESSMENT_V1 = z.strictObject({
   ),
   // What needs separate owner authority: settings, archival, access.
   ownerActions: z.array(z.string()),
-  // Repository commands this assessment ran: none in version 1.
-  commands: z.array(z.never()),
-});
-
-const ASSESSMENT_V2 = ASSESSMENT_V1.extend({
-  version: z.literal(2),
-  policy: z.literal(POLICY_VERSION),
   // null when the assessment ran statically (`--static`).
   sandbox: SANDBOX.nullable(),
+  // Repository commands this assessment ran in its sandbox.
   commands: z.array(COMMAND),
 });
-
-// What `assess` writes.
-const ASSESSMENT: typeof ASSESSMENT_V2 = ASSESSMENT_V2;
 
 // The tag that opens the marker a plan's upgrade issue carries:
 // `<!-- standards-upgrade:plan {PLAN_MARKER JSON} -->`.

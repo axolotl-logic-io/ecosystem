@@ -28,7 +28,7 @@ import type { TaskRun } from "./task-app.ts";
 
 const MINUTE_MS = 60_000;
 
-function hooksOf(cfg: Config, dir: string, repo: string): LaunchHooks {
+function hooksOf(cfg: Config, dir: string): LaunchHooks {
   const env = modelEnvironment(process.env, []);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
@@ -36,10 +36,8 @@ function hooksOf(cfg: Config, dir: string, repo: string): LaunchHooks {
     started: (): void => undefined,
     record: (): void => undefined,
     ended: (): void => undefined,
-    sessionEnded: (): void => undefined,
     env: (): Readonly<Record<string, string>> => env,
     cwd: dir,
-    repo,
   };
   if (cfg.runtime !== undefined) {
     hooks.runtime = cfg.runtime;
@@ -89,7 +87,7 @@ function gherkinSessionHost(
             phase: null,
             prompt,
           },
-          hooksOf(cfg, dir, repo),
+          hooksOf(cfg, dir),
         );
         const result = resultOf(raw, gherkinReply);
         if (!result.ok) {

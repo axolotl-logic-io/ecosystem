@@ -1,19 +1,19 @@
-// Explicit user actions, separate from monitoring reads. A retry requests
-// work only by applying start:<task> with the user's gh credentials. It
-// never launches a task or writes a monitoring or coordination record.
+// Explicit user actions, separate from monitoring reads. A retry is a new
+// task run, requested only by applying start:<task> with the user's gh
+// credentials. It never launches a task or writes a monitoring record.
 
 import type { MonitorEntity } from "@ecosystem/db/monitoring-protocol";
 import { z } from "zod";
 import { errorMessage } from "../errors.ts";
-import type { ReadCommand } from "../github.ts";
-import { exec } from "../process-observations.ts";
+import { exec, type ReadCommand } from "../process-observations.ts";
 import { parse } from "../source-records.ts";
+import { isTaskRun } from "./model.ts";
 import { safeBody } from "./records.ts";
 
 const taskSchema = z.enum(["gherkin", "implement", "verify", "fix", "land"]);
 const repoPattern = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/u;
 const targetSchema = z.object({
-  action: z.string().min(1),
+  taskRun: z.string().min(1),
   repo: z.string().regex(repoPattern),
   issue: z.number().int().positive(),
   task: taskSchema,
@@ -22,28 +22,27 @@ const issueSchema = z.object({
   state: z.enum(["open", "closed"]),
   labels: z.array(z.object({ name: z.string() })),
 });
-const retryStates = new Set([
-  "failed",
-  "blocked",
-  "interrupted",
-  "stopped",
-  "unknown",
-]);
+const retryStates = new Set(["failed", "stopped"]);
 const commandOptions = { timeout: 30_000, maxBuffer: 65_536 };
 type RetryTarget = z.infer<typeof targetSchema>;
 
-/** The failed task selected in monitoring, not a generic subagent or finished work. */
+/** The failed or stopped task run selected in monitoring, if any. */
 function retryTarget(
-  action: MonitorEntity | null | undefined,
+  taskRun: MonitorEntity | null | undefined,
 ): RetryTarget | null {
-  if (action?.kind !== "action" || !retryStates.has(action.state)) {
+  if (
+    taskRun === null ||
+    taskRun === undefined ||
+    !isTaskRun(taskRun) ||
+    !retryStates.has(taskRun.state)
+  ) {
     return null;
   }
   const parsed = targetSchema.safeParse({
-    action: action.id,
-    repo: action.repo,
-    issue: action.issue,
-    task: action.task,
+    taskRun: taskRun.id,
+    repo: taskRun.repo,
+    issue: taskRun.issue,
+    task: taskRun.task,
   });
   return parsed.data ?? null;
 }
@@ -58,19 +57,19 @@ class RetryRequests {
     this.command = command;
   }
   /**
-   * Apply a new start, once per selected attempt. A present start is left alone:
+   * Apply a new start, once per selected task run. A present start is left alone:
    * removing it could consume a newer request. Ambiguous writes are not retried.
    */
   async request(input: RetryTarget): Promise<string> {
     const target = targetSchema.parse(input);
-    const { action, repo, issue, task } = target;
+    const { taskRun, repo, issue, task } = target;
     if (!this.repositories.includes(repo)) {
       throw new Error("This repository is not configured in the dashboard.");
     }
-    if (this.busy.has(action) || this.requested.has(action)) {
-      return "Retry was already requested for this attempt.";
+    if (this.busy.has(taskRun) || this.requested.has(taskRun)) {
+      return "Retry was already requested for this task run.";
     }
-    this.busy.add(action);
+    this.busy.add(taskRun);
     try {
       const endpoint = `repos/${repo}/issues/${issue}`;
       const current = issueSchema.parse(
@@ -83,7 +82,7 @@ class RetryRequests {
       }
       const label = `start:${task}`;
       if (current.labels.some((item): boolean => item.name === label)) {
-        return `${label} is already present. I left it unchanged; the buddy may be waiting or reconciling the previous run. No new start was created.`;
+        return `${label} is already present, so no new start was created. A buddy claims it on its next poll unless agents:stop is on the issue.`;
       }
       try {
         await this.command(
@@ -102,13 +101,13 @@ class RetryRequests {
       } catch (error) {
         // Do not repeat a POST whose response was lost. The UI tells the user
         // to inspect GitHub rather than offering another automatic write.
-        this.requested.add(action);
+        this.requested.add(taskRun);
         return `The retry request could not be confirmed. Check ${label} on GitHub before trying again. ${safeBody(errorMessage(error))}`;
       }
-      this.requested.add(action);
-      return `Requested ${task} for ${repo} #${issue} with ${label}. The buddy will continue the existing work after its normal checks.`;
+      this.requested.add(taskRun);
+      return `Requested ${task} for ${repo} #${issue} with ${label}. The new task run continues from what earlier runs left on GitHub.`;
     } finally {
-      this.busy.delete(action);
+      this.busy.delete(taskRun);
     }
   }
 }

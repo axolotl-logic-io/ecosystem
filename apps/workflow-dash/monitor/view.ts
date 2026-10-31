@@ -2,14 +2,15 @@ import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey } from "@earendil-works/pi-tui";
 import type { MonitorEntity } from "@ecosystem/db/monitoring-protocol";
 import { errorMessage } from "../errors.ts";
-import type { ViewHost } from "../selection.ts";
 import { type Badge, chip, pill } from "../ui-format.ts";
 import {
-  actionUsage,
   compactNumber,
   elapsed,
+  isTaskRun,
   newest,
   notices,
+  sections,
+  taskRunUsage,
   totalUsage,
   type WorkRow,
   workRows,
@@ -41,7 +42,6 @@ const viewSize = {
   minimumHeight: 6,
 };
 const filters = ["All", "Messages", "Reasoning", "Tools"];
-const sections = ["ACTIVE", "NEEDS YOU", "PENDING", "SUBAGENTS", "FINISHED"];
 const eventInks: Record<string, ThemeColor> = {
   message: "borderAccent",
   reasoning: "syntaxFunction",
@@ -79,13 +79,12 @@ const keySets: Record<"home" | "work" | "trace" | "notices", Badge[]> = {
     { icon: "n/Esc", text: "back" },
   ],
 };
-/** Where an action or session's elapsed time stops: now while it runs. */
+/** Where a task run or session's elapsed time stops: now while it runs. */
 function endOf(entity: MonitorEntity | null): number {
   if (
     entity?.endedAt === null ||
     entity?.endedAt === undefined ||
-    entity.state === "running" ||
-    entity.state === "waiting"
+    entity.state === "running"
   ) {
     return Date.now();
   }
@@ -115,19 +114,30 @@ function summary(text: string): string {
   }
   return `${first.slice(0, viewSize.preview - 1)}…`;
 }
-/** "implement › review", or the task and its state without repeating the task. */
+/**
+ * "implement › work" while a task run runs or its process is unavailable,
+ * then the task and its outcome, such as "implement failed".
+ */
 function stepLabel(row: WorkRow): string {
-  const task = row.action?.task;
+  const task = row.taskRun?.task;
   if (task === undefined || task === null) {
     return row.state;
   }
-  if (row.action?.phase !== null && row.action?.phase !== undefined) {
-    return `${task} › ${row.action.phase}`;
+  const step = row.taskRun?.phase ?? null;
+  if (
+    step === null ||
+    !(row.state === "running" || row.state === "unavailable")
+  ) {
+    return `${task} ${row.state}`;
   }
-  if (row.state.startsWith(task)) {
-    return row.state;
+  if (row.state === "running") {
+    return `${task} › ${step}`;
   }
-  return `${task} ${row.state}`;
+  return `${task} › ${step} · ${row.state}`;
+}
+interface ViewHost {
+  terminal: { rows: number };
+  requestRender: () => void;
 }
 class MonitorView implements Component {
   private readonly options: MonitorViewOptions;
@@ -170,11 +180,11 @@ class MonitorView implements Component {
     if (snapshot === null || this.work === null) {
       return [];
     }
-    const actions = new Set(
+    const taskRuns = new Set(
       snapshot.entities
         .filter(
           (item): boolean =>
-            item.kind === "action" &&
+            isTaskRun(item) &&
             item.repo === this.work?.item.repo &&
             item.issue === this.work?.item.issue,
         )
@@ -185,7 +195,7 @@ class MonitorView implements Component {
         (item): boolean =>
           item.kind === "session" &&
           item.parent !== null &&
-          actions.has(item.parent),
+          taskRuns.has(item.parent),
       ),
     );
   }
@@ -234,15 +244,15 @@ class MonitorView implements Component {
     if (snapshot === null || this.panel !== "work") {
       return null;
     }
-    let action = this.rows.at(this.selected)?.action;
+    let taskRun = this.rows.at(this.selected)?.taskRun;
     if (this.trace !== null || this.work !== null) {
       const session = this.trace ?? this.sessions.at(this.selected);
-      action = snapshot.entities.find(
+      taskRun = snapshot.entities.find(
         (entry): boolean => entry.id === session?.parent,
       );
-      action ??= this.work?.action;
+      taskRun ??= this.work?.taskRun;
     }
-    return retryTarget(action);
+    return retryTarget(taskRun);
   }
   private async requestRetry(target: RetryTarget): Promise<void> {
     this.retryPending = null;
@@ -281,7 +291,7 @@ class MonitorView implements Component {
       const target = this.selectedRetry();
       if (target === null || this.options.retry === undefined) {
         this.retryMessage =
-          "Select a failed task to retry. Running tasks, completed tasks and generic subagents cannot be retried here.";
+          "Select a failed or stopped task run to retry. Running and succeeded task runs and generic subagents can't be retried here.";
       } else {
         this.retryPending = target;
         this.retryMessage = null;
@@ -396,7 +406,7 @@ class MonitorView implements Component {
   private heading(rows: WorkRow[]): string[] {
     const { theme, runtime } = this.options;
     const { snapshot, error } = runtime;
-    let scope = "Ecosystem + Project Buddy";
+    let scope = "All repositories";
     if (this.repo !== null) {
       scope = this.repo;
     }
@@ -469,32 +479,27 @@ class MonitorView implements Component {
       (usage): boolean => usage.session === row.session?.id,
     );
     let tokenTotal: number | null = null;
-    if (row.action !== null && snapshot !== null) {
-      tokenTotal = totalUsage(actionUsage(snapshot, row.action));
+    if (row.taskRun !== null && snapshot !== null) {
+      tokenTotal = totalUsage(taskRunUsage(snapshot, row.taskRun));
     } else if (sessionUsage !== undefined) {
       tokenTotal = totalUsage([sessionUsage]);
     }
-    let end = endOf(row.action);
+    let end = endOf(row.taskRun);
     if (row.item.kind === "session") {
       end = endOf(row.item);
     }
-    if (row.action === null && row.session === null) {
-      lines.push(
-        line(
-          span("    "),
-          span(summary(row.reason ?? row.state), stateInk(row.state)),
-        ),
-      );
+    if (row.taskRun === null && row.session === null) {
+      lines.push(line(span("    "), span(row.state, stateInk(row.state))));
     } else {
       lines.push(
         line(
           span("    "),
-          span(row.action?.actor ?? row.session?.actor ?? "", "text"),
+          span(row.taskRun?.actor ?? row.session?.actor ?? "", "text"),
           span(" · ", "dim"),
           span(stepLabel(row), stateInk(row.state), true),
           span("  ", "dim"),
           span(
-            elapsed(row.action?.startedAt ?? row.session?.startedAt, end),
+            elapsed(row.taskRun?.startedAt ?? row.session?.startedAt, end),
             "text",
           ),
           span("  ctx ", "muted"),
@@ -514,15 +519,12 @@ class MonitorView implements Component {
         ),
       );
     }
-    if (
-      row.reason !== null &&
-      (row.section === "NEEDS YOU" || row.action?.state === "waiting")
-    ) {
-      let ink: ThemeColor = "warning";
-      if (row.section === "NEEDS YOU") {
-        ink = "error";
-      }
-      lines.push(line(span(`    ${summary(row.reason)}`, ink)));
+    if (row.reason !== null && row.section === "NEEDS YOU") {
+      lines.push(line(span(`    ${summary(row.reason)}`, "error")));
+    }
+    // The collector records an issue's workflow labels as its reason.
+    if (row.item.kind === "work" && row.item.reason !== null) {
+      lines.push(line(span(`    ${summary(row.item.reason)}`, "muted")));
     }
     return lines.map((entry): Line => ({ ...entry, selected }));
   }
@@ -599,12 +601,12 @@ class MonitorView implements Component {
         span(` ${item.title}`, "text", true),
       ),
       line(),
-      line(span("TASK ATTEMPTS", "borderAccent", true)),
+      line(span("TASK RUNS", "borderAccent", true)),
     ];
-    for (const action of newest(
+    for (const taskRun of newest(
       snapshot.entities.filter(
         (entry): boolean =>
-          entry.kind === "action" &&
+          isTaskRun(entry) &&
           entry.repo === item.repo &&
           entry.issue === item.issue,
       ),
@@ -612,21 +614,25 @@ class MonitorView implements Component {
       lines.push(
         line(
           span("  "),
-          span(action.task ?? "task", "syntaxFunction", true),
+          span(taskRun.task ?? "task", "syntaxFunction", true),
+          span(` › ${taskRun.phase ?? "—"}`, "text"),
           span(" · ", "dim"),
-          span(action.state, stateInk(action.state), true),
+          span(taskRun.state, stateInk(taskRun.state), true),
+          span(` · ${taskRun.actor ?? "account unavailable"}`, "muted"),
           span(" · ", "dim"),
-          span(elapsed(action.startedAt, endOf(action)), "text"),
+          span(elapsed(taskRun.startedAt, endOf(taskRun)), "text"),
           span(" · ", "dim"),
           span(
-            compactNumber(totalUsage(actionUsage(snapshot, action))),
+            compactNumber(totalUsage(taskRunUsage(snapshot, taskRun))),
             "syntaxNumber",
           ),
           span(" tokens", "muted"),
         ),
       );
-      if (action.reason !== null) {
-        lines.push(line(span(`    ${action.reason}`, stateInk(action.state))));
+      if (taskRun.reason !== null) {
+        lines.push(
+          line(span(`    ${taskRun.reason}`, stateInk(taskRun.state))),
+        );
       }
     }
     lines.push(
@@ -648,7 +654,7 @@ class MonitorView implements Component {
         spans: [
           span(marker, "accent", true),
           span(session.task ?? "", "syntaxFunction", true),
-          span(` › ${session.phase ?? session.title}`, "text"),
+          span(` › ${session.title}`, "text"),
           span(" · ", "dim"),
           span(session.state, stateInk(session.state), true),
           span(` · ${session.model ?? "model unavailable"}`, "muted"),
@@ -842,11 +848,11 @@ class MonitorView implements Component {
     }
     if (this.retryPending !== null) {
       const target = this.retryPending;
-      title = "Retry task";
+      title = "Retry task run";
       body = [
         line(
           span(
-            `Continue ${target.task} for ${target.repo} #${target.issue}?`,
+            `Start ${target.task} again for ${target.repo} #${target.issue}?`,
             "accent",
             true,
           ),
@@ -854,12 +860,12 @@ class MonitorView implements Component {
         line(),
         line(
           span(
-            `Apply start:${target.task} using your GitHub account. The replacement continues the existing work; it does not reset the branch.`,
+            `Apply start:${target.task} using your GitHub account. The new task run continues from what earlier runs left on GitHub.`,
           ),
         ),
         line(
           span(
-            "The buddy still checks prerequisites and reconciles any uncertain earlier effects.",
+            "The task reads its prerequisites from GitHub when it runs.",
             "muted",
           ),
         ),

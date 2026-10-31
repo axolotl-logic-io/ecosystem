@@ -4,7 +4,7 @@ Each buddy has its own GitHub account and a private credential file entry. Its t
 
 A `start:TASK` label is the only start authorization. The framework claims it by removing it and confirming its own account on the issue timeline. Running labels indicate activity; they grant no work ownership and do not exclude overlapping runs. `agents:stop` is checked directly, with no saved latch.
 
-Tasks recover from pushed commits, PRs, comments and reviews on GitHub. They write no saved state, task attempts, authority receipts, epoch refs or coordination journal. Local run records are observations only.
+Tasks recover from pushed commits, PRs, comments and reviews on GitHub. They keep no state of their own. Local run records are observations only.
 
 ## Trusted inputs and sessions
 

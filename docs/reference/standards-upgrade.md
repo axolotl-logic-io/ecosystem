@@ -215,7 +215,7 @@ To deliver an assessment's plan, follow these steps:
    `ISSUE` is the number of the issue you filed.
 4. Apply `start:implement` to the issue.
 
-`apply` prints one JSON line with `issue`, the canonical issue `branch`, the plan marker fields, `task: "implement"` and `next`, which states that a person must apply the label. It prints no retired launcher or stage. Its branch is `agent/issue-ISSUE`.
+`apply` prints one JSON line with `issue`, the canonical issue `branch`, the plan marker fields, `task: "implement"` and `next`, which states that a person must apply the label. Its branch is `agent/issue-ISSUE`.
 
 The operator applies `start:implement` to start Implement. Each later task also needs its own start label. Implement hardens the change, Verify reviews the current head and Land reads its prerequisites from GitHub. See [runtime runs](runtime-runs.md) and [Land](merge.md).
 
@@ -226,7 +226,7 @@ The operator applies `start:implement` to start Implement. Each later task also 
 - its author isn't an allow-listed collaborator, or is a pipeline machine account;
 - collaborator evidence is unreadable;
 - it doesn't carry exactly one plan marker, or the marker doesn't parse;
-- the marker names another repository, or a policy other than `standards-v2`, so a `standards-v1` plan needs a new assessment;
+- the marker names another repository, or a policy other than `standards-v2`;
 - the config's base branch has moved past the plan's source commit;
 - another open issue already carries a plan;
 - the open issues can't be listed completely.
@@ -237,7 +237,7 @@ The operator applies `start:implement` to start Implement. Each later task also 
 
 The assessment holds only the read side of the configured credentials, through the pipeline's own `gh` and `git` wrappers. It writes nothing to GitHub or the origin. Repository text, such as a README or a workflow, is data: it can't widen the target or the permissions.
 
-Repository code may run only inside the assessment sandbox, without operator credentials or access to the operator's home. This is a separate isolation boundary from the read-only `apply` checks. The new `apply` subprocess tests prove the human handoff, stale-head refusal and unreadable-collaborator hold; they do not constitute a fresh assessment-sandbox isolation proof. Historical tests that were removed are not current acceptance evidence.
+Repository code may run only inside the assessment sandbox, without operator credentials or access to the operator's home. This is a separate isolation boundary from the read-only `apply` checks. The `apply` subprocess tests prove the human handoff, stale-head refusal and unreadable-collaborator hold; they do not constitute a fresh assessment-sandbox isolation proof.
 
 Filing the upgrade issue needs a person. Only allow-listed input is trusted, and neither pipeline account is on the allow list, so an issue filed by the development account couldn't drive Implementation. An allow-listed collaborator files `plan.md` instead.
 

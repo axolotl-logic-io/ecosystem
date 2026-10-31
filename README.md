@@ -35,8 +35,8 @@ npm run check:full
 The fast gate checks distribution types, lint, build and program syntax, then
 every workspace's gate. Workspace component tests include tasks, shared runtime,
 launcher, orchestrator and dashboard behavior. The full gate additionally runs
-all non-external host and distribution tests. It is required before landing the
-modular distribution cutover. See [gate scope](docs/reference/check-gates.md).
+all non-external host and distribution tests. It is required before landing any
+change to task execution or distribution. See [gate scope](docs/reference/check-gates.md).
 
 The separate `npm run test:database` needs disposable PostgreSQL and
 `TEST_DATABASE_URL`; see [database tests](docs/reference/database.md#test-the-database-contract).

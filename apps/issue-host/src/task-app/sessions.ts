@@ -86,7 +86,6 @@ async function openSessions(
     },
     record: (): void => undefined,
     ended: (): void => undefined,
-    sessionEnded: (): void => undefined,
     env: (launch: {
       key: string;
       commits: boolean;
@@ -109,7 +108,6 @@ async function openSessions(
       };
     },
     cwd: checkout.root,
-    repo: checkout.repo,
   };
   if (cfg.runtime !== undefined) {
     hooks.runtime = cfg.runtime;

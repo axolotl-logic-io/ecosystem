@@ -59,14 +59,6 @@ and accepts only the tasks compiled into it. The task program reads its
 validated invocation from standard input and the buddy's credentials from a
 separate pipe. It accepts no other arguments.
 
-Persisted names stay unchanged: `.issue-pipeline.json`, its trusted commit pins,
-operator credential keys, task comment markers, agent names and
-`agents/issue-pipeline/`, and historical run formats. Renaming these is not part
-of the distribution cutover. The dashboard still reads historical buddy/action
-observations and current `task-run` records; its monitoring tables are unchanged.
-`ops.mjs`, `database.mjs` and `recover-implement.mjs` remain retired. Never invoke
-them; retire stale installed copies manually after draining.
-
 ## Drain an installed release
 
 1. Record the running release's `INSTALLED.json`, source commit and configuration paths.
@@ -150,17 +142,5 @@ absent, report installation separately and hand activation to the operator.
 6. Validate the restored buddy or fleet configuration with the restored release's launcher and orchestrator, then restart the previous release.
 
 A source rollback does not undo GitHub comments, branches, reviews or merges.
-Tasks recover from those artifacts. No runtime-data or monitoring-table migration
-is required by this cutover. If rollback changes the data location, restore the
-previous dashboard configuration as well.
-
-## Implementation history
-
-The modular cutover landed through [framework #273](https://github.com/axolotl-logic-io/ecosystem/pull/273),
-[Gherkin #274](https://github.com/axolotl-logic-io/ecosystem/pull/274),
-[shared runtime #275](https://github.com/axolotl-logic-io/ecosystem/pull/275),
-[task workspaces #276](https://github.com/axolotl-logic-io/ecosystem/pull/276),
-[launcher #277](https://github.com/axolotl-logic-io/ecosystem/pull/277),
-[orchestrator #278](https://github.com/axolotl-logic-io/ecosystem/pull/278) and
-[distribution #279](https://github.com/axolotl-logic-io/ecosystem/pull/279).
-Each source merge is separate from installation and activation.
+Tasks recover from those artifacts. If rollback changes the data location,
+restore the previous dashboard configuration as well.

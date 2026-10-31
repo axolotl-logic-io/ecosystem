@@ -78,6 +78,6 @@ Read the task run's end comment, session transcript, PR and retained checkout. P
 
 Model children receive no GitHub, database or Git credential variables, no buddy credential variable and no inherited commit scope. Commit permissions come from each session's explicit scoped commit interface; read-only sessions cannot commit.
 
-Historical session observations retain the wire field `role` for existing readers. Historical pipeline comment markers also retain `role=` parsing. GitHub membership, PostgreSQL and provider message fields named `role` remain external protocol fields. Historical documents and records preserve the vocabulary of the release they describe.
+GitHub membership, PostgreSQL and provider message fields named `role` remain external protocol fields. Historical documents and records preserve the vocabulary of the release they describe.
 
 Source delivery requires a later operator-controlled release installation and buddy restart to change running behavior. Keep existing installed interfaces and private operator settings; no install, restart or live migration is part of this change.

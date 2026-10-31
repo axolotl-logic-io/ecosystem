@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1793048122893,
-      "tag": "0000_stormy_stardust",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1793048123186,
-      "tag": "0001_coordination-integrity",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
       "when": 1793209660745,
-      "tag": "0002_workable_starbolt",
+      "tag": "0000_workable_starbolt",
       "breakpoints": true
     }
   ]

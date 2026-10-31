@@ -4,7 +4,7 @@ These docs describe the repository's practices and modular task execution. They 
 
 The repository root owns build and installation. The issue host provisions GitHub adapters; the launcher runs one buddy and the orchestrator supervises launchers. Tasks receive explicit validated inputs and task-specific capabilities.
 
-Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The reference pages describe that source. Installed releases retain their recorded behavior until the operator installs the source change.
+Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land.
 
 ## Practices
 
@@ -14,15 +14,13 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 ## Domain language
 
-[Shared glossary](../GLOSSARY.md): one canonical term for each concept shared by ecosystem, dash, status-report and the test-suite assessment app.
-
-[Domain alignment inventory](domain-alignment.md): the source cutover, historical differences and remaining acceptance gaps.
+[Shared glossary](../GLOSSARY.md): one canonical term for each concept shared by ecosystem and its workflow dashboard.
 
 [Domain runtime contract](domain-runtime-contract.md): the source contract for label-started task apps: claims, running labels, stops, recovery from GitHub and results.
 
 [Issue host](../apps/issue-host/README.md): trusted settings, credentials, lifecycle and explicit runtime paths.
 
-[Launcher](../apps/launcher/README.md): one buddy, installed task programs, explicit subprocess invocations and migration.
+[Launcher](../apps/launcher/README.md): one buddy, installed task programs and explicit subprocess invocations.
 
 [Orchestrator](../apps/orchestrator/README.md): fleet validation, launcher supervision and drain shutdown.
 
@@ -36,18 +34,13 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Sessions](reference/sessions.md): model sessions, access profiles, prompt pages and the `pipeline_commit` tool.
 
-[Execution fencing audit](reference/execution-fencing-audit.md): the #132 audit of every credentialed and cleanup write, a dated snapshot at `ea483b5` that predates the buddy runtime.
-
 [Runtime runs](reference/runtime-runs.md): launcher configuration, CLI, label claims and task-run observations.
-
 
 [Shared database](reference/database.md): PostgreSQL monitoring tables, shared Drizzle migrations and isolated tests.
 
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
 [Land](reference/merge.md): Land's prerequisites, its merge of the PR pinned to the checked head, closing the issue, conflicts and recovery from GitHub.
-
-
 
 [Project settings](reference/project-settings.md): tracked project policy, operator-owned controls and trusted committed revisions.
 
@@ -61,7 +54,7 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Checkouts](reference/checkouts.md): where clones, checkouts and run files live, and what an action preserves when it ends.
 
-[Stops and labels](reference/stops-and-labels.md): start, running and stop labels and operator cutover.
+[Stops and labels](reference/stops-and-labels.md): start, running and stop labels.
 
 ## Task workspaces
 

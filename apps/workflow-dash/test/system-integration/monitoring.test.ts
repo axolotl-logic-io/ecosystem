@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import {
   appendFile,
   chmod,
@@ -10,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import { type DatabaseConnection, openDatabase } from "@ecosystem/db";
 import { readSnapshot, transcript } from "@ecosystem/db/monitoring";
@@ -23,17 +22,8 @@ import {
 } from "../../monitor/collector.ts";
 import { monitoringConnection } from "../../monitor/connection.ts";
 import { MonitorRuntime } from "../../monitor/runtime.ts";
-import {
-  actionRun,
-  actionRunPath,
-  buddyRun,
-  buddyRunPath,
-  repo,
-  writeObservation,
-  writeText,
-} from "../runtime-run-fixtures.ts";
+import { repo, writeRecord, writeText } from "../support/task-run-fixtures.ts";
 
-const issueNumber = 541;
 const permissions = { public: 0o644 };
 const at: TestDatabase = await createTestDatabase();
 const root: string = await mkdtemp(join(tmpdir(), "workflow-monitor-test-"));
@@ -99,47 +89,10 @@ test("transcript symlinks and escaped source roots are refused", async (): Promi
   assert.equal((await transcript(at.db, "linked")).rows.length, 0);
 });
 
-test("the collector imports explicit pipeline session parents and generic step identities", async (): Promise<void> => {
-  const runs = join(root, "runs");
+test("the collector imports generic subagent runs as standalone sessions", async (): Promise<void> => {
   const generic = join(root, "generic");
-  const buddy = crypto.randomUUID();
-  const action = crypto.randomUUID();
-  const session = crypto.randomUUID();
-  const path = actionRunPath(runs, issueNumber, action);
-  const startedAt = new Date().toISOString();
-  const observation = actionRun(action, buddy, issueNumber, {
-    state: "ended",
-    outcome: "succeeded",
-    verdict: "passed",
-    ownership: { state: "released", reason: null },
-    sessions: [
-      {
-        id: session,
-        parent: action,
-        key: "developer",
-        agent: "developer",
-        model: "test/model",
-        phase: null,
-        commits: false,
-        pid: null,
-        reservation: null,
-        startedAt,
-        endedAt: startedAt,
-        outcome: "ok",
-      },
-    ],
-  });
-  await writeObservation(
-    buddyRunPath(runs, buddy),
-    buddyRun(buddy, { state: "stopped" }),
-  );
-  await writeObservation(path, observation);
-  await writeText(
-    join(dirname(path), "sessions/developer.jsonl"),
-    `${message("Pipeline reply")}\n`,
-  );
   const genericId = "generic-run";
-  await writeObservation(join(generic, genericId, "status.json"), {
+  await writeRecord(join(generic, genericId, "status.json"), {
     id: genericId,
     state: "complete",
     startedAt: Date.now(),
@@ -155,14 +108,9 @@ test("the collector imports explicit pipeline session parents and generic step i
     join(generic, genericId, "events.jsonl"),
     `${JSON.stringify(event)}\n`,
   );
-  const config = configure({ repos: [repo], runs, subagentRuns: generic });
-  await collectMonitoring(at.db, config, false);
-  await collectMonitoring(at.db, config, false);
+  const config = configure({ repos: [repo], subagentRuns: generic });
+  await collectMonitoring(at.db, config, join(root, "runs"), false);
   const snapshot = await readSnapshot(at.db, [repo]);
-  assert.equal(
-    snapshot.entities.find((row): boolean => row.id === session)?.parent,
-    action,
-  );
   assert.equal(
     snapshot.entities.find(
       (row): boolean => row.id === `subagent:${genericId}:0`,
@@ -170,19 +118,14 @@ test("the collector imports explicit pipeline session parents and generic step i
     null,
   );
   assert.equal(
-    snapshot.usage.find((row): boolean => row.session === session)?.input,
-    usage.input,
-  );
-  assert.equal(
     (await transcript(at.db, `subagent:${genericId}:0`)).rows.at(0)?.event.body,
     "Generic reply",
   );
 });
 
-test("GitHub synchronization failures retain work and remain visible between syncs", async (): Promise<void> => {
+test("GitHub synchronization keeps an issue's workflow labels, and a failure retains work and stays visible", async (): Promise<void> => {
   const config = configure({
     repos: [repo],
-    runs: join(root, "runs"),
     subagentRuns: join(root, "generic"),
   });
   const warnings: string[] = [];
@@ -201,7 +144,12 @@ test("GitHub synchronization failures retain work and remain visible between syn
           state: "OPEN",
           updatedAt: new Date().toISOString(),
           closedAt: null,
-          labels: [{ name: "start:gherkin" }],
+          labels: [
+            { name: "start:gherkin" },
+            { name: "agent:implement:running" },
+            { name: "agents:stop" },
+            { name: "bug" },
+          ],
         },
       ]);
     },
@@ -212,11 +160,15 @@ test("GitHub synchronization failures retain work and remain visible between syn
     warnings,
     (): Promise<unknown> => Promise.reject(new Error("A failed read")),
   );
-  await collectMonitoring(at.db, config, false);
+  await collectMonitoring(at.db, config, join(root, "runs"), false);
   const snapshot = await readSnapshot(at.db, [repo]);
+  const issue = snapshot.entities.find(
+    (row): boolean => row.id === `${repo}#42`,
+  );
+  assert.equal(issue?.state, "open");
   assert.equal(
-    snapshot.entities.find((row): boolean => row.id === `${repo}#42`)?.state,
-    "open",
+    issue?.reason,
+    "start:gherkin · agent:implement:running · agents:stop",
   );
   assert.equal(
     snapshot.entities.find((row): boolean => row.id === `github:${repo}:open`)

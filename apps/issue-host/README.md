@@ -44,7 +44,7 @@ npm run check
 npm run check:full
 ```
 
-The full gate is required before landing this cutover. It includes all
+The full gate is required before landing any change to the issue host. It includes all
 non-external host tests and distribution tests, with file concurrency 8 and
 per-test timeout 180000 ms. See [gate scope](../../docs/reference/check-gates.md)
 and [test kits](test/README.md).

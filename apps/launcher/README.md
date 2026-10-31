@@ -68,17 +68,10 @@ kill them. Apply `agents:stop` to cancel their work at guarded boundaries while
 preserving cleanup and final reports. The launcher exits after its children and
 prints its final JSON line. It writes child exits and discovery warnings to stderr.
 
-## Install a release
+## Install
 
-1. Drain the running buddies and preserve retained checkouts and run folders.
-2. Install the merged release using the [installation procedure](../../docs/reference/operations.md#install-a-release).
-3. Confirm `launcher.mjs` and every task program are installed together.
-4. Validate each buddy file with `launcher.mjs --config BUDDY_FILE --check`.
-5. Restart one launcher per buddy.
-
-The installer backs up replaced files and records `INSTALLED.json`. It does not
-rewrite private configuration or retained work. Launchers and task programs come
-from the same release. A source merge alone activates nothing.
+A source merge activates nothing. To install and restart launchers, follow the
+[installation procedure](../../docs/reference/operations.md#install-a-release).
 
 ## Validate source
 
