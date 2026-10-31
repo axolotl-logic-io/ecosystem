@@ -1,15 +1,6 @@
 # Domain runtime implementation contract
 
-This page is the source contract for label-started task apps. Each task is a command-line program built on one shared task framework, only its start label starts it, and GitHub is the only record of earlier work. It describes the intended source, not installed behavior.
-
-The code issues that build this model are:
-
-- #246, the task framework and its start-label claims;
-- #248, the buddy as a launcher of task apps;
-- #249 to #253, which rebuild Gherkin, Implement, Verify, Fix and Land as task apps;
-- #254, which removes the signal, record and coordination code they replace.
-
-Until each lands, the reference pages under `docs/reference/` describe the code as it is. The [domain alignment inventory](domain-alignment.md#label-started-task-apps) maps the old names and records onto this model.
+This page is the source contract for label-started task apps. Each task is a command-line program built on one shared task framework, only its start label starts it, and GitHub is the only record of earlier work.
 
 ## Domain boundaries
 
@@ -155,18 +146,3 @@ The framework writes one run record for each run that wins its claim, so that th
 
 Safe Refactor keeps its standalone entrypoint, `safe-refactor.mjs`. It has no start label and no task app, and its reports grant no workflow result.
 
-## Removed components
-
-These components of the earlier contract have no place in this model. #254 removes their code once every task has moved.
-
-### Signals
-
-The signal inbox, qualification of a label's producer, accepted-signal records, spent starts and durable stop latches are gone. A start label on the issue is the whole start signal, and a [claim](#claim) replaces acceptance and spending. `agents:stop` holds only while it's on the issue, as described under [Stop](#stop).
-
-### Task records
-
-Task attempts, results, receipts, bindings and readiness rules are gone. Results are the GitHub artifacts described under [Results and bindings](#results-and-bindings). Read-only recovery handlers are replaced by every run's [recovery from GitHub](#recovery-from-github).
-
-### Reservations
-
-Runtime admission, activation and the model-session, test-slot and target-write reservations are gone from the delivery workflow, along with journals, epoch refs, saved state, write authority, lane slots and locks. The launcher runs every start it sees, and GitHub's `--match-head-commit` check guards Land's merge.

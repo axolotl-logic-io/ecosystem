@@ -12,6 +12,8 @@
   [`docs/README.md`](docs/README.md).
 
 Use Node 24 and `npm ci --ignore-scripts --no-audit --no-fund`. Run `npm run check`
-for the fast default gate. `npm run check:full` includes all non-external host
-and distribution tests and is required before landing the modular cutover.
+for the fast default gate. `npm run check:full` adds all non-external host
+and distribution tests. Run it before landing any change to task execution or
+distribution: the issue host, tasks, shared packages, launcher, orchestrator,
+root build or installer.
 mise is optional and calls the same scripts.
