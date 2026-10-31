@@ -12,7 +12,7 @@ The [launcher](apps/launcher/README.md) runs one configured buddy. The optional
 [issue host](apps/issue-host/README.md) provisions task capabilities and preserves
 per-task subprocesses, GitHub claims, stop guards, credential-free model sessions,
 pinned-head checks and recoverable work. The repository root owns the build,
-installation manifest and distribution. Merging source activates nothing.
+installation record and distribution. Merging source activates nothing.
 
 The [reference index](docs/README.md) documents the architecture and tasks.
 [Operations](docs/reference/operations.md) covers host-owned paths, compatibility,
@@ -53,10 +53,10 @@ npm run install:runtime
 ```
 
 `programs.ts` lists programs and assets from their owning workspaces. `build.ts`
-bundles them into root `dist/`, including task registrations, prompts, agent
+bundles them into root `dist/`, including one program per task, prompts, agent
 templates, standalone-tool assets and the vendored TypeScript compiler. The
-installer replaces only manifest-owned files, backs up replaced bytes and records
-installed identity and ownership. Drain the old release before installing.
+installer replaces only installer-owned files, backs up replaced bytes and records
+installed identity and ownership in `INSTALLED.json`. Drain the old release before installing.
 
 mise is optional and pins Node 24. Existing
 `mise //apps/issue-pipeline:install` commands remain forwarding compatibility

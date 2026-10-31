@@ -22,7 +22,7 @@ Issue delivery has five tasks: Gherkin, Implement, Verify, Fix and Land. The ref
 
 [Issue host](../apps/issue-host/README.md): trusted settings, credentials, lifecycle and explicit runtime paths.
 
-[Launcher](../apps/launcher/README.md): one buddy, installed task registrations, explicit subprocess invocations and migration.
+[Launcher](../apps/launcher/README.md): one buddy, installed task programs, explicit subprocess invocations and migration.
 
 [Orchestrator](../apps/orchestrator/README.md): fleet validation, launcher supervision and drain shutdown.
 

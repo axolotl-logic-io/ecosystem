@@ -43,14 +43,14 @@ node "$ISSUE_PIPELINE_ROOT/launcher.mjs" --config BUDDY_FILE --check
 
 It prints one JSON object with the buddy's name, account, tasks, repositories and the program of each task's app. It refuses the file, and exits 1, for every reason the buddy would refuse to start except an unverified credential.
 
-`buddy.mjs` remains a compatibility entrypoint with the same arguments. `--manifest MANIFEST_FILE` overrides the installed `tasks.json`.
+`buddy.mjs` remains a compatibility entrypoint with the same arguments. The launcher finds each task's program as `TASK.mjs` in the install root, `$ECOSYSTEM_INSTALL_ROOT` or its compatibility fallback `$ISSUE_PIPELINE_ROOT`. It no longer reads `tasks.json` or accepts `--manifest`.
 
-To start the buddy, omit `--check`. Before any other effect, it checks the file and its repository configs, refuses an account that another buddy file in its folder names and validates the entire task manifest and refuses a task without a registered installed executable. It then reads the token and checks with GitHub that it is the account's.
+To start the buddy, omit `--check`. Before any other effect, it checks the file and its repository configs, refuses an account that another buddy file in its folder names and refuses a task without a trusted installed program: an operator-owned regular file, not a symbolic link, that nobody else can write. It then reads the token and checks with GitHub that it is the account's.
 
 Each poll lists, for each repository and task, the open issues with `start:TASK`. Pull requests are skipped. For each issue, the buddy runs:
 
 ```sh
-node REGISTERED_EXECUTABLE --invocation
+node "$ECOSYSTEM_INSTALL_ROOT/TASK.mjs" --invocation
 ```
 
 The launcher sends a validated nonsecret invocation on standard input and provisions credentials through a separate inherited pipe. Children receive no buddy-file path. The [launcher contract](../../apps/launcher/README.md#task-subprocess-boundary) defines these channels.

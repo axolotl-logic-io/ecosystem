@@ -16,8 +16,8 @@ GitHub comments, branches, PRs and reviews remain recovery authority.
 ## Distribution and host paths
 
 The repository root owns `programs.ts`, `build.ts`, `install.ts` and `dist/`.
-The manifest bundles independently located apps and host bootstraps, and packages
-task-owned prompts and agent templates. Installed commands remain `gherkin.mjs`,
+Its distribution list bundles independently located apps and host bootstraps, and
+packages task-owned prompts and agent templates. Installed commands remain `gherkin.mjs`,
 `implement.mjs`, `fix.mjs`, `verify.mjs`, `land.mjs`, `launcher.mjs`,
 `orchestrator.mjs` and compatible `buddy.mjs`. Safe Refactor and standards upgrade
 retain their standalone commands and support assets.

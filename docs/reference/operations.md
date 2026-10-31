@@ -5,10 +5,10 @@ configuration, credentials, trusted policy pins and process activation.
 
 ## Distribution ownership
 
-Root `programs.ts` declares programs, task registrations and packaged assets.
+Root `programs.ts` declares the distribution list: programs and packaged assets.
 Root `build.ts` bundles them into `dist/`, independent of workspace location.
 Root `install.ts` installs only the declared programs, assets, vendored compiler,
-generated task manifest, README and installation record. It never removes files.
+README and installation record. It never removes files.
 `apps/issue-pipeline` contains only forwarding source commands for older operator
 automation; it is no longer an application or npm workspace.
 
@@ -18,7 +18,7 @@ GitHub adapters. The [launcher](../../apps/launcher/README.md) runs one buddy;
 the [orchestrator](../../apps/orchestrator/README.md) supervises launchers.
 
 Installed delivery programs are `orchestrator.mjs`, `launcher.mjs`, compatible
-`buddy.mjs` and one executable for each task. Session support includes
+`buddy.mjs` and one program for each task, named `TASK.mjs` after its task. Session support includes
 `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs` and
 `git-review.mjs`. Safe Refactor and standards upgrade retain their standalone
 entrypoints, the vendored compiler and pinned Python-tool asset.
@@ -29,7 +29,7 @@ Set these absolute paths in the operator's service environment:
 
 | Variable | Ownership |
 | --- | --- |
-| `ECOSYSTEM_INSTALL_ROOT` | Installed programs, `tasks.json`, prompts, examples and installation identity |
+| `ECOSYSTEM_INSTALL_ROOT` | Installed programs, prompts, examples and installation identity |
 | `ECOSYSTEM_DATA_ROOT` | Writable clones, retained work, run observations and default model runtime HOME |
 | `PI_CODING_AGENT_DIR` | Agent templates under `agents/issue-pipeline/` |
 
@@ -57,7 +57,8 @@ remain necessary for shared readers and standalone tools.
 
 The installed task CLI `TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N`
 remains supported. Launcher-created children use validated `--invocation` input
-and a separate credential pipe. `tasks.json` owns executable registration.
+and a separate credential pipe. The launcher runs task `TASK` as `TASK.mjs` in
+the install root, and accepts only the tasks compiled into it.
 
 Persisted names stay unchanged: `.issue-pipeline.json`, its trusted commit pins,
 operator credential keys, task comment markers, agent names and
@@ -109,33 +110,69 @@ reinstall a complete verified release before activation.
 Existing `mise //apps/issue-pipeline:install` and `:install:dry-run` commands still
 forward to this installer. New automation should use the root npm scripts.
 
+## Retire tasks.json
+
+Releases before [#280](https://github.com/axolotl-logic-io/ecosystem/issues/280)
+installed a task manifest, `$ECOSYSTEM_INSTALL_ROOT/tasks.json`, and their fleet
+files and service commands named it. Current releases neither build nor read it.
+The installer never removes files, so an upgrade leaves `tasks.json` in place,
+outside the new ownership list. It is harmless but misleading. To retire it after
+installing, while the launchers are still drained:
+
+1. Confirm that the new `INSTALLED.json` ownership list doesn't name `tasks.json`:
+
+   ```sh
+   grep -q '/tasks.json"' "$ECOSYSTEM_INSTALL_ROOT/INSTALLED.json" && echo "owned: stop" || echo "orphan"
+   ```
+
+   Continue only if it prints `orphan`.
+
+2. Move `tasks.json` into the new installation's backup directory, at its absolute path, where a backup-based rollback finds it:
+
+   ```sh
+   backup="$(node -p 'require(process.argv[1]).backup' "$ECOSYSTEM_INSTALL_ROOT/INSTALLED.json")"
+   mkdir -p "$backup$ECOSYSTEM_INSTALL_ROOT"
+   mv "$ECOSYSTEM_INSTALL_ROOT/tasks.json" "$backup$ECOSYSTEM_INSTALL_ROOT/tasks.json"
+   ```
+
+3. Remove `--manifest MANIFEST_FILE` from every launcher or `buddy.mjs` service command. The launcher refuses it as an unknown option.
+4. Delete the `manifest` line from every fleet file. Fleet files stay version 1; the orchestrator refuses a file that still has `manifest`.
+
+`ECOSYSTEM_INSTALL_ROOT` must be the absolute install path, without a trailing
+slash. To roll back to a release before #280, run that revision's installer,
+which writes `tasks.json` again, and restore the `manifest` fleet field and
+`--manifest` arguments from your recorded configuration.
+
 ## Validate and restart
 
 Validate every configured buddy before contacting GitHub:
 
 ```sh
-node "$ECOSYSTEM_INSTALL_ROOT/launcher.mjs" --config BUDDY_FILE --manifest "$ECOSYSTEM_INSTALL_ROOT/tasks.json" --check
+node "$ECOSYSTEM_INSTALL_ROOT/launcher.mjs" --config BUDDY_FILE --check
 ```
 
-`BUDDY_FILE` is an absolute path. Validation checks trusted configuration,
-registrations and executables without reading tokens or contacting GitHub. Omit
-`--check` to run one buddy. Verify all task executables, support assets and agent
+`BUDDY_FILE` is an absolute path. Validation checks trusted configuration
+and that every configured task has a trusted program in the install root, without
+reading tokens or contacting GitHub. Run it with the same `ECOSYSTEM_INSTALL_ROOT`
+as the service. Omit
+`--check` to run one buddy. Verify all task programs, support assets and agent
 templates are from the recorded installed release.
 
 To supervise several buddies, write an operator-owned version 1 fleet file with
-absolute `buddies`, `manifest` and `launcher` paths, then validate it:
+absolute `buddies` and `launcher` paths, then validate it:
 
 ```sh
 node "$ECOSYSTEM_INSTALL_ROOT/orchestrator.mjs" --config FLEET_FILE --check
 ```
 
 `FLEET_FILE` is its absolute path. Omit `--check` to start one launcher per buddy.
-The orchestrator rejects duplicate files, names and accounts before any start.
+The orchestrator rejects duplicate files, names and accounts, and a leftover
+`manifest` field, before any start.
 It never automatically restarts a failed launcher. Healthy siblings continue;
 inspect JSON stderr reports and restart a failed buddy separately after fixing
 its cause. See the [failure and shutdown contract](../../apps/orchestrator/README.md#child-failures-and-restart-policy).
 
-Confirm the installed identity, configured accounts, manifest paths and host data
+Confirm the installed identity, configured accounts, install root and host data
 location. Check startup reports and one operator-approved task's final run record
 before resuming wider discovery. If private buddy or fleet configuration is
 absent, report installation separately and hand activation to the operator.
@@ -146,8 +183,8 @@ absent, report installation separately and hand activation to the operator.
 2. Restore the previous verified source checkout and its recorded configuration paths.
 3. Set the same install, data and agent roots, then run that revision's installer to replace the complete distribution.
 4. If source is unavailable, restore every replaced file from the recorded backup directory to its original absolute path, including the previous installation identity and agent files.
-5. Retire newly introduced entrypoints using the failed release's ownership list and the previous release's manifest; never remove private configuration or retained data.
-6. Validate the restored manifest and buddy or fleet configuration, then restart the previous release.
+5. Retire newly introduced entrypoints: remove files that the failed release's `INSTALLED.json` ownership list names and the restored release's ownership list doesn't. Never remove private configuration or retained data.
+6. Validate the restored buddy or fleet configuration with the restored release's launcher and orchestrator, then restart the previous release.
 
 A source rollback does not undo GitHub comments, branches, reviews or merges.
 Tasks recover from those artifacts. No runtime-data or monitoring-table migration

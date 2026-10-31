@@ -8,7 +8,7 @@ capabilities from their bootstrap.
 
 ## Run a buddy
 
-After installing the release, validate a buddy and its task registrations:
+After installing the release, validate a buddy and its task programs:
 
 ```sh
 node "$ECOSYSTEM_INSTALL_ROOT/launcher.mjs" --config BUDDY_FILE --check
@@ -19,43 +19,36 @@ Omit `--check` to run it. The installed `buddy.mjs` is a compatibility entrypoin
 for the same launcher, with the same arguments and exit behavior. Existing buddy
 files need no edits. See the [buddy file reference](../../docs/reference/runtime-runs.md#launcher-buddy-file).
 
-`--manifest MANIFEST_FILE` selects an explicit installed task manifest. The
-default is `$ECOSYSTEM_INSTALL_ROOT/tasks.json`. `ISSUE_PIPELINE_ROOT` and the
-historical `~/.pi/agent/issue-pipeline` directory remain compatibility fallbacks.
-The host uses `ECOSYSTEM_DATA_ROOT` for writable runtime data; see
-[host paths](../../docs/reference/operations.md#host-paths). The library functions
-`checkLauncher(buddyFile, manifestFile)` and
-`runLauncher(buddyFile, manifestFile, stop)` require explicit paths; importing
+The launcher finds task programs in the install root: `ECOSYSTEM_INSTALL_ROOT`,
+then the compatibility fallbacks `ISSUE_PIPELINE_ROOT` and the historical
+`~/.pi/agent/issue-pipeline` directory. The host uses `ECOSYSTEM_DATA_ROOT` for
+writable runtime data; see [host paths](../../docs/reference/operations.md#host-paths).
+The library functions `checkLauncher(buddyFile, installRoot)` and
+`runLauncher(buddyFile, installRoot, stop)` require explicit paths; importing
 those modules starts no process and discovers no installation root.
 
-## Task registrations
+## Task programs
 
-The build and installer supply `tasks.json`. It is strict, versioned JSON:
+The launcher knows its tasks at build time: `gherkin`, `implement`, `fix`,
+`verify` and `land`. A buddy file that lists any other task is refused. For task
+`TASK`, the launcher runs `TASK.mjs` in the install root, for example
+`$ECOSYSTEM_INSTALL_ROOT/verify.mjs`. The same build produces the launcher and
+every task program, so no registration file maps tasks to programs.
 
-```json
-{
-  "version": 1,
-  "tasks": [
-    { "id": "gherkin", "executable": "gherkin.mjs" },
-    { "id": "implement", "executable": "implement.mjs" },
-    { "id": "fix", "executable": "fix.mjs" },
-    { "id": "verify", "executable": "verify.mjs" },
-    { "id": "land", "executable": "land.mjs" }
-  ]
-}
-```
+Before it reads a token, discovers starts or launches work, the launcher requires
+every configured task to have its installed program. Each program must be a
+regular file owned by the operator and writable by nobody else. Symbolic links
+are refused. `--check` performs these checks without contacting GitHub.
 
-Executable names can differ from task ids. Relative paths resolve beside the
-manifest; absolute paths are supported. The launcher validates the entire
-manifest, refuses duplicate ids and requires every configured task to be
-registered before verifying credentials, discovering starts or launching work.
-The manifest and executable files must be regular files owned by the operator
-and writable by nobody else. Unknown fields, unsupported versions and missing
-programs refuse startup. `--check` performs these checks without contacting GitHub.
+Releases before [#280](https://github.com/axolotl-logic-io/ecosystem/issues/280)
+read task registrations from `tasks.json` and accepted `--manifest MANIFEST_FILE`.
+The launcher no longer reads `tasks.json`, and it refuses `--manifest` as an
+unknown option. To retire an installed `tasks.json`, see
+[retire `tasks.json`](../../docs/reference/operations.md#retire-tasksjson).
 
 ## Task subprocess boundary
 
-For each discovered start, the launcher runs the registered program with
+For each discovered start, the launcher runs the task's installed program with
 `--invocation`. Standard input contains the strict version 1 issue-host
 invocation from `@ecosystem/task-runtime/issue/invocation`: task id, issue,
 verified account name and explicit repository-settings path, base branch and
@@ -89,9 +82,10 @@ prints its final JSON line. It writes child exits and discovery warnings to stde
 
 1. Drain the running buddies and preserve retained checkouts and run folders.
 2. Install the merged release using the [installation procedure](../../docs/reference/operations.md#install-a-release).
-3. Confirm `launcher.mjs`, `buddy.mjs`, `tasks.json` and every registered executable are installed together.
-4. Validate each existing buddy file with `launcher.mjs --config BUDDY_FILE --check`.
-5. Restart one launcher per buddy with the existing private configuration.
+3. Confirm `launcher.mjs`, `buddy.mjs` and every task program are installed together.
+4. Retire an orphaned `tasks.json` and remove `--manifest` from service commands. See [retire `tasks.json`](../../docs/reference/operations.md#retire-tasksjson).
+5. Validate each existing buddy file with `launcher.mjs --config BUDDY_FILE --check`.
+6. Restart one launcher per buddy with the existing private configuration.
 
 The installer backs up replaced files and records `INSTALLED.json`. It does not
 rewrite private configuration or retained work. Do not mix old launchers with
@@ -102,4 +96,4 @@ new task bootstraps during cutover. A source merge alone activates nothing.
 Use Node 24 and `npm ci --ignore-scripts --no-audit --no-fund`. Both root gates
 include this workspace. The pipeline system and acceptance suites run the built
 launcher against fake GitHub and real subprocesses, covering discovery, claims,
-registration refusal, credential isolation, child failures and graceful shutdown.
+program refusal, credential isolation, child failures and graceful shutdown.
