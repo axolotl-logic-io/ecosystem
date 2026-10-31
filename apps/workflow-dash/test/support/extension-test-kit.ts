@@ -2,7 +2,7 @@ import type {
   DashboardApi,
   DashboardContext,
   LifecycleHandler,
-} from "../host.ts";
+} from "../../host.ts";
 
 interface ExtensionHost {
   api: DashboardApi;
@@ -36,27 +36,15 @@ function extensionHost(
     registerTool: (): void => {
       events.push("tool");
     },
-    sendUserMessage: (): void => {
-      events.push("message");
-    },
   };
   const context: DashboardContext = {
     mode,
-    isIdle: () => true,
     ui: {
       setWidget: (): void => {
         events.push("widget");
       },
       notify: (): void => {
         events.push("notify");
-      },
-      editor: () => {
-        events.push("editor");
-        return Promise.resolve(undefined);
-      },
-      select: () => {
-        events.push("select");
-        return Promise.resolve(undefined);
       },
       custom: () => {
         events.push("custom");

@@ -11,15 +11,19 @@ import { z } from "zod";
 import { collect } from "../collection.ts";
 import type { Config } from "../config.ts";
 import { newestDirs, readWhole, safePath } from "../local-files.ts";
-import type { ActionRunObservation } from "../runtime-run-schema.ts";
-import {
-  type ActionRunEntry,
-  type BuddyRunEntry,
-  loadRuntimeRuns,
-  type TaskRunEntry,
-} from "../runtime-runs.ts";
 import { parse } from "../source-records.ts";
-import { entity, projectRecord, safeBody, timestamp } from "./records.ts";
+import {
+  loadTaskRuns,
+  type TaskRun,
+  type TaskRunSession,
+} from "../task-runs.ts";
+import {
+  entity,
+  projectRecord,
+  safeBody,
+  taskRunKind,
+  timestamp,
+} from "./records.ts";
 
 const execute = promisify(execFile);
 const chunkBytes = 2_097_152;
@@ -30,6 +34,8 @@ const issueLimit = 1000;
 const githubTimeout = 30_000;
 const githubBuffer = 4_194_304;
 const lf = 10;
+// The labels that start, stop or show the runs of tasks.
+const workflowLabel = /^(?:start:[\w-]+|agent:[\w-]+:running|agents:stop)$/u;
 const itemSchema = z.object({
   number: z.int().positive(),
   title: z.string(),
@@ -71,6 +77,8 @@ interface StreamOptions {
 interface Collector {
   db: Database;
   config: Config;
+  /** The task apps' runs folder. */
+  runs: string;
   warnings: string[];
 }
 
@@ -137,227 +145,85 @@ async function ingestStream(
 async function sourceTime(path: string): Promise<string> {
   return (await stat(path)).mtime.toISOString();
 }
-async function importBuddy(at: Collector, entry: BuddyRunEntry): Promise<void> {
-  const { run } = entry;
-  const sourceAt = await sourceTime(entry.path);
+async function importTaskRun(at: Collector, run: TaskRun): Promise<void> {
+  const { record } = run;
+  const sourceAt = await sourceTime(run.path);
   await saveEntity(
     at.db,
     entity({
-      id: run.id,
-      kind: "buddy",
-      title: run.buddy.name,
-      actor: run.buddy.name,
-      state: entry.condition.state,
-      startedAt: run.process.startedAt,
-      activityAt: run.process.observedAt,
+      id: record.id,
+      kind: taskRunKind,
+      repo: record.workItem.repo,
+      issue: record.workItem.number,
+      title: `#${record.workItem.number}`,
+      state: run.state,
+      task: record.task,
+      phase: record.step,
+      actor: record.account,
       sourceAt,
-      reason: run.outcome?.reason ?? null,
-    }),
-  );
-  await collect(run.loops, async (loop): Promise<void> => {
-    await saveEntity(
-      at.db,
-      entity({
-        id: `${run.id}:${loop.repo}:${loop.task}`,
-        kind: "health",
-        parent: run.id,
-        repo: loop.repo,
-        title: `${run.buddy.name} · ${loop.task}`,
-        task: loop.task,
-        state: loop.state,
-        reason: loop.reason,
-        sourceAt: run.process.observedAt,
-      }),
-    );
-  });
-}
-async function importSession(
-  at: Collector,
-  entry: ActionRunEntry,
-  session: ActionRunObservation["sessions"][number],
-  sourceAt: string,
-): Promise<void> {
-  const { run } = entry;
-  if (session.parent !== run.id) {
-    at.warnings.push(
-      "A session has an inconsistent parent; it was not imported",
-    );
-    return;
-  }
-  const link = entry.sessions.find(
-    (candidate): boolean => candidate.id === session.id,
-  );
-  let activityAt: string | null = null;
-  if (
-    link?.file !== null &&
-    link?.file !== undefined &&
-    link.fileState === "present"
-  ) {
-    activityAt = await sourceTime(link.file);
-  }
-  await saveEntity(
-    at.db,
-    entity({
-      id: session.id,
-      kind: "session",
-      parent: run.id,
-      repo: run.workItem.repo,
-      issue: run.workItem.number,
-      title: session.agent,
-      actor: session.agent,
-      task: run.task,
-      phase: session.phase,
-      model: session.model,
-      state: session.outcome ?? run.state,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-      activityAt,
-      sourceAt,
-    }),
-  );
-  if (
-    link?.file === null ||
-    link?.file === undefined ||
-    link.fileState !== "present"
-  ) {
-    at.warnings.push(`Transcript unavailable for session ${session.id}`);
-    return;
-  }
-  try {
-    if (
-      await ingestStream(at.db, link.file, {
-        root: at.config.runs,
-        session: (): string => session.id,
-      })
-    ) {
-      at.warnings.push(`Transcript catching up for session ${session.id}`);
-    }
-  } catch {
-    at.warnings.push(
-      `Transcript ingestion failed for session ${session.id}; inspect its append-only source`,
-    );
-  }
-}
-async function importAction(
-  at: Collector,
-  entry: ActionRunEntry,
-  buddies: BuddyRunEntry[],
-): Promise<void> {
-  const { run } = entry;
-  const active = run.sessions.find(
-    (session): boolean => session.endedAt === null,
-  );
-  const operation = run.operations.find((op): boolean => op.endedAt === null);
-  let state: string = run.outcome ?? run.state;
-  let { reason } = run;
-  if (
-    run.checkpoint.state === "uncertain" ||
-    run.ownership.state === "retained"
-  ) {
-    state = "blocked";
-    reason =
-      run.checkpoint.reason ??
-      run.ownership.reason ??
-      "Read-only reconciliation required";
-  }
-  const buddy = buddies.find(
-    (candidate): boolean => candidate.run.id === run.buddyRun,
-  );
-  if (
-    (state === "running" || state === "waiting") &&
-    buddy?.condition.state !== "process-observed"
-  ) {
-    state = "status unavailable";
-  }
-  const starts = [...run.sessions, ...run.operations]
-    .map((session): string => session.startedAt)
-    .sort((a, b): number => a.localeCompare(b));
-  const ends = [...run.sessions, ...run.operations]
-    .flatMap((session): string[] => {
-      if (session.endedAt !== null) {
-        return [session.endedAt];
-      }
-      return [];
-    })
-    .sort((a, b): number => a.localeCompare(b));
-  const sourceAt = await sourceTime(entry.path);
-  await saveEntity(
-    at.db,
-    entity({
-      id: run.id,
-      kind: "action",
-      repo: run.workItem.repo,
-      issue: run.workItem.number,
-      parent: run.buddyRun,
-      title: `#${run.workItem.number}`,
-      state,
-      task: run.task,
-      phase: active?.phase ?? operation?.op ?? null,
-      actor: buddy?.run.buddy.name ?? null,
-      sourceAt,
-      startedAt: starts.at(0) ?? null,
-      endedAt: ends.at(-1) ?? null,
-      reason,
+      startedAt: record.startedAt,
+      endedAt: record.endedAt,
+      reason: run.reason,
     }),
   );
   await collect(
     run.sessions,
-    (session): Promise<void> => importSession(at, entry, session, sourceAt),
+    (session): Promise<void> => importSession(at, run, session, sourceAt),
   );
 }
-// A task app run, shown as an action: its recorded outcome once it ended,
-// running while its process is observed, and unavailable otherwise.
-async function importTask(at: Collector, entry: TaskRunEntry): Promise<void> {
-  const { run, condition } = entry;
-  let state: string = run.outcome ?? "status unavailable";
-  let { reason } = run;
-  if (run.state === "running" && condition.state === "process-observed") {
-    state = "running";
-  } else if (run.state === "running") {
-    ({ reason } = condition);
+// A task run's model session, named by its transcript's key.
+async function importSession(
+  at: Collector,
+  run: TaskRun,
+  session: TaskRunSession,
+  sourceAt: string,
+): Promise<void> {
+  const { record } = run;
+  const id = `${record.id}:${session.key}`;
+  let state: string = run.state;
+  if (record.state === "ended") {
+    state = "ended";
   }
   await saveEntity(
     at.db,
     entity({
-      id: run.id,
-      kind: "action",
-      repo: run.workItem.repo,
-      issue: run.workItem.number,
-      title: `#${run.workItem.number}`,
+      id,
+      kind: "session",
+      parent: record.id,
+      repo: record.workItem.repo,
+      issue: record.workItem.number,
+      title: session.key,
+      actor: record.account,
+      task: record.task,
       state,
-      task: run.task,
-      phase: run.step,
-      actor: run.account,
-      sourceAt: await sourceTime(entry.path),
-      startedAt: run.startedAt,
-      endedAt: run.endedAt,
-      reason,
+      endedAt: record.endedAt,
+      activityAt: await sourceTime(session.transcript),
+      sourceAt,
     }),
   );
-}
-async function collectPipeline(at: Collector): Promise<void> {
-  const runs = await loadRuntimeRuns(at.config);
-  if (
-    runs.coverage.buddyRunsOmitted +
-      runs.coverage.actionRunsOmitted +
-      runs.coverage.taskRunsOmitted >
-      0 ||
-    runs.coverage.unlistable.length > 0 ||
-    runs.problems.length > 0
-  ) {
+  try {
+    if (
+      await ingestStream(at.db, session.transcript, {
+        root: at.runs,
+        session: (): string => id,
+      })
+    ) {
+      at.warnings.push(`Transcript catching up for session ${id}`);
+    }
+  } catch {
     at.warnings.push(
-      "Some pipeline records are unavailable or outside collection bounds",
+      `Transcript ingestion failed for session ${id}; inspect its append-only source`,
     );
   }
-  await collect(
-    runs.buddyRuns,
-    (entry): Promise<void> => importBuddy(at, entry),
-  );
-  await collect(
-    runs.actionRuns,
-    (entry): Promise<void> => importAction(at, entry, runs.buddyRuns),
-  );
-  await collect(runs.taskRuns, (entry): Promise<void> => importTask(at, entry));
+}
+async function collectTaskRuns(at: Collector): Promise<void> {
+  const taskRuns = await loadTaskRuns(at.runs, at.config.repos);
+  if (taskRuns.omitted > 0 || taskRuns.problems.length > 0) {
+    at.warnings.push(
+      "Some task run records are unreadable or outside collection bounds",
+    );
+  }
+  await collect(taskRuns.runs, (run): Promise<void> => importTaskRun(at, run));
 }
 async function importGeneric(at: Collector, directory: string): Promise<void> {
   const folder = join(at.config.subagentRuns, directory);
@@ -476,12 +342,12 @@ async function issueList(
       warnings.push(`Issue list is partial: ${repo} (${state})`);
     }
     await collect(items, async (issue): Promise<void> => {
-      const start = issue.labels.find((label): boolean =>
-        label.name.startsWith("start:"),
-      );
+      const signals = issue.labels
+        .map((label): string => label.name)
+        .filter((name): boolean => workflowLabel.test(name));
       let reason: string | null = null;
-      if (start !== undefined) {
-        reason = `${start.name} requested; runtime qualification determines eligibility`;
+      if (signals.length > 0) {
+        reason = signals.join(" · ");
       }
       await saveEntity(
         db,
@@ -547,13 +413,19 @@ async function collectIssues(
       issueList({ db, warnings }, repo, state, read),
   );
 }
+/**
+ * Imports the task runs under `runs`, their sessions' transcripts, generic
+ * subagent runs and, when `github` is set, the configured repositories'
+ * issues.
+ */
 async function collectMonitoring(
   db: Database,
   config: Config,
+  runs: string,
   github: boolean,
 ): Promise<CollectionResult> {
-  const at: Collector = { db, config, warnings: [] };
-  await collectPipeline(at);
+  const at: Collector = { db, config, runs, warnings: [] };
+  await collectTaskRuns(at);
   await collectGeneric(at);
   if (github) {
     await collectIssues(db, config, at.warnings);

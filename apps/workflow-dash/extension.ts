@@ -1,17 +1,16 @@
 import { Key, truncateToWidth } from "@earendil-works/pi-tui";
 import { type Config, configure, defaults } from "./config.ts";
-import { empty, type Snapshot } from "./data.ts";
+import { errorMessage } from "./errors.ts";
 import { type DashboardApi, type DashboardContext, enabled } from "./host.ts";
 import { readWhole } from "./local-files.ts";
 import { RetryRequests, type RetryTarget } from "./monitor/retry.ts";
 import { MonitorRuntime } from "./monitor/runtime.ts";
 import { MonitorView } from "./monitor/view.ts";
-import { loadRuntimeRuns } from "./runtime-runs.ts";
 import { parse } from "./source-records.ts";
 import { registerReadTools } from "./tools.ts";
 
 const configReadBytes = 32_768;
-const widgetKey = "workflow-monitor";
+const widgetKey = "workflow-dash";
 class DashboardExtension {
   private readonly pi: DashboardApi;
   private readonly configPath: string;
@@ -19,8 +18,6 @@ class DashboardExtension {
   private registered: boolean;
   private toolsRegistered: boolean;
   private active: boolean;
-  private config: Config = configure(null);
-  private toolSnapshot: Snapshot = empty;
   private generation = 0;
   private repositories = defaults.repos;
   private retries = new RetryRequests(defaults.repos);
@@ -57,15 +54,27 @@ class DashboardExtension {
     this.generation += 1;
     const { generation } = this;
     const file = await readWhole(this.configPath, configReadBytes);
-    let config = configure(null);
-    if (file.state === "read") {
-      config = configure(parse(file.text));
-    }
     if (generation !== this.generation) {
       return;
     }
+    if (file.state !== "read") {
+      ctx.ui.notify(
+        `Workflow dashboard configuration unavailable: ${file.reason}`,
+        "error",
+      );
+      return;
+    }
+    let config: Config;
+    try {
+      config = configure(parse(file.text));
+    } catch (error) {
+      ctx.ui.notify(
+        `Workflow dashboard configuration refused: ${errorMessage(error)}`,
+        "error",
+      );
+      return;
+    }
     this.active = true;
-    this.config = config;
     this.repositories = config.repos;
     this.retries = new RetryRequests(config.repos);
     this.registerTools();
@@ -155,23 +164,14 @@ class DashboardExtension {
       ctx.ui.setWidget(widgetKey, undefined);
     }
   }
-  /**
-   * Keeps the agent-facing buddy_runs and action_run tools. They read the
-   * runtime records on demand; they are not part of the database-backed view.
-   */
+  /** Registers the agent-facing read tools over the view's database reads. */
   private registerTools(): void {
     if (this.toolsRegistered) {
       return;
     }
     registerReadTools(this.pi, {
       active: (): boolean => this.active,
-      refresh: async (): Promise<void> => {
-        this.toolSnapshot = {
-          ...empty,
-          runtime: await loadRuntimeRuns(this.config),
-        };
-      },
-      get: (): Snapshot => this.toolSnapshot,
+      runtime: this.runtime,
     });
     this.toolsRegistered = true;
   }

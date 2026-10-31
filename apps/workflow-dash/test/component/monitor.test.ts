@@ -27,15 +27,17 @@ function work(): MonitorEntity {
     sourceAt: time,
   });
 }
-function action(state: string, task = "implement"): MonitorEntity {
+function taskRun(state: string, task = "implement"): MonitorEntity {
   const result = entity({
-    id: "action",
+    id: "task-run",
     kind: "action",
     repo,
     issue: 541,
-    title: "Implement",
+    title: "#541",
     state,
     task,
+    phase: "work",
+    actor: "fixture-account",
     sourceAt: time,
     startedAt: time,
   });
@@ -81,30 +83,55 @@ function viewModel(state: MonitorSnapshot): MonitorViewOptions {
   };
 }
 
-test("an open issue with a start label is pending, not an authorized ready task", (): void => {
-  const item = { ...work(), reason: "start:implement requested" };
+test("an open issue without a task run is open and shows its workflow labels", (): void => {
+  const item = { ...work(), reason: "start:implement · agents:stop" };
   const [row] = workRows(snapshot([item]), null, now);
-  assert.equal(row?.section, "PENDING");
-  assert.equal(row?.state, "Awaiting start");
+  assert.equal(row?.section, "OPEN");
+  assert.equal(row?.state, "No task run");
+  const view = new MonitorView(
+    { terminal: { rows: screen.rows }, requestRender: (): void => undefined },
+    viewModel(snapshot([item])),
+  );
+  assert.ok(
+    view
+      .render(screen.wide)
+      .join("\n")
+      .includes("start:implement · agents:stop"),
+  );
 });
 
-test("task completion is distinct from issue completion and a failed attempt needs attention", (): void => {
+test("a task run's success is not the issue's completion, and a failed, stopped or unavailable run needs you", (): void => {
   assert.equal(
-    workRows(snapshot([work(), action("succeeded")]), null, now).at(0)?.section,
-    "PENDING",
+    workRows(snapshot([work(), taskRun("succeeded")]), null, now).at(0)
+      ?.section,
+    "OPEN",
+  );
+  for (const state of ["failed", "stopped", "unavailable"]) {
+    assert.equal(
+      workRows(snapshot([work(), taskRun(state)]), null, now).at(0)?.section,
+      "NEEDS YOU",
+    );
+  }
+  assert.equal(
+    workRows(snapshot([work(), taskRun("running")]), null, now).at(0)?.section,
+    "ACTIVE",
   );
   assert.equal(
-    workRows(snapshot([work(), action("succeeded", "land")]), null, now).at(0)
-      ?.state,
-    "Landed",
-  );
-  assert.equal(
-    workRows(snapshot([work(), action("failed")]), null, now).at(0)?.section,
-    "NEEDS YOU",
-  );
-  assert.equal(
-    workRows(snapshot([work(), action("running")]), "other/repo", now).length,
+    workRows(snapshot([work(), taskRun("running")]), "other/repo", now).length,
     0,
+  );
+});
+
+test("a task run's row names its account, task and lifecycle step", (): void => {
+  const view = new MonitorView(
+    { terminal: { rows: screen.rows }, requestRender: (): void => undefined },
+    viewModel(snapshot([work(), taskRun("running")])),
+  );
+  assert.ok(
+    view
+      .render(screen.wide)
+      .join("\n")
+      .includes("fixture-account · implement › work"),
   );
 });
 
@@ -197,7 +224,7 @@ test("credentials and terminal control sequences never become transcript content
 });
 
 test("the combined view fills the terminal, fits narrow widths and does not present missing usage as zero", (): void => {
-  const options = viewModel(snapshot([work(), action("running")]));
+  const options = viewModel(snapshot([work(), taskRun("running")]));
   const view = new MonitorView(
     {
       terminal: { rows: 30 },
@@ -306,7 +333,7 @@ test("each collector warning is its own notice and long reasons stay on one list
     "Second warning",
   ]);
   const failed = {
-    ...action("failed"),
+    ...taskRun("failed"),
     reason: `${"rate limit ".repeat(longReasonRepeats)}\nrequest details`,
   };
   const view = new MonitorView(

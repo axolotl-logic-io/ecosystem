@@ -2,7 +2,6 @@ import { lstat, open, readdir, realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const credentialRoot = /\/runtime\/home(?:\/|$)|\/runtime\/model-key\.env$/u;
-const defaultReadBytes = 262_144;
 
 /** Refuse credential paths after resolving symlinks as well as before opening. */
 async function safePath(path: string): Promise<string> {
@@ -16,46 +15,13 @@ async function safePath(path: string): Promise<string> {
   return resolved;
 }
 
-/** Bounded UTF-8 data; a refused/unavailable file contributes no readable text. */
-async function readCap(
-  path: string,
-  cap = defaultReadBytes,
-  tail = false,
-): Promise<string> {
-  try {
-    const file = await open(await safePath(path), "r");
-    try {
-      const info = await file.stat();
-      if (!info.isFile()) {
-        return "";
-      }
-      const size = Math.min(info.size, cap);
-      const buffer = Buffer.alloc(size);
-      let offset = 0;
-      if (tail) {
-        offset = Math.max(0, info.size - size);
-      }
-      const { bytesRead } = await file.read(buffer, 0, size, offset);
-      const text = buffer.subarray(0, bytesRead).toString("utf8");
-      if (tail && info.size > cap) {
-        return text.slice(text.indexOf("\n") + 1);
-      }
-      return text;
-    } finally {
-      await file.close();
-    }
-  } catch {
-    return "";
-  }
-}
-
 type BoundedRead =
   | { state: "read"; text: string }
   | { state: "unavailable"; reason: string };
 
 /**
- * A whole regular file within `cap` bytes, or why it can't be read. Unlike
- * readCap, a missing, linked, refused, oversized or unreadable file stays
+ * A whole regular file within `cap` bytes, or why it can't be read: a
+ * missing, linked, refused, oversized or unreadable file stays
  * distinguishable from an empty one.
  */
 async function readWhole(path: string, cap: number): Promise<BoundedRead> {
@@ -95,25 +61,6 @@ async function readWhole(path: string, cap: number): Promise<BoundedRead> {
       return { state: "unavailable", reason: "file missing" };
     }
     return { state: "unavailable", reason: "file unreadable" };
-  }
-}
-
-/** Whether `path` is an unlinked regular file, without reading it. */
-async function fileState(
-  path: string,
-): Promise<"present" | "missing" | "unreadable"> {
-  try {
-    await safePath(path);
-    const info = await lstat(path);
-    if (info.isFile()) {
-      return "present";
-    }
-    return "unreadable";
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return "missing";
-    }
-    return "unreadable";
   }
 }
 
@@ -168,13 +115,19 @@ async function dirs(path: string): Promise<string[]> {
   }
 }
 
+/** The unlinked regular files in `path`; none when it can't be listed. */
 async function files(path: string): Promise<string[]> {
   try {
-    return await readdir(await safePath(path));
+    const entries = await readdir(await safePath(path), {
+      withFileTypes: true,
+    });
+    return entries
+      .filter((entry) => entry.isFile() && !entry.isSymbolicLink())
+      .map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 
 export type { BoundedRead, DatedDirectory };
-export { dirs, fileState, files, newestDirs, readCap, readWhole, safePath };
+export { dirs, files, newestDirs, readWhole, safePath };

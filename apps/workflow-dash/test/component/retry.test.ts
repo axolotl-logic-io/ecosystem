@@ -19,15 +19,18 @@ const repo = "axolotl-logic-io/project-buddy";
 const issue = 541;
 const endpoint = `repos/${repo}/issues/${issue}`;
 const target: RetryTarget = {
-  action: "action",
+  taskRun: "task-run",
   repo,
   issue,
   task: "implement",
 };
 
-function action(state: string, kind = "action"): MonitorEntity {
+function taskRun(
+  state: string,
+  kind: MonitorEntity["kind"] = "action",
+): MonitorEntity {
   return entity({
-    id: "action",
+    id: "task-run",
     kind,
     repo,
     issue,
@@ -78,18 +81,18 @@ function posts(fake: FakeGitHub): string[][] {
   return fake.calls.filter((args): boolean => args.includes("POST"));
 }
 
-test("only a settled, unsuccessful task action can be retried", (): void => {
-  for (const state of ["failed", "blocked", "interrupted", "unknown"]) {
-    assert.deepEqual(retryTarget(action(state)), target);
+test("only a failed or stopped task run can be retried", (): void => {
+  for (const state of ["failed", "stopped"]) {
+    assert.deepEqual(retryTarget(taskRun(state)), target);
   }
-  for (const state of ["running", "passed", "refused"]) {
-    assert.equal(retryTarget(action(state)), null);
+  for (const state of ["running", "succeeded", "unavailable"]) {
+    assert.equal(retryTarget(taskRun(state)), null);
   }
-  assert.equal(retryTarget(action("failed", "session")), null);
+  assert.equal(retryTarget(taskRun("failed", "session")), null);
   assert.equal(retryTarget(undefined), null);
 });
 
-test("a retry applies the task's start label once per selected attempt", async (): Promise<void> => {
+test("a retry applies the task's start label once per selected task run", async (): Promise<void> => {
   const fake = github("open", []);
   const first = await fake.requests.request(target);
   assert.match(first, START_LABEL);

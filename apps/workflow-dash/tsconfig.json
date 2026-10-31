@@ -9,5 +9,12 @@
     "strict": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "test/*.ts"]
+  "include": [
+    "*.ts",
+    "monitor/*.ts",
+    "test/support/*.ts",
+    "test/component-integration/*.ts",
+    "test/system/*.ts",
+    "test/system-integration/*.ts"
+  ]
 }
