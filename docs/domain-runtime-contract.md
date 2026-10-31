@@ -83,7 +83,7 @@ Every run starts by reading what earlier runs left on GitHub, and continues from
 - the PR that closes the issue, with its reviews, review threads and CI status;
 - the task's own earlier comments, found by hidden marker.
 
-A run keeps no saved state, checkpoints or journals between runs. Pushed commits, open PRs, reviews and posted comments are the record. A run is safe to repeat: it works out what's still missing and does only that. A retry is a new start label, and it continues the same way as any other run.
+A run keeps no state between runs. Pushed commits, open PRs, reviews and posted comments are the record. A run is safe to repeat: it works out what's still missing and does only that. A retry is a new start label, and it continues the same way as any other run.
 
 Each task continues its earlier work this way:
 
@@ -95,7 +95,7 @@ Each task continues its earlier work this way:
 
 ## Results and bindings
 
-A task's result is the GitHub artifact it leaves, listed in the [task table](#domain-boundaries). There are no task records, receipts or attempts. A result's binding is what the artifact names:
+A task's result is the GitHub artifact it leaves, listed in the [task table](#domain-boundaries). A result's binding is what the artifact names:
 
 - Verify's review is bound to the commit it was submitted on. A new head needs a new Verify.
 - Land's merge is bound to the head it passed to `--match-head-commit`.

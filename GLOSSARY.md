@@ -303,7 +303,7 @@ The workflow dashboard composes requests for the session it runs in; it does not
 
 ### Artifact
 
-A durable output, such as a report, patch, test log, comment, review or pushed commit. A task's results are GitHub artifacts, and a run keeps no saved state, checkpoints or journals between runs.
+A durable output, such as a report, patch, test log, comment, review or pushed commit. A task's results are GitHub artifacts, and a run keeps no state between runs.
 
 Record is plain English, not a domain term. Name the actual kind: comment, review, run record or observation.
 
