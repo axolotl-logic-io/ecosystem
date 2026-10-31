@@ -15,13 +15,11 @@ node "$ECOSYSTEM_INSTALL_ROOT/launcher.mjs" --config BUDDY_FILE --check
 ```
 
 `BUDDY_FILE` is an absolute path to an operator-owned version 2 buddy file.
-Omit `--check` to run it. The installed `buddy.mjs` is a compatibility entrypoint
-for the same launcher, with the same arguments and exit behavior. Existing buddy
-files need no edits. See the [buddy file reference](../../docs/reference/runtime-runs.md#launcher-buddy-file).
+Omit `--check` to run it. See the [buddy file reference](../../docs/reference/runtime-runs.md#launcher-buddy-file).
 
-The launcher finds task programs in the install root: `ECOSYSTEM_INSTALL_ROOT`,
-then the compatibility fallbacks `ISSUE_PIPELINE_ROOT` and the historical
-`~/.pi/agent/issue-pipeline` directory. The host uses `ECOSYSTEM_DATA_ROOT` for
+The launcher finds task programs in the install root that `ECOSYSTEM_INSTALL_ROOT`
+names. The variable is required: without an absolute path, the launcher refuses
+to start. The host uses `ECOSYSTEM_DATA_ROOT` for
 writable runtime data; see [host paths](../../docs/reference/operations.md#host-paths).
 The library functions `checkLauncher(buddyFile, installRoot)` and
 `runLauncher(buddyFile, installRoot, stop)` require explicit paths; importing
@@ -56,14 +54,12 @@ invocation, command line or model-child environment. The launcher filters
 inherited credential variables from the subprocess environment. This is process
 and configuration isolation, not a same-user filesystem sandbox.
 
-The compatibility task CLI `TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N`
-remains supported. Its host calls the launcher's identity resolver, including
-task authorization and repository-scope checks. Domain task code never reads a
-buddy file. Launcher-created children use only the new invocation form.
+`--invocation` is the only form a task program accepts. Domain task code never
+reads a buddy file.
 
-The issue adapter still claims each start in its task subprocess. Running labels,
+The issue adapter claims each start in its task subprocess. Running labels,
 `agents:stop`, final reporting, pinned-head review and merge checks, trusted
-policy loading and recovery from GitHub retain their existing authority. A failed
+policy loading and recovery from GitHub keep their authority there. A failed
 child is logged and does not stop discovery. Failed listings are warnings and do
 not become empty authoritative state.
 

@@ -14,7 +14,7 @@ import process from "node:process";
 import { childEnvironment } from "@ecosystem/task-runtime/child-env";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
-import { ROOT } from "./host-paths.ts";
+import { dataRoot } from "./host-paths.ts";
 import type { ShellKilled, ShellReport } from "./shell-protocol.ts";
 import { SHELL_KILL_GRACE_MS, SHELL_REPORT } from "./shell-protocol.ts";
 
@@ -112,7 +112,7 @@ function run(
   options: RunOptions = {},
 ): RunResult {
   const result = spawnSync(cmd, args, {
-    cwd: options.cwd ?? ROOT,
+    cwd: options.cwd ?? dataRoot(),
     encoding: "utf8",
     env: environment(options.env),
     input: options.input,

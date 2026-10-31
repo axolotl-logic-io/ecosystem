@@ -111,7 +111,7 @@ Plans also call their items tasks. Where that could be confused with a workflow 
 
 ### Task app
 
-A task's command-line program, built on the task framework and installed as `TASK.mjs` in the install root. A buddy runs it as `TASK.mjs --invocation`: it reads the task, issue, account and repository settings from standard input and receives the account's credentials on descriptor 3. It never sees a buddy file. For compatibility, an operator can still run it by hand as `TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N`. It exits 0 when the run ends normally, including when it loses its claim, and nonzero when the run fails.
+A task's command-line program, built on the task framework and installed as `TASK.mjs` in the install root. A buddy runs it as `TASK.mjs --invocation`: it reads the task, issue, account and repository settings from standard input and receives the account's credentials on descriptor 3. It never sees a buddy file and accepts no other arguments. It exits 0 when the run ends normally, including when it loses its claim, and nonzero when the run fails.
 
 ### Claim
 

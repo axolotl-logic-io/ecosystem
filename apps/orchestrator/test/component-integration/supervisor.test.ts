@@ -16,7 +16,6 @@ const DUPLICATE_ACCOUNT = /duplicate buddy name or account/u;
 const DUPLICATE_FILE = /duplicate buddy entry/u;
 const DUPLICATE_NAME = /duplicate buddy name/u;
 const NO_PROGRAM = /no installed task app/u;
-const RETIRED = /manifest field is retired/u;
 const UNKNOWN = /Unrecognized/u;
 const MISSING = /ENOENT/u;
 
@@ -159,7 +158,7 @@ test("invalid fleet refuses all starts, including cross-folder account reuse", a
   }
 });
 
-test("duplicate files, names, missing programs, a retired manifest and unknown fields refuse validation", () => {
+test("duplicate files, names, missing programs and unknown fields refuse validation", () => {
   const sandbox = fixture();
   try {
     const fleet = JSON.parse(fs.readFileSync(sandbox.file, "utf8"));
@@ -190,10 +189,6 @@ test("duplicate files, names, missing programs, a retired manifest and unknown f
     );
     buddy.tasks = ["fix"];
     fs.writeFileSync(second, JSON.stringify(buddy));
-    fleet.manifest = path.join(sandbox.root, "tasks.json");
-    fs.writeFileSync(sandbox.file, JSON.stringify(fleet));
-    assert.throws(() => checkOrchestrator(sandbox.file, sandbox.root), RETIRED);
-    fleet.manifest = undefined;
     fleet.extra = true;
     fs.writeFileSync(sandbox.file, JSON.stringify(fleet));
     assert.throws(() => checkOrchestrator(sandbox.file, sandbox.root), UNKNOWN);

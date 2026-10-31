@@ -1,4 +1,5 @@
-// Compatibility host chooses commit identity and credentialed submodule access.
+// Configures a clone with the repository's commit identity and credentialed
+// submodule access.
 import {
   configureClone as configure,
   updateSubmodules as update,

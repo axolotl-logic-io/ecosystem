@@ -1,6 +1,4 @@
-// Credentials never travel through ordinary child environments. The landing
-// token's name before #166 stays hidden too, in case an operator environment
-// still sets it; it never selects an authentication identity.
+// Credentials never travel through ordinary child environments.
 const CREDENTIAL_VARIABLES: readonly string[] = [
   "DATABASE_URL",
   "TEST_DATABASE_URL",
@@ -20,7 +18,6 @@ const CREDENTIAL_VARIABLES: readonly string[] = [
   "GIT_CONFIG_PARAMETERS",
   "GIT_CURL_VERBOSE",
   "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
-  "ISSUE_PIPELINE_MERGE_GITHUB_TOKEN",
   "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN",
 ];
 const GIT_CONFIG_ENTRY = /^GIT_CONFIG_(?:KEY|VALUE)_\d+$/u;

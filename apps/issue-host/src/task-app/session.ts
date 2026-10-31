@@ -1,4 +1,4 @@
-// Compatibility host for Gherkin's repository and credential-free model access.
+// Gherkin's repository checkout and credential-free model session.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -15,21 +15,21 @@ import {
   resultOf,
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
+import { modelEnvironment } from "@ecosystem/task-runtime/model-environment";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import { agentEnvOf } from "../job/agent-env.ts";
 import { openBaseCheckout } from "../job/checkout.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
-import { PROMPTS_DIR } from "../job/prompts.ts";
+import { promptsDir } from "../job/prompts.ts";
 import { taskRunFile } from "./run-record.ts";
 import type { TaskRun } from "./task-app.ts";
 
 const MINUTE_MS = 60_000;
 
 function hooksOf(cfg: Config, dir: string): LaunchHooks {
-  const env = agentEnvOf(cfg.jobRoles, process.env);
+  const env = modelEnvironment(process.env, []);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(dir, "sessions", `${key}.jsonl`),
@@ -63,7 +63,7 @@ function gherkinSessionHost(
       runModel: async (session: GherkinSession): Promise<unknown> => {
         run.checkStop();
         fs.writeFileSync(issueFile, session.inputs.issue.context);
-        const prompt = pinPage(PROMPTS_DIR, "gherkin.md");
+        const prompt = pinPage(promptsDir(), "gherkin.md");
         const task = [
           `# Issue #${number} in ${name}: \`gherkin\``,
           "",

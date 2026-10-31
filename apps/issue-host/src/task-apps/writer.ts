@@ -20,6 +20,7 @@ import {
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
 import type { LaunchStart } from "@ecosystem/task-runtime/job/status";
+import { modelEnvironment } from "@ecosystem/task-runtime/model-environment";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { publishCheckout } from "@ecosystem/task-runtime/publish-checkout";
 import { conflictStages } from "@ecosystem/task-runtime/rebase";
@@ -28,10 +29,9 @@ import { setUpCheckout } from "../checkouts.ts";
 import { type Config, loadConfig, paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { git } from "../github.ts";
-import { agentEnvOf } from "../job/agent-env.ts";
 import { openJobCheckout } from "../job/checkout.ts";
 import { runSession } from "../job/launch.ts";
-import { PROMPTS_DIR } from "../job/prompts.ts";
+import { promptsDir } from "../job/prompts.ts";
 import { run } from "../process.ts";
 import type { TaskRun } from "../task-app/task-app.ts";
 
@@ -60,9 +60,6 @@ function openWriter(taskRun: TaskRun, head: string, base: string): Writer {
     gitAccount: taskRun.gitAccount,
     devAccount: taskRun.account,
   };
-  if (cfg.laneSlots !== undefined) {
-    throw new OpsError("task app writing does not support laneSlots yet");
-  }
   taskRun.checkStop();
   const dirs = openJobCheckout(cfg, taskRun.issue.number, {
     stage: `${taskRun.task}-${taskRun.run}`,
@@ -159,7 +156,7 @@ async function writeSession<T>(
     },
     execution,
   );
-  const env = agentEnvOf(cfg.jobRoles, process.env);
+  const env = modelEnvironment(process.env, []);
   const scope = {
     root: dirs.root,
     repo: { dir: "repo", access: "write" },
@@ -211,7 +208,7 @@ async function writeSession<T>(
         timeoutMs: SESSION_MINUTES.developer * MINUTE_MS,
         commits: true,
         phase: "fix",
-        prompt: pinPage(PROMPTS_DIR, "fix.md"),
+        prompt: pinPage(promptsDir(), "fix.md"),
       },
       hooks,
     );

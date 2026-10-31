@@ -1,4 +1,5 @@
-// Compatibility repository-config reader; shared observations require explicit authority.
+// Paginated GitHub reads with a supplied credential environment, or with the
+// repository config's landing credential.
 import {
   observeAll as list,
   type Observation,

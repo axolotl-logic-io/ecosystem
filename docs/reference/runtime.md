@@ -7,7 +7,7 @@ This page summarizes the model runtime every session uses: Pi's native sessions 
 Every supported model session runs native **Pi 1.4.0** with the **pi-cliproxyapi 0.4.3** provider extension, over Pi's RPC mode. The only supported profile is OpenAI builtin registration through a distinct CLIProxy endpoint, not `api.openai.com`. Any other version, provider or profile refuses to start; there's no fallback.
 
 - Each session gets a new private `PI_CODING_AGENT_DIR` holding only pipeline-generated settings. Personal settings, models, auth files, packages, extensions, skills, prompt templates and themes aren't copied. Project settings and resource discovery are off.
-- Model children use a dedicated HOME: `runtime.home`, default `$ISSUE_PIPELINE_ROOT/runtime/home`. The job and its operations keep their own HOME.
+- Model children use a dedicated HOME: `runtime.home`, default `$ECOSYSTEM_DATA_ROOT/runtime/home`. The job and its operations keep their own HOME.
 - `runtime.toolchainEnv` declares the non-secret `PATH` and mise locations (`MISE_DATA_DIR`, `MISE_STATE_DIR`, `MISE_CACHE_DIR`, `MISE_CONFIG_DIR`, `MISE_GLOBAL_CONFIG_FILE`) that the version probe, Pi and session tools share, default `{}`. Values are absolute paths. Declare them when node or other tools come from HOME-relative mise shims, which otherwise fail under the dedicated HOME. The [runtime README](../../apps/issue-host/runtime/README.md#declared-toolchain-isolated-model-configuration) gives an example.
 - `runtime.credentialEnv` lists the names of model credential variables, default `["PIPELINE_MODEL_KEY"]`. Each must be set in the session's filtered environment. GitHub token variables can't be named.
 

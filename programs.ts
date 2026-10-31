@@ -15,7 +15,6 @@ const PROGRAMS = [
     source: "apps/issue-host/src/shell-supervisor.ts",
     file: "shell-supervisor.mjs",
   },
-  { source: "apps/issue-host/src/buddy.ts", file: "buddy.mjs" },
   { source: "apps/launcher/src/cli.ts", file: "launcher.mjs" },
   { source: "apps/orchestrator/src/cli.ts", file: "orchestrator.mjs" },
   { source: "apps/issue-host/src/gherkin.ts", file: "gherkin.mjs" },

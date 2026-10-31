@@ -20,8 +20,7 @@ boundaries. Cleanup and final lifecycle reporting run even after cancellation.
 The GitHub issue execution adapter owns start claims, running labels and lifecycle
 comments. A claim loser produces no execution artifacts. Task retries recover from
 authoritative domain state rather than treating an execution identity as a claim.
-The launcher preserves one process per task. Compatibility CLIs remain supported
-during the workspace migration.
+The launcher runs one process per task.
 
 ## Public contract
 
@@ -74,13 +73,15 @@ long-running boundaries; provisioned capabilities must enforce their own stop an
 authority guards. Abort does not roll back completed effects. Retained checkouts
 and other recoverable work remain the capability provider's responsibility.
 
-## Compatibility adapter
+## Issue adapter
 
-During migration, `apps/issue-host/src/task-app/issue-execution.ts` owns the
-existing claimed-run lifecycle and its compatibility `TaskRun`. Its claim, stop, recovery and artifact services live in
-[`task-runtime`](../task-runtime/README.md). The CLI in
-`task-app.ts` resolves identity and arbitrates claims before invoking that adapter.
-The compatibility `TaskRun` still contains legacy configuration and transport;
-new independent task definitions use the package contract above instead. The
-package imports no application code. Later migrations replace compatibility
-inputs without moving buddy configuration into task definitions.
+`apps/issue-host/src/task-app/issue-execution.ts` owns the claimed-run
+lifecycle. Its claim, stop, recovery and artifact services live in
+[`task-runtime`](../task-runtime/README.md). The entry point in `task-app.ts`
+reads the launcher's invocation and credentials and arbitrates the claim before
+invoking that adapter. The adapter hands each task bootstrap a `TaskRun` that
+carries the repository config path and the buddy's Git transport. Each bootstrap
+loads the config, builds its task's inputs and capabilities and runs the task
+definition through `executeTask`. This package imports no application code.
+[#294](https://github.com/axolotl-logic-io/ecosystem/issues/294) moves the
+lifecycle onto `ExecutionHost` and removes `TaskRun`.

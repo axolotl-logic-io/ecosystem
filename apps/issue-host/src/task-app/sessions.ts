@@ -23,13 +23,13 @@ import {
   resultOf,
   SESSION_MINUTES,
 } from "@ecosystem/task-runtime/job/session-result";
+import { modelEnvironment } from "@ecosystem/task-runtime/model-environment";
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { SessionProfile } from "../config-schema.ts";
-import { agentEnvOf } from "../job/agent-env.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
-import { PROMPTS_DIR } from "../job/prompts.ts";
+import { promptsDir } from "../job/prompts.ts";
 
 const MINUTE_MS = 60_000;
 // One session: the model profile it plays, the prompt page it follows, its
@@ -57,7 +57,6 @@ interface SessionSetting {
   checkout: JobDirs;
   binding: InvocationBinding;
   push: () => PushReply;
-  env?: Readonly<Record<string, string>>;
 }
 
 // Opens the sessions of `cfg`'s repository in `setting`.
@@ -78,10 +77,7 @@ async function openSessions(
     binding,
   );
   const startedAt = new Date().toISOString();
-  const shared = {
-    ...agentEnvOf(cfg.jobRoles, process.env),
-    ...setting.env,
-  };
+  const shared = modelEnvironment(process.env, []);
   const hooks: LaunchHooks = {
     sessionFile: (key: string): string =>
       path.join(setting.dir, "sessions", `${key}.jsonl`),
@@ -120,7 +116,7 @@ async function openSessions(
   return {
     run: async (session: TaskSession): Promise<SessionResult> => {
       count += 1;
-      const prompt = pinPage(PROMPTS_DIR, session.page);
+      const prompt = pinPage(promptsDir(), session.page);
       const raw = await runSession(
         {
           key: `${session.phase ?? session.profile}-${count}`,

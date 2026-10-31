@@ -1,4 +1,5 @@
-// Compatibility hosts retain CLI failure semantics for blocked prerequisites.
+// Runs a task definition for a claimed run. A blocked prerequisite fails the
+// run; a needs-input outcome posts its question.
 import type { TaskDefinition } from "@ecosystem/task-framework";
 import { executeTask } from "@ecosystem/task-framework";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";

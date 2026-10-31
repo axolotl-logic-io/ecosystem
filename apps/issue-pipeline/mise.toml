@@ -1,5 +1,0 @@
-[tasks.install]
-run = "node ../../install.ts"
-
-[tasks."install:dry-run"]
-run = "node ../../install.ts --dry-run"

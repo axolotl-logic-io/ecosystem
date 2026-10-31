@@ -1,4 +1,5 @@
-// Installed compatibility bootstrap; configuration and credentials stay here.
+// The installed `fix.mjs`: provisions Fix's inputs and capabilities from the
+// repository config; configuration and credentials stay here.
 import { type FixCapabilities, type FixWriter, fix } from "@ecosystem/fix";
 import { FIX_REPLY } from "@ecosystem/fix/reply";
 import { loadConfig } from "../config.ts";

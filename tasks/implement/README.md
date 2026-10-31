@@ -27,10 +27,9 @@ commit uses the host's stop-checked push callback. A moved head leaves the PR dr
 Prompts and the shared Developer agent definition live here. Fix uses that same
 Developer definition; its task-specific prompt lives in `tasks/fix`.
 
-## Validation and compatibility
+## Validation
 
 Run `npm run check --workspace @ecosystem/implement` for types, lint and direct
-capability tests. The root full gate also exercises the installed compatibility
-CLI against fake GitHub/model services and real local Git. Existing executable
-names and installed prompt names remain functional. A source merge activates
+capability tests. The root full gate also runs the installed `implement.mjs` program
+against fake GitHub/model services and real local Git. A source merge activates
 nothing; follow the [pipeline install procedure](../../docs/reference/operations.md#install-a-release).

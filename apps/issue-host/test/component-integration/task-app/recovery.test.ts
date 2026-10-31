@@ -115,7 +115,8 @@ test("the readers show the issue's branch and its PR as earlier runs left them",
       process.env,
       Object.fromEntries([
         ["PATH", `${box.bin}:${searchPath}`],
-        ["ISSUE_PIPELINE_ROOT", box.pipeline],
+        ["ECOSYSTEM_INSTALL_ROOT", box.pipeline],
+        ["ECOSYSTEM_DATA_ROOT", box.pipeline],
       ]),
     );
     const { issueGitHub } = await import(

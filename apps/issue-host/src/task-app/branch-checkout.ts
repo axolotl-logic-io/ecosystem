@@ -1,8 +1,7 @@
 // A task run's own checkout of the issue's branch, `agent/issue-N`: a
 // fresh clone in a folder no other run shares, started from the branch's
 // head on GitHub when the branch exists and from the base otherwise, with
-// the repository's setup run in it and, when the repository configures
-// lane slots, its issue's test slot held. Its pushes only fast-forward the
+// the repository's setup run in it. Its pushes only fast-forward the
 // branch: when the branch holds commits the checkout lacks, another run's,
 // the checkout's work goes to a recovery branch of its own instead, and
 // nothing is overwritten. Closing it bundles any commits GitHub still
@@ -36,8 +35,6 @@ type Pushed =
 
 interface BranchCheckout {
   dirs: JobDirs;
-  // The environment the checkout's tests run in: its lane slot, if any.
-  env: Readonly<Record<string, string>>;
   head: () => string;
   // How many commits the checkout has that the base branch lacks.
   ahead: () => number;
@@ -90,14 +87,12 @@ function openBranchCheckout(
       { cause: error },
     );
   }
-  const env = {};
   const { repo } = dirs;
   function head(): string {
     return gitIn(repo, ["rev-parse", "HEAD"]);
   }
   return {
     dirs,
-    env,
     head,
     ahead: (): number =>
       Number(

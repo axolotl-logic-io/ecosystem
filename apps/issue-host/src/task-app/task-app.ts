@@ -1,4 +1,6 @@
-// Compatibility CLI: resolve operator identity, claim work and invoke the issue adapter.
+// A task program's entry point, `TASK.mjs --invocation`: read the launcher's
+// invocation from stdin and the buddy's credentials from fd 3, claim the
+// issue's start label and run the claimed lifecycle (issue-execution.ts).
 
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -11,13 +13,12 @@ import {
   startLabel,
 } from "@ecosystem/task-runtime/issue/claims";
 import {
+  type Identity,
   issueCredentials,
   issueInvocation,
 } from "@ecosystem/task-runtime/issue/invocation";
-import type { IssueRef } from "@ecosystem/task-runtime/issue/issue-github";
 import { isTaskId, marked } from "@ecosystem/task-runtime/issue/markers";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
-import { loadIdentity } from "../../../launcher/src/identity.ts";
 import {
   code,
   messageOf,
@@ -27,16 +28,8 @@ import {
 import { issueGitHub } from "./issue-github.ts";
 
 const CREDENTIAL_FD = 3;
-const ISSUE_ARG = /^(?<repo>[\w.-]+\/[\w.-]+)#(?<number>[1-9]\d*)$/u;
-const USAGE = "usage: TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N";
+const USAGE = "usage: TASK.mjs --invocation";
 type ExitStatus = 0 | 1;
-function parseIssue(text: string | undefined): IssueRef {
-  const { repo, number } = ISSUE_ARG.exec(text ?? "")?.groups ?? {};
-  if (repo === undefined || number === undefined) {
-    throw new OpsError(USAGE);
-  }
-  return { repo, number: Number(number) };
-}
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -44,8 +37,8 @@ function wait(ms: number): Promise<void> {
   });
 }
 
-// Runs `app` on the issue `argv` names, returning the program's exit
-// status. `sleep` paces rereads of the timeline while it confirms a claim.
+// Runs `app` on the issue its invocation names, returning the program's
+// exit status. `sleep` paces rereads of the timeline while it confirms a claim.
 async function runTaskApp(
   app: TaskApp,
   argv: readonly string[],
@@ -56,50 +49,34 @@ async function runTaskApp(
   }
   const { values } = parseArgs({
     args: [...argv],
-    options: {
-      config: { type: "string" },
-      issue: { type: "string" },
-      invocation: { type: "boolean", default: false },
-    },
+    options: { invocation: { type: "boolean", default: false } },
     strict: true,
   });
-  let issue: IssueRef;
-  let identity: import("@ecosystem/task-runtime/issue/invocation").Identity;
-  if (values.invocation) {
-    if (values.config !== undefined || values.issue !== undefined) {
-      throw new OpsError("invocation cannot include buddy CLI arguments");
-    }
-    const invocation = issueInvocation.parse(
-      JSON.parse(fs.readFileSync(0, "utf8")),
-    );
-    if (invocation.task !== app.id) {
-      throw new OpsError(`invocation task does not match ${app.id}`);
-    }
-    const credentials = issueCredentials.parse(
-      JSON.parse(fs.readFileSync(CREDENTIAL_FD, "utf8")),
-    );
-    fs.closeSync(CREDENTIAL_FD);
-    if (credentials.account !== invocation.account) {
-      throw new OpsError(
-        "invocation account does not match provisioned account",
-      );
-    }
-    for (const name of credentials.hiddenVariables) {
-      hideCredentialVariable(name);
-    }
-    ({ issue } = invocation);
-    identity = {
-      ...invocation.settings,
-      account: invocation.account,
-      env: new Map(credentials.env),
-    };
-  } else {
-    if (values.config === undefined) {
-      throw new OpsError(USAGE);
-    }
-    issue = parseIssue(values.issue);
-    identity = loadIdentity(values.config, issue.repo, app.id);
+  if (!values.invocation) {
+    throw new OpsError(USAGE);
   }
+  const invocation = issueInvocation.parse(
+    JSON.parse(fs.readFileSync(0, "utf8")),
+  );
+  if (invocation.task !== app.id) {
+    throw new OpsError(`invocation task does not match ${app.id}`);
+  }
+  const credentials = issueCredentials.parse(
+    JSON.parse(fs.readFileSync(CREDENTIAL_FD, "utf8")),
+  );
+  fs.closeSync(CREDENTIAL_FD);
+  if (credentials.account !== invocation.account) {
+    throw new OpsError("invocation account does not match provisioned account");
+  }
+  for (const name of credentials.hiddenVariables) {
+    hideCredentialVariable(name);
+  }
+  const { issue } = invocation;
+  const identity: Identity = {
+    ...invocation.settings,
+    account: invocation.account,
+    env: new Map(credentials.env),
+  };
   const github = issueGitHub(issue, identity);
   if (github.stopped()) {
     return 0;

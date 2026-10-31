@@ -33,7 +33,7 @@ A `gherkin` reply publishes the logical artifact `gherkin` and returns a
 retains the validated model reply. The task knows no GitHub marker format or
 comment ids.
 
-The installed `gherkin.mjs` remains the compatibility bootstrap. Its issue adapter
+The installed `gherkin.mjs` is the issue host's bootstrap for this task. Its issue adapter
 uses the [shared runtime](../../packages/task-runtime/README.md) to claim the
 start, resolve policy, filter trusted issue context and provision
 credential-free model execution. It updates the existing Gherkin comment and posts
@@ -43,10 +43,10 @@ guards, recovery markers and final reporting remain host responsibilities.
 ## Prompts and tests
 
 This workspace owns `prompts/gherkin.md` and
-`agents/issue-pipeline-gherkin.md`. The pipeline installer places them at their
-existing installed paths. Source changes activate only after installation.
+`agents/issue-pipeline-gherkin.md`. The pipeline installer places them under
+`prompts/` and `agents/` in the install root. Source changes activate only after installation.
 
 Run `npm run check --workspace @ecosystem/gherkin` for task typechecking, lint and
-fake-host behavior tests. The pipeline's system tests exercise the installed CLI
+fake-host behavior tests. The pipeline's system tests run the installed `gherkin.mjs`
 against fake GitHub and models, with real local Git. Both root gates include the
 task workspace; `npm run check:full` also runs all non-external pipeline tests.

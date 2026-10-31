@@ -113,7 +113,7 @@ npm run build --workspace @ecosystem/issue-host
 To collect non-mutating codebase evidence, run:
 
 ```bash
-node apps/issue-host/dist/safe-refactor.mjs check --request REQUEST_JSON
+node "$ECOSYSTEM_INSTALL_ROOT/safe-refactor.mjs" check --request REQUEST_JSON
 ```
 
 `REQUEST_JSON` is the external assignment file. This command makes no model call and may inspect a changed working tree. Exit code 1 means a finding, unknown evidence or a refused request; inspect the structured evidence or error instead of interpreting it as a metric waiver.
@@ -121,7 +121,7 @@ node apps/issue-host/dist/safe-refactor.mjs check --request REQUEST_JSON
 After separate operator authorization, runtime provisioning and exclusive checkout allocation, the standalone task interface is:
 
 ```bash
-node apps/issue-host/dist/safe-refactor.mjs run --request REQUEST_JSON --artifacts ARTIFACT_PARENT
+node "$ECOSYSTEM_INSTALL_ROOT/safe-refactor.mjs" run --request REQUEST_JSON --artifacts ARTIFACT_PARENT
 ```
 
 `ARTIFACT_PARENT` is an existing external directory. The launcher creates a fresh run directory and session, retains the existing runtime preflight and enforces a one-hour session deadline. No existing job or caller entry point invokes this task automatically.
@@ -129,7 +129,7 @@ node apps/issue-host/dist/safe-refactor.mjs run --request REQUEST_JSON --artifac
 For an authorized single-operation diagnostic, the interface is:
 
 ```bash
-node apps/issue-host/dist/safe-refactor.mjs operation --request REQUEST_JSON --artifacts OPERATION_ARTIFACTS --operation OPERATION_JSON
+node "$ECOSYSTEM_INSTALL_ROOT/safe-refactor.mjs" operation --request REQUEST_JSON --artifacts OPERATION_ARTIFACTS --operation OPERATION_JSON
 ```
 
 `OPERATION_ARTIFACTS` is an existing external directory. `OPERATION_JSON` contains one catalog request, for example:

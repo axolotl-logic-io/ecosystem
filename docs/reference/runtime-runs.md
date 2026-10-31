@@ -31,19 +31,19 @@ A launcher buddy file is strict JSON. The buddy refuses unknown keys. The file a
 - `pollSeconds` is optional: the pause between polls, 1 to 3600 seconds, default 60.
 - `claimWaitsMs` is optional and resolved by the launcher for each task invocation. It lists up to 10 pauses, each 0 to 60000 milliseconds, between rereads of the issue timeline while it doesn't yet show the app's removal of a start label. The default is `[500, 1000, 2000, 4000]`.
 
-Each buddy needs its own GitHub account, so that the account that claims a start identifies the buddy. Keep a machine's buddy files in one folder. A buddy refuses to start when another JSON file in that folder is a buddy file, including a retired version 1 file, that names the same account, compared without case. Buddies on other machines are out of its sight.
+Each buddy needs its own GitHub account, so that the account that claims a start identifies the buddy. Keep a machine's buddy files in one folder. A buddy refuses to start when another JSON file in that folder names the same account in its `account.login`, compared without case. Buddies on other machines are out of its sight.
 
 ### Run a launcher buddy
 
 To check a launcher buddy file without contacting GitHub, run:
 
 ```sh
-node "$ISSUE_PIPELINE_ROOT/launcher.mjs" --config BUDDY_FILE --check
+node "$ECOSYSTEM_INSTALL_ROOT/launcher.mjs" --config BUDDY_FILE --check
 ```
 
 It prints one JSON object with the buddy's name, account, tasks, repositories and the program of each task's app. It refuses the file, and exits 1, for every reason the buddy would refuse to start except an unverified credential.
 
-`buddy.mjs` remains a compatibility entrypoint with the same arguments. The launcher finds each task's program as `TASK.mjs` in the install root, `$ECOSYSTEM_INSTALL_ROOT` or its compatibility fallback `$ISSUE_PIPELINE_ROOT`. It no longer reads `tasks.json` or accepts `--manifest`.
+The launcher finds each task's program as `TASK.mjs` in the install root, `$ECOSYSTEM_INSTALL_ROOT`. It refuses to start when that variable doesn't name an absolute path.
 
 To start the buddy, omit `--check`. Before any other effect, it checks the file and its repository configs, refuses an account that another buddy file in its folder names and refuses a task without a trusted installed program: an operator-owned regular file, not a symbolic link, that nobody else can write. It then reads the token and checks with GitHub that it is the account's.
 
@@ -71,19 +71,9 @@ The buddy writes one JSON line to stderr for each app that ends:
 
 ## Task app runs
 
-A task app is one task's command-line program, built on the task app framework in `apps/issue-host/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees, and an operator can run one by hand. Gherkin's app is `gherkin.mjs`. Implement runs as `implement.mjs`; see [Implement](#implement). Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
+A task app is one task's command-line program, built on the task app framework in `apps/issue-host/src/task-app/`. A [launcher buddy](#launcher-buddies) runs it for each start label it sees. Gherkin's app is `gherkin.mjs`. Implement runs as `implement.mjs`; see [Implement](#implement). Verify's app is `verify.mjs`; see [the Verify task app](review.md#verify-task-app). Fix's app is `fix.mjs`; see [Fix](review.md#fix). The [domain runtime contract](../domain-runtime-contract.md) describes the model it builds.
 
-To run a task app, run:
-
-```bash
-node TASK_APP --config BUDDY_FILE --issue OWNER/REPO#N
-```
-
-- `TASK_APP` is the task app's program.
-- `BUDDY_FILE` is an absolute path to a [launcher buddy file](#launcher-buddy-file). The app acts as its `account.login`.
-- `OWNER/REPO#N` is the issue. The buddy's scope must name a repository config for `OWNER/REPO`.
-
-For manual compatibility calls, the host uses the launcher's identity resolver to authorize the task and repository scope, select the credential and verify its account before effects. Launcher-created children instead validate the explicit invocation and separately provisioned credential channel; they never read the buddy file.
+The launcher runs a task app as `TASK.mjs --invocation`, with the invocation on standard input and the buddy's verified credentials on descriptor 3. The app validates both channels and checks that they name its task and the same account. It never reads a buddy file and accepts no other arguments.
 
 The app exits 0 when its run ends normally: it finished its work, lost the claim, found `agents:stop` before claiming, or stopped on it. It exits 1 when the run failed or it couldn't confirm its claim.
 
@@ -101,17 +91,15 @@ A crashed run posts no end comment, so its claim holds the label. To release it,
 
 ### Model session
 
-Before launching children, the launcher validates task availability and repository scope. Manual compatibility calls use the same buddy identity resolver to authorize their task and scope before any claim or write.
+Before launching children, the launcher validates task availability and repository scope.
 
-A task app's work can run one read-only model session, as Gherkin does. An app with a session reads the whole repository config, which must therefore include its project pin, runtime settings and compatibility credentials. The session runs `pi` as an installed agent, on the task's pinned prompt page and the repository config's model for its session profile, with the repository config's `runtime`. It holds no GitHub token, can't commit and returns one structured reply, which the app checks against its schema and acts on.
+A task app's work can run one read-only model session, as Gherkin does. An app with a session reads the whole repository config, which must therefore include its project pin, runtime settings and the `credentialsEnvFile` that its mirror fetches use. The session runs `pi` as an installed agent, on the task's pinned prompt page and the repository config's model for its session profile, with the repository config's `runtime`. It holds no GitHub token, can't commit and returns one structured reply, which the app checks against its schema and acts on.
 
 The session works in the run's folder, `runs/SLUG/issue-N/task-runs/TASK_RUN_ID/`:
 
 - `issue.md` is the issue file. It holds the issue and the comments the session may treat as input. A person's comment is shown only when the repository config's `allowedUsers` names them and GitHub still lists them as a collaborator. A task app's marked comment is shown when its author claimed that task on the issue; end comments are left out. Every other comment is withheld. If the issue's own author isn't a trusted person, the run fails before the session starts.
 - `repo/` is a detached checkout of the base branch's head, made from the pipeline's mirror of the repository. The mirror is fetched with the repository config's `devAccount` credential. The app removes the checkout when the session ends.
 - `sessions/` holds the session's JSONL and its reply schema.
-
-Task apps reserve no model-session capacity. `resources.modelSessions` remains accepted in pinned project settings for compatibility.
 
 ### Task run
 

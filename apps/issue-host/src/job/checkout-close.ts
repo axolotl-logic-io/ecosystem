@@ -1,4 +1,5 @@
-// Compatibility host supplies private layout and credentialed Git operations.
+// Closes a job checkout with the host's private layout and credentialed Git
+// operations.
 
 import type {
   ClosingJob,

@@ -26,10 +26,9 @@ Review counts come from GitHub, not an attempt counter. The third round is allow
 `review.ts`, `reply.ts` and `prompts/fix.md` are task-owned. Marker formats and
 credential provisioning remain host/runtime concerns.
 
-## Validation and compatibility
+## Validation
 
 Run `npm run check --workspace @ecosystem/fix` for types, lint and direct
-capability tests. The root full gate also exercises the installed compatibility
-CLI against fake GitHub/model services and real local Git. Existing executable
-names and installed prompt names remain functional. A source merge activates
+capability tests. The root full gate also runs the installed `fix.mjs` program
+against fake GitHub/model services and real local Git. A source merge activates
 nothing; follow the [pipeline install procedure](../../docs/reference/operations.md#install-a-release).

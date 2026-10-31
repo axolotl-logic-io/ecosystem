@@ -57,8 +57,6 @@ templates, standalone-tool assets and the vendored TypeScript compiler. The
 installer replaces only installer-owned files, backs up replaced bytes and records
 installed identity and ownership in `INSTALLED.json`. Drain the old release before installing.
 
-mise is optional and pins Node 24. Existing
-`mise //apps/issue-pipeline:install` commands remain forwarding compatibility
-commands; new automation should use the root npm scripts. Read
+mise is optional and pins Node 24. Read
 [AGENTS.md](AGENTS.md) and the [project practices](docs/project-practices.md)
 before changing code.

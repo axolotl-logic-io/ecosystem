@@ -5,8 +5,6 @@ import { openStop } from "@ecosystem/launcher/stop";
 import { checkOrchestrator } from "./config.ts";
 import { runOrchestrator } from "./supervisor.ts";
 
-const ROOT = installRootOf(process.env);
-
 async function main(): Promise<0 | 1> {
   const stop = openStop();
   try {
@@ -23,13 +21,14 @@ async function main(): Promise<0 | 1> {
         "usage: orchestrator.mjs --config <fleet.json> [--check]",
       );
     }
+    const root = installRootOf(process.env);
     if (values.check) {
       process.stdout.write(
-        `${JSON.stringify(checkOrchestrator(values.config, ROOT))}\n`,
+        `${JSON.stringify(checkOrchestrator(values.config, root))}\n`,
       );
       return 0;
     }
-    const ended = await runOrchestrator(values.config, ROOT, stop.buddy);
+    const ended = await runOrchestrator(values.config, root, stop.buddy);
     process.stdout.write(`${JSON.stringify(ended)}\n`);
     if (ended.failed.length > 0) {
       return 1;

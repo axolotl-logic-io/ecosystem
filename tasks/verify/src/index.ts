@@ -1,7 +1,7 @@
 // Verify as a task app on the task app framework (src/task-app/), started
 // only by `start:verify`:
 //
-//   node verify.mjs --config BUDDY_FILE --issue OWNER/REPO#N
+//   node verify.mjs --invocation
 //
 // Its work checks the open PR from the issue's branch at the head it has
 // when the run starts. It runs the repository's full checks on that head,

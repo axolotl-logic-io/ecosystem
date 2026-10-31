@@ -1,7 +1,7 @@
 // Land, as a task app: it merges the issue's pull request (PR) and closes
 // the issue. Only `start:land` starts it:
 //
-//   node land.mjs --config BUDDY_FILE --issue OWNER/REPO#N
+//   node land.mjs --invocation
 //
 // Land reads every prerequisite from GitHub on the PR's current head when
 // it runs: an approval on that head from an account with write access,

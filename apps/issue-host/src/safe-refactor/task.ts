@@ -181,8 +181,8 @@ function proposalOf(file: string): Report | null {
   return null;
 }
 
-// Standalone explicitly assigned task, not a new scheduler or legacy-stage
-// adapter. Artifacts here never write signed workflow state or grant authority.
+// A standalone, explicitly assigned task with no scheduler. Artifacts here
+// never write workflow state or grant authority.
 async function runTask(
   input: unknown,
   artifacts: string,

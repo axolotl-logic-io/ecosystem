@@ -2,18 +2,9 @@
 
 Land merges the issue's pull request (PR) with a merge commit, pinned to the exact head it checked, and then closes the issue. The `land.mjs` task app runs it on the [task app framework](../domain-runtime-contract.md#task-app-contract). Only `start:land` starts it. An approved head doesn't make Land ready on its own.
 
-A launcher buddy configured with the `land` task runs this app when `start:land` is present. An operator can also run it by hand as described in [Run Land](#run-land).
+A launcher buddy configured with the `land` task runs this app, `land.mjs`, when `start:land` is present. Land acts through the buddy's GitHub account.
 
-## Run Land
-
-To run Land on one issue, run:
-
-```bash
-node "$ISSUE_PIPELINE_ROOT/land.mjs" --config BUDDY_FILE --issue OWNER/REPO#N
-```
-
-- `BUDDY_FILE` is the absolute path of the buddy's configuration file. Land acts through the GitHub account it names.
-- `OWNER/REPO#N` is the issue.
+## Land runs
 
 The framework claims `start:land`, marks the issue `agent:land:running`, runs Land's work and posts an end comment. Land exits 0 when the run ends normally: it merged, found the PR already merged, marked a conflicting PR as a draft, lost the claim or was stopped. It exits 1 when the run fails, such as when a prerequisite is missing.
 

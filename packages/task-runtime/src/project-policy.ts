@@ -1,12 +1,8 @@
 // Project policy is data from an operator-pinned Git commit, never a candidate
 // checkout. Only reproducible project settings cross this boundary.
-import { createHash } from "node:crypto";
 import { run } from "./command.ts";
 import { OpsError } from "./ops-error.ts";
-import type {
-  ProjectPolicyBinding,
-  ProjectPolicySource,
-} from "./project-policy-schema.ts";
+import type { ProjectPolicySource } from "./project-policy-schema.ts";
 import {
   PROJECT_POLICY_SOURCE,
   PROJECT_SETTINGS,
@@ -18,35 +14,6 @@ const TREE_ENTRY =
   /^100644 blob (?<blob>[0-9a-f]{40})\t\.issue-pipeline\.json\n$/u;
 const MAX_POLICY_BYTES = 131_071;
 const GIT_TIMEOUT_MS = 30_000;
-
-function sha256(text: string): string {
-  return createHash("sha256").update(text).digest("hex");
-}
-
-// Object key order and JSON whitespace confer no policy change. Arrays retain
-// their order because command/path order can affect checking behavior.
-function compareKeys(a: string, b: string): -1 | 0 | 1 {
-  if (a === b) {
-    return 0;
-  }
-  if (a < b) {
-    return -1;
-  }
-  return 1;
-}
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonical).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => compareKeys(a, b));
-    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 function gitObject(
   source: ProjectPolicySource,
@@ -138,11 +105,6 @@ function readTrustedProjectSettings(
 function resolveProjectSettings(
   raw: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
-  if (Object.hasOwn(raw, "policyBinding")) {
-    throw new OpsError(
-      "policyBinding is computed, not a configuration setting",
-    );
-  }
   if (!Object.hasOwn(raw, "projectPolicy")) {
     throw new OpsError(
       "config must pin projectPolicy: the repository's committed .issue-pipeline.json is its only project-settings source",
@@ -160,88 +122,4 @@ function resolveProjectSettings(
   return committedSettings(raw);
 }
 
-interface PolicySnapshot {
-  projectPolicy: ProjectPolicySource;
-  policyBinding?: ProjectPolicyBinding | undefined;
-  commands?: unknown;
-  practices?: unknown;
-  lockfiles?: unknown;
-  migrations?: unknown;
-  requireCi?: unknown;
-  ciWaitMinutes?: unknown;
-  commandTimeoutMinutes?: unknown;
-  permissions?: unknown;
-  resources?: unknown;
-}
-
-function computePolicyBinding(cfg: PolicySnapshot): ProjectPolicyBinding {
-  const {
-    commands,
-    practices,
-    lockfiles,
-    migrations,
-    requireCi,
-    ciWaitMinutes,
-    commandTimeoutMinutes,
-    permissions,
-    resources,
-  } = cfg;
-  const effective = {
-    commands,
-    practices,
-    lockfiles,
-    migrations,
-    requireCi,
-    ciWaitMinutes,
-    commandTimeoutMinutes,
-    permissions,
-    resources,
-  };
-  const source = cfg.projectPolicy;
-  const entry = gitObject(source, ["ls-tree", source.revision, "--", DOCUMENT]);
-  const match = TREE_ENTRY.exec(entry);
-  const { blob } = match?.groups ?? {};
-  if (blob === undefined) {
-    throw new OpsError("project policy lost its committed regular file");
-  }
-  const text = gitObject(source, ["cat-file", "blob", blob]);
-  const provenance = { source, blob, sha256: sha256(text), effective };
-  return {
-    mode: "committed",
-    settings: effective,
-    revision: source.revision,
-    blob,
-    sha256: provenance.sha256,
-    digest: sha256(canonical(provenance)),
-  };
-}
-
-// Loaded configs use their snapshot; in-process callers with parsed configs get
-// the same computation. Requests may compare this value but cannot supply it.
-function configPolicyDigest(cfg: PolicySnapshot): string {
-  return (cfg.policyBinding ?? computePolicyBinding(cfg)).digest;
-}
-
-function policyRevision(cfg: PolicySnapshot): { policy: string } {
-  return { policy: configPolicyDigest(cfg) };
-}
-
-function assertPolicyDigest(
-  cfg: PolicySnapshot,
-  expected: string | undefined,
-): void {
-  if (expected !== undefined && configPolicyDigest(cfg) !== expected) {
-    throw new OpsError(
-      "project checking policy changed since this job started; preserve work and restart with fresh checks/review",
-    );
-  }
-}
-
-export {
-  assertPolicyDigest,
-  computePolicyBinding,
-  configPolicyDigest,
-  policyRevision,
-  readTrustedProjectSettings,
-  resolveProjectSettings,
-};
+export { readTrustedProjectSettings, resolveProjectSettings };

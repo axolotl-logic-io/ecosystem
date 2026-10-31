@@ -1,6 +1,6 @@
 // Implement, as a task app on the task app framework:
 //
-//   node implement.mjs --config BUDDY_FILE --issue OWNER/REPO#N
+//   node implement.mjs --invocation
 //
 // Only `start:implement` starts it. Its work writes the change the issue
 // asks for on the branch `agent/issue-N`, hardens it in a fresh session and
