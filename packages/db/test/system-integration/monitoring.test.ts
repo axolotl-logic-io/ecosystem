@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { after, test } from "node:test";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { openDatabase } from "../../src/client.ts";
-import { executeCoordination } from "../../src/coordination.ts";
 import {
   appendBatch,
   cursor,
@@ -15,11 +14,7 @@ import type {
   MonitorEntity,
   MonitorEvent,
 } from "../../src/monitoring-protocol.ts";
-import {
-  monitorCursors,
-  monitorEntities,
-  monitorEvents,
-} from "../../src/tables/monitoring.ts";
+import { monitorEntities } from "../../src/tables/monitoring.ts";
 import {
   createTestDatabase,
   type TestDatabase,
@@ -219,7 +214,7 @@ test("read-only transactions prevent writes even through a privileged connection
   assert.ok((await readSnapshot(at.db, ["tests/one"])).entities.length > 0);
 });
 
-test("a database reader can inspect monitoring but cannot write it or read coordination", async (): Promise<void> => {
+test("a database reader can inspect monitoring but cannot write it", async (): Promise<void> => {
   const role = `monitor_reader_${crypto.randomUUID().replaceAll("-", "")}`;
   await at.db.execute(
     sql.raw(`CREATE ROLE "${role}" LOGIN PASSWORD 'fixture'`),
@@ -243,41 +238,9 @@ test("a database reader can inspect monitoring but cannot write it or read coord
       1,
     );
     await assert.rejects(saveEntity(reader.db, entity("unauthorized")));
-    await assert.rejects(
-      reader.db.execute(sql`SELECT * FROM coordination_claims`),
-    );
   } finally {
     await reader.close();
     await at.db.execute(sql`DROP OWNED BY ${sql.identifier(role)}`);
     await at.db.execute(sql`DROP ROLE ${sql.identifier(role)}`);
   }
-});
-
-test("monitoring cleanup does not touch operational coordination tables", async (): Promise<void> => {
-  const repo = "tests/cleanup";
-  const base = "main";
-  await executeCoordination(at.db, {
-    repo,
-    base,
-    operation: "claim",
-    scope: { kind: "issue", issue: 1 },
-    binding: {
-      repo,
-      base,
-      instance: crypto.randomUUID(),
-      issue: 1,
-      branch: "issue-1",
-      lane: "implement",
-    },
-  });
-  const before = await at.db.execute(
-    sql`SELECT count(*)::int AS count FROM coordination_repositories`,
-  );
-  await at.db.delete(monitorEvents).where(eq(monitorEvents.source, "pages"));
-  await at.db.delete(monitorCursors).where(eq(monitorCursors.source, "pages"));
-  const afterRows = await at.db.execute(
-    sql`SELECT count(*)::int AS count FROM coordination_repositories`,
-  );
-  assert.deepEqual(afterRows.rows, before.rows);
-  assert.equal((await transcript(at.db, "replayed-session")).rows.length, 1);
 });

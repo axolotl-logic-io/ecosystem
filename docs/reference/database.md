@@ -1,6 +1,6 @@
 # Shared database
 
-The workflow dashboard and Project Buddy use the shared `@ecosystem/db` PostgreSQL client and independent monitoring tables. The issue pipeline no longer uses a database for coordination and does not ship `database.mjs`. No table drop or migration is needed for that removal. Historical coordination tables and their migration history remain in the shared package; they are not used by task apps.
+The workflow dashboard and Project Buddy use the shared `@ecosystem/db` PostgreSQL client and its monitoring tables. The issue pipeline uses no database.
 
 ## Start the service
 
@@ -35,7 +35,7 @@ The [workflow dashboard](../../apps/workflow-dash/README.md) reads three monitor
 | `monitor_events` | Redacted transcript events with per-turn usage, context and compaction. `(source, position)` is unique, so a replay never duplicates an event. |
 | `monitor_cursors` | Each transcript source's byte offset, advanced in the same transaction as its events. |
 
-Monitoring tables have no foreign keys to coordination tables, and coordination never reads them. They describe work; they never grant ownership. Monitoring data has no automatic expiry. Keep monitoring data needed by other consumers; pipeline cleanup does not clear it.
+Monitoring tables describe work; they never grant ownership. Monitoring data has no automatic expiry. Keep monitoring data needed by other consumers; pipeline cleanup does not clear it.
 
 
 ## Test the database contract
