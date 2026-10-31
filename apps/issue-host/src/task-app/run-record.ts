@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
-import { ROOT } from "../host-paths.ts";
+import { dataRoot } from "../host-paths.ts";
 
 const TIME = z.iso.datetime();
 
@@ -54,7 +54,7 @@ interface RunRecord {
 
 function taskRunFile(repo: string, issue: number, id: string): string {
   return path.join(
-    ROOT,
+    dataRoot(),
     "runs",
     repo.replace("/", "__"),
     `issue-${issue}`,

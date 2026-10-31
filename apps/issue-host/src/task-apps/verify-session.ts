@@ -24,7 +24,7 @@ import { paths } from "../config.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { agentEnvOf } from "../job/agent-env.ts";
 import { runSession } from "../job/launch.ts";
-import { PROMPTS_DIR } from "../job/prompts.ts";
+import { promptsDir } from "../job/prompts.ts";
 import type { HeadCheckout } from "./head-checkout.ts";
 
 const AGENT = "issue-pipeline-reviewer";
@@ -95,7 +95,7 @@ async function reviewSession(review: Review): Promise<VerifyReply> {
       timeoutMs: SESSION_MINUTES.reviewer * MINUTE_MS,
       commits: false,
       phase: PHASE,
-      prompt: pinPage(PROMPTS_DIR, PAGE),
+      prompt: pinPage(promptsDir(), PAGE),
     },
     hooksOf(review),
   );

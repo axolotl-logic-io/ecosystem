@@ -110,7 +110,6 @@ test("installer accepts uncommitted source and records its dirty identity", () =
       env: {
         ...process.env,
         ...Object.fromEntries([
-          ["ISSUE_PIPELINE_ROOT", root],
           ["ECOSYSTEM_INSTALL_ROOT", root],
           ["PI_CODING_AGENT_DIR", agent],
         ]),
@@ -221,7 +220,6 @@ test("installer dry run plans the buddy distribution and preserves operator file
       env: {
         ...process.env,
         ...Object.fromEntries([
-          ["ISSUE_PIPELINE_ROOT", root],
           ["ECOSYSTEM_INSTALL_ROOT", root],
           ["PI_CODING_AGENT_DIR", agent],
         ]),

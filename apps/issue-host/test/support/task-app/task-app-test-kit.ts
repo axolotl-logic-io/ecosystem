@@ -374,7 +374,6 @@ function machine(
       ...Object.fromEntries(served.environment ?? []),
       ...Object.fromEntries([
         ["PATH", `${bin}:${searchPath ?? ""}`],
-        ["ISSUE_PIPELINE_ROOT", pipeline],
         ["ECOSYSTEM_INSTALL_ROOT", pipeline],
         ["ECOSYSTEM_DATA_ROOT", pipeline],
         ["SAMPLE_TASK_GATE", gated],

@@ -2,7 +2,7 @@
 import path from "node:path";
 import type { RuntimeConfig } from "@ecosystem/task-runtime/job/runtime-policy";
 import { runtimeProfile as prepareRuntime } from "@ecosystem/task-runtime/job/runtime-profile";
-import { expand, HOME, ROOT } from "../host-paths.ts";
+import { dataRoot, expand, HOME } from "../host-paths.ts";
 
 function resolvedRuntime(
   runtime: RuntimeConfig | undefined,
@@ -16,7 +16,7 @@ function resolvedRuntime(
   }
   return {
     ...runtime,
-    home: expand(runtime.home ?? path.join(ROOT, "runtime", "home")),
+    home: expand(runtime.home ?? path.join(dataRoot(), "runtime", "home")),
     providerExtension,
   };
 }

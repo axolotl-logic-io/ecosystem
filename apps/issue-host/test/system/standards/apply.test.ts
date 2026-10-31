@@ -127,7 +127,8 @@ function world(): World {
             ...process.env,
             ...Object.fromEntries([
               ["PATH", `${bin}${path.delimiter}${searched}`],
-              ["ISSUE_PIPELINE_ROOT", root],
+              ["ECOSYSTEM_INSTALL_ROOT", root],
+              ["ECOSYSTEM_DATA_ROOT", root],
               ["STANDARDS_WORLD", fixture],
               ["STANDARDS_CALLS", calls],
             ]),

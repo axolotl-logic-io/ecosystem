@@ -14,7 +14,7 @@ import {
 import type { ProjectPolicyBinding } from "@ecosystem/task-runtime/project-policy-schema";
 import { z } from "zod";
 import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
-import { expand, ROOT } from "./host-paths.ts";
+import { dataRoot, expand } from "./host-paths.ts";
 import { JOB_REPO } from "./job/layout.ts";
 import type { RunResult } from "./process.ts";
 import type { WriteIntent } from "./write-refusal.ts";
@@ -113,11 +113,11 @@ const paths = {
     }
     return branch;
   },
-  clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
+  clone: (cfg: Config): string => path.join(dataRoot(), "clones", cfg.slug),
   // Stage job `stage`'s own folder for issue `n`, which holds its code
   // checkout.
   jobCheckout: (cfg: Config, n: number, stage: string): string =>
-    path.join(ROOT, "work", cfg.slug, "jobs", `issue-${n}-${stage}`),
+    path.join(dataRoot(), "work", cfg.slug, "jobs", `issue-${n}-${stage}`),
   // The job's code checkout, cloned from the mirror.
   jobRepo: (cfg: Config, n: number, stage: string): string =>
     path.join(paths.jobCheckout(cfg, n, stage), JOB_REPO),
@@ -136,9 +136,9 @@ const paths = {
     path.join(paths.runDir(cfg, n), "job.log"),
   // The bare code mirror that job checkouts clone.
   mirror: (cfg: Config): string =>
-    path.join(ROOT, "work", cfg.slug, "mirror.git"),
+    path.join(dataRoot(), "work", cfg.slug, "mirror.git"),
   runDir: (cfg: Config, n: number): string =>
-    path.join(ROOT, "runs", cfg.slug, `issue-${n}`),
+    path.join(dataRoot(), "runs", cfg.slug, `issue-${n}`),
   // A stage job's model session for launch `key` on issue `n`, as JSONL.
   session: (cfg: Config, n: number, key: string): string =>
     path.join(paths.runDir(cfg, n), "sessions", `${key}.jsonl`),
@@ -146,7 +146,7 @@ const paths = {
     if (cfg.checkout?.issue === n) {
       return cfg.checkout.dir;
     }
-    return path.join(ROOT, "work", cfg.slug, `issue-${n}`);
+    return path.join(dataRoot(), "work", cfg.slug, `issue-${n}`);
   },
 };
 

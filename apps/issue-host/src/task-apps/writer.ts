@@ -31,7 +31,7 @@ import { git } from "../github.ts";
 import { agentEnvOf } from "../job/agent-env.ts";
 import { openJobCheckout } from "../job/checkout.ts";
 import { runSession } from "../job/launch.ts";
-import { PROMPTS_DIR } from "../job/prompts.ts";
+import { promptsDir } from "../job/prompts.ts";
 import { run } from "../process.ts";
 import type { TaskRun } from "../task-app/task-app.ts";
 
@@ -213,7 +213,7 @@ async function writeSession<T>(
         timeoutMs: SESSION_MINUTES.developer * MINUTE_MS,
         commits: true,
         phase: "fix",
-        prompt: pinPage(PROMPTS_DIR, "fix.md"),
+        prompt: pinPage(promptsDir(), "fix.md"),
       },
       hooks,
     );

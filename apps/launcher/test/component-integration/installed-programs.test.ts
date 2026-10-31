@@ -9,12 +9,14 @@ import { test } from "node:test";
 
 const CLI = path.resolve(import.meta.dirname, "../../src/cli.ts");
 const NO_PROGRAM = /no installed task app/u;
-const RETIRED_OPTION = /manifest/u;
+const NO_ROOT = /ECOSYSTEM_INSTALL_ROOT must name an absolute directory/u;
 const DEADLINE_MS = 30_000;
 
 function sandbox(): {
   installRoot: string;
   launcher: (...args: string[]) => SpawnSyncReturns<string>;
+  // Runs the launcher with no install root in its environment.
+  unrooted: (...args: string[]) => SpawnSyncReturns<string>;
   cleanup: () => void;
 } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "launcher-programs-"));
@@ -48,6 +50,14 @@ function sandbox(): {
         encoding: "utf8",
         timeout: DEADLINE_MS,
       }),
+    unrooted: (...args: string[]): SpawnSyncReturns<string> => {
+      const { ECOSYSTEM_INSTALL_ROOT: _root, ...env } = process.env;
+      return spawnSync(process.execPath, [CLI, "--config", buddy, ...args], {
+        env,
+        encoding: "utf8",
+        timeout: DEADLINE_MS,
+      });
+    },
     cleanup: (): void => fs.rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -73,16 +83,12 @@ test("check resolves each task to its program in the install root", () => {
   }
 });
 
-test("the retired manifest option is refused", () => {
+test("the launcher refuses to start without an install root", () => {
   const box = sandbox();
   try {
-    const refused = box.launcher(
-      "--manifest",
-      path.join(box.installRoot, "tasks.json"),
-      "--check",
-    );
+    const refused = box.unrooted("--check");
     assert.equal(refused.status, 1);
-    assert.match(refused.stderr, RETIRED_OPTION);
+    assert.match(refused.stderr, NO_ROOT);
   } finally {
     box.cleanup();
   }

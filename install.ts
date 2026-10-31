@@ -40,13 +40,10 @@ const DATE_PUNCTUATION = /[-:]/gu;
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const HOME = os.homedir();
 const {
-  ECOSYSTEM_INSTALL_ROOT: rootVariable,
-  ISSUE_PIPELINE_ROOT: legacyRoot,
+  ECOSYSTEM_INSTALL_ROOT: rootVariable = "",
   PI_CODING_AGENT_DIR: agentDirVariable,
 }: NodeJS.ProcessEnv = process.env;
-const ROOT = path.resolve(
-  rootVariable || legacyRoot || path.join(HOME, ".pi/agent/issue-pipeline"),
-);
+const ROOT = path.resolve(rootVariable);
 const AGENT_DIR = path.resolve(
   agentDirVariable || path.join(HOME, ".pi/agent"),
 );
@@ -73,7 +70,7 @@ function real(p: string): string {
 
 function fill(text: string): string {
   return text
-    .replaceAll("{{ISSUE_PIPELINE_ROOT}}", ROOT)
+    .replaceAll("{{ECOSYSTEM_INSTALL_ROOT}}", ROOT)
     .replaceAll("{{PI_CODING_AGENT_DIR}}", AGENT_DIR);
 }
 
@@ -294,6 +291,9 @@ function checkTargets(files: readonly string[]): void {
 }
 
 function installRelease(output: string): void {
+  if (!path.isAbsolute(rootVariable)) {
+    fail("ECOSYSTEM_INSTALL_ROOT must name an absolute directory");
+  }
   const { commit, dirty } = checkedBuild(output);
   const repo = (git("remote", "get-url", "origin") ?? "")
     .replace(GITHUB_PREFIX, "")

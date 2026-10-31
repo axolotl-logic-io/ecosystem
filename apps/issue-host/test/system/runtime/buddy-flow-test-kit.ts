@@ -533,7 +533,6 @@ function machine(
     ...Object.fromEntries([
       ["PATH", `${bin}${path.delimiter}${inherited}`],
       ["HOME", home],
-      ["ISSUE_PIPELINE_ROOT", pipeline],
       ["ECOSYSTEM_INSTALL_ROOT", pipeline],
       ["ECOSYSTEM_DATA_ROOT", data],
       ["PI_CODING_AGENT_DIR", agentDir],

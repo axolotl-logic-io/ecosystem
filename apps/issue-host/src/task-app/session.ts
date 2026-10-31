@@ -22,7 +22,7 @@ import { agentEnvOf } from "../job/agent-env.ts";
 import { openBaseCheckout } from "../job/checkout.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
-import { PROMPTS_DIR } from "../job/prompts.ts";
+import { promptsDir } from "../job/prompts.ts";
 import { taskRunFile } from "./run-record.ts";
 import type { TaskRun } from "./task-app.ts";
 
@@ -65,7 +65,7 @@ function gherkinSessionHost(
       runModel: async (session: GherkinSession): Promise<unknown> => {
         run.checkStop();
         fs.writeFileSync(issueFile, session.inputs.issue.context);
-        const prompt = pinPage(PROMPTS_DIR, "gherkin.md");
+        const prompt = pinPage(promptsDir(), "gherkin.md");
         const task = [
           `# Issue #${number} in ${name}: \`gherkin\``,
           "",

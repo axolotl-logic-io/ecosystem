@@ -1,7 +1,9 @@
-// Compatibility prompt location, owned by the installed host.
+// The installed prompt pages.
 import path from "node:path";
-import { INSTALL_ROOT } from "../host-paths.ts";
+import { installRoot } from "../host-paths.ts";
 
-const PROMPTS_DIR = path.join(INSTALL_ROOT, "prompts");
+function promptsDir(): string {
+  return path.join(installRoot(), "prompts");
+}
 
-export { PROMPTS_DIR };
+export { promptsDir };

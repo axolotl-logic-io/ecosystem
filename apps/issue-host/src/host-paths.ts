@@ -1,22 +1,18 @@
 // Host-owned asset, data and agent locations. Packages and tasks receive resolved
-// capabilities instead of reading these process-boundary defaults.
+// capabilities instead of reading these process-boundary settings.
 
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { OpsError } from "@ecosystem/task-runtime/ops-error";
 
 const {
-  ISSUE_PIPELINE_ROOT: legacyRoot,
-  ECOSYSTEM_INSTALL_ROOT: installRoot,
-  ECOSYSTEM_DATA_ROOT: dataRoot,
+  ECOSYSTEM_INSTALL_ROOT: installRootVariable = "",
+  ECOSYSTEM_DATA_ROOT: dataRootVariable = "",
   PI_CODING_AGENT_DIR: agentDirVariable,
 }: NodeJS.ProcessEnv = process.env;
 const HOME: string = os.homedir();
-const INSTALL_ROOT: string = path.resolve(
-  installRoot || legacyRoot || path.join(HOME, ".pi/agent/issue-pipeline"),
-);
-const ROOT: string = path.resolve(dataRoot || legacyRoot || INSTALL_ROOT);
-// pi's own folder, where the root installer puts compatible agent definitions.
+// pi's own folder, where the root installer puts the agent definitions.
 const AGENT_DIR: string = path.resolve(
   agentDirVariable || path.join(HOME, ".pi/agent"),
 );
@@ -29,6 +25,24 @@ const MACHINE_PATH =
   /(?<![\w.~-])\/(?:Users|home|root|tmp|private|var\/folders|var\/tmp|Volumes|mnt)(?:\/[^\s"'`<>()[\]{},;]*)?/gu;
 const LOCAL_PATH = "[local path]";
 
+function required(name: string, value: string): string {
+  if (!path.isAbsolute(value)) {
+    throw new OpsError(`${name} must name an absolute directory`);
+  }
+  return path.resolve(value);
+}
+
+// The installed programs, prompts and support assets: `ECOSYSTEM_INSTALL_ROOT`.
+function installRoot(): string {
+  return required("ECOSYSTEM_INSTALL_ROOT", installRootVariable);
+}
+
+// The operator-owned writable root for clones, work, runs and the default
+// model runtime HOME: `ECOSYSTEM_DATA_ROOT`.
+function dataRoot(): string {
+  return required("ECOSYSTEM_DATA_ROOT", dataRootVariable);
+}
+
 // A path from a config, with a leading `~/` read as the home directory.
 function expand(file: string): string {
   if (file.startsWith(HOME_PREFIX)) {
@@ -38,17 +52,17 @@ function expand(file: string): string {
 }
 
 // Text posted to GitHub names local paths by variable, not by this machine's
-// layout: explicit install/data variables, then the home directory as ~. Any other
+// layout: the install and data roots, then the home directory as ~. Any other
 // path into a home, temporary or private folder reads `[local path]`.
 function redactLocalPaths(text: string): string {
   return text
-    .split(INSTALL_ROOT)
+    .split(installRoot())
     .join("$ECOSYSTEM_INSTALL_ROOT")
-    .split(ROOT)
+    .split(dataRoot())
     .join("$ECOSYSTEM_DATA_ROOT")
     .split(HOME)
     .join("~")
     .replace(MACHINE_PATH, LOCAL_PATH);
 }
 
-export { AGENT_DIR, expand, HOME, INSTALL_ROOT, ROOT, redactLocalPaths };
+export { AGENT_DIR, dataRoot, expand, HOME, installRoot, redactLocalPaths };

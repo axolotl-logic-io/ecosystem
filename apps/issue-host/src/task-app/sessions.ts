@@ -29,7 +29,7 @@ import type { SessionProfile } from "../config-schema.ts";
 import { agentEnvOf } from "../job/agent-env.ts";
 import { runSession } from "../job/launch.ts";
 import { JOB_REPO } from "../job/layout.ts";
-import { PROMPTS_DIR } from "../job/prompts.ts";
+import { promptsDir } from "../job/prompts.ts";
 
 const MINUTE_MS = 60_000;
 // One session: the model profile it plays, the prompt page it follows, its
@@ -122,7 +122,7 @@ async function openSessions(
   return {
     run: async (session: TaskSession): Promise<SessionResult> => {
       count += 1;
-      const prompt = pinPage(PROMPTS_DIR, session.page);
+      const prompt = pinPage(promptsDir(), session.page);
       const raw = await runSession(
         {
           key: `${session.phase ?? session.profile}-${count}`,
