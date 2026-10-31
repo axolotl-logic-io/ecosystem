@@ -176,13 +176,11 @@ async function writeSession<T>(
       control.register(live),
     record: (): void => undefined,
     ended: (): void => undefined,
-    sessionEnded: (): void => undefined,
     env: (): Readonly<Record<string, string>> => ({
       ...env,
       [COMMIT_SCOPE_ENV]: JSON.stringify(scope),
     }),
     cwd: dirs.root,
-    repo: dirs.repo,
   };
   if (cfg.runtime !== undefined) {
     hooks.runtime = cfg.runtime;

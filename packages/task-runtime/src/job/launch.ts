@@ -1,15 +1,13 @@
 // Run one fresh model session with pinned prompts and isolated credentials.
 import fs from "node:fs";
 import path from "node:path";
-import { run } from "../command.ts";
 import type { SessionPhase } from "../domain.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
-import type { SessionEnd, Steers } from "./context-log.ts";
 import type { LiveHandle } from "./control.ts";
 import type { PinnedPrompt } from "./prompts.ts";
 import type { SessionRaw } from "./raw-results.ts";
 import { failedSession, sessionRaw } from "./raw-results.ts";
-import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
+import type { RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { RuntimeConfig } from "./runtime-policy.ts";
 import { runtimeProfile } from "./runtime-profile.ts";
@@ -33,8 +31,6 @@ interface LaunchHooks {
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
   ended: (key: string) => void;
-  // Session `key` ended, after `ended`, as `end` says.
-  sessionEnded: (key: string, end: SessionEnd) => void;
   // The whole environment launch `key`'s session runs with: a commit scope
   // only when the session `commits`, and never a token.
   env: (launch: {
@@ -43,8 +39,6 @@ interface LaunchHooks {
   }) => Readonly<Record<string, string>>;
   // Where every model session runs: the job's own folder.
   cwd: string;
-  // The job's code checkout, in its folder.
-  repo: string;
   runtime?: RuntimeConfig;
 }
 
@@ -64,17 +58,6 @@ interface SessionLaunch {
   commits: boolean;
   phase: SessionPhase | null;
   prompt: PinnedPrompt;
-}
-
-// The code checkout's head, or null when it has none to read.
-function checkoutHead(repo: string): string | null {
-  try {
-    return run("git", ["-C", repo, "rev-parse", "HEAD"], {
-      cwd: repo,
-    }).stdout.trim();
-  } catch {
-    return null;
-  }
 }
 
 // Readies `launch`'s session files: creates the sessions folder, moves an
@@ -102,33 +85,12 @@ function prepareSession(
   return { session, schema };
 }
 
-// `live` with the steers sent through it counted in `steers`.
-function countingSteers(live: LiveHandle, steers: Steers): LiveHandle {
-  if (live.kind !== "session") {
-    return live;
-  }
-  const { session } = live;
-  return {
-    kind: "session",
-    session: {
-      ...session,
-      send: (command: RpcCommand): Promise<RpcAnswer> => {
-        if (command.type === "steer") {
-          steers.socket += 1;
-        }
-        return session.send(command);
-      },
-    },
-  };
-}
-
 // What tells the job that `launch`'s pi, writing `session`, started: its
-// record names the session's write authority, phase and pinned prompt, and
-// its steers are counted in `steers`.
+// record names the session's write authority, phase and pinned prompt.
 function spawnedOf(
   launch: SessionLaunch,
   session: string,
-  watch: { hooks: LaunchHooks; steers: Steers },
+  hooks: LaunchHooks,
 ): (rpc: RpcProcess) => void {
   const { key, commits, phase } = launch;
   const { page, sha256 } = launch.prompt.provenance;
@@ -143,15 +105,14 @@ function spawnedOf(
       prompt: { page, sha256 },
     };
     const live: LiveHandle = { kind: "session", session: { key, ...rpc } };
-    watch.hooks.started(start, countingSteers(live, watch.steers));
+    hooks.started(start, live);
   };
 }
 
 // Runs `launch`'s session as its installed agent and resolves to its raw
 // result. Only a launch that commits gets pipeline_commit, a commit scope and
 // tools that edit or run commands; any other reads only, whatever its
-// agent's definition lists (piArgs). The context log hears how it ended,
-// with the head it ran on for a session that can't commit.
+// agent's definition lists (piArgs).
 async function runSession(
   launch: SessionLaunch,
   hooks: LaunchHooks,
@@ -189,11 +150,6 @@ async function runSession(
     commit,
   });
   args.push("-e", runtime.extension);
-  let reviewedSha: string | null = null;
-  if (!commits) {
-    reviewedSha = checkoutHead(hooks.repo);
-  }
-  const steers: Steers = { socket: 0 };
   const exit = await runRpc({
     args,
     cwd: hooks.cwd,
@@ -206,37 +162,11 @@ async function runSession(
     },
     prompt: launch.task,
     timeoutMs: launch.timeoutMs,
-    onSpawn: spawnedOf(launch, files.session, { hooks, steers }),
+    onSpawn: spawnedOf(launch, files.session, hooks),
     onRecord: (record: unknown): void => hooks.record(key, record),
   });
   hooks.ended(key);
-  const raw = sessionRaw(launch, exit);
-  recordSessionEnd(launch, hooks, raw, { steers, reviewedSha });
-  return raw;
-}
-
-function recordSessionEnd(
-  launch: SessionLaunch,
-  hooks: LaunchHooks,
-  raw: SessionRaw,
-  context: { steers: Steers; reviewedSha: string | null },
-): void {
-  const { steers, reviewedSha } = context;
-  const { key, profile, agent, model } = launch;
-  let ended: SessionEnd["ended"] = "failed";
-  if (raw.ok) {
-    ended = "ok";
-  }
-  const headSha = checkoutHead(hooks.repo);
-  hooks.sessionEnded(key, {
-    role: profile,
-    agent,
-    model,
-    ended,
-    steers,
-    headSha,
-    reviewedSha,
-  });
+  return sessionRaw(launch, exit);
 }
 
 export type { LaunchHooks, SessionLaunch, SessionResources };
