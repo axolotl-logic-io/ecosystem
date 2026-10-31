@@ -1,7 +1,7 @@
 // A task app's private writing checkout and credential-free Developer
 // session. GitHub's pushed branch is the starting point for every run.
 // Commits use the existing commit tool; its socket identity is local to
-// this process and requires no coordination claims or task records.
+// this process.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
