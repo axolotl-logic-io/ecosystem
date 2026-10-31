@@ -5,7 +5,11 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const processReadTimeout = 3000;
 const commandReadBytes = 8192;
-const processListBytes = 1_048_576;
+type ReadCommand = (
+  command: string,
+  args: string[],
+  options: { timeout: number; maxBuffer: number },
+) => Promise<{ stdout: string }>;
 type ProcessInspection =
   | { state: "running"; command: string; startedAt: number | null }
   | { state: "absent" }
@@ -52,18 +56,6 @@ async function inspectProcess(
     return { state: "unknown", reason: "process command unreadable" };
   }
 }
-async function processList(): Promise<string> {
-  try {
-    return (
-      await exec("ps", ["-axo", "pid=,command="], {
-        timeout: processReadTimeout,
-        maxBuffer: processListBytes,
-      })
-    ).stdout;
-  } catch {
-    return "";
-  }
-}
 
-export type { ProcessInspection };
-export { exec, inspectProcess, processList };
+export type { ProcessInspection, ReadCommand };
+export { exec, inspectProcess };

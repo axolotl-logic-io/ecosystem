@@ -76,6 +76,9 @@ const compact = z.object({
 });
 const usageEntry = z.object({ usage: counts });
 
+// The monitoring protocol stores task runs with its `action` kind.
+const taskRunKind = "action";
+
 function redact(text: string): string {
   const redacted = text
     .replace(privateKey, "[private key redacted]")
@@ -317,4 +320,4 @@ function projectRecord(
   return null;
 }
 
-export { entity, projectRecord, redact, safeBody, timestamp };
+export { entity, projectRecord, redact, safeBody, taskRunKind, timestamp };

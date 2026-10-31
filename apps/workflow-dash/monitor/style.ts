@@ -45,13 +45,13 @@ const frameRows = { border: 2, gap: 1 };
 const sectionStyle = new Map<string, { ink: Ink; icon: string }>([
   ["ACTIVE", { ink: "accent", icon: "▶" }],
   ["NEEDS YOU", { ink: "error", icon: "!" }],
-  ["PENDING", { ink: "mdHeading", icon: "◷" }],
+  ["OPEN", { ink: "mdHeading", icon: "◷" }],
   ["SUBAGENTS", { ink: "syntaxFunction", icon: "◆" }],
   ["FINISHED", { ink: "success", icon: "✓" }],
 ]);
-const goodStates = /succeeded|passed|landed|closed|merged|done|ok/u;
-const badStates = /failed|error|refused|unknown|blocked/u;
-const slowStates = /waiting|held|stopped|pending|partial|delayed|interrupted/u;
+const goodStates = /succeeded|closed|done|ok/u;
+const badStates = /failed|error|unknown|blocked|rejected/u;
+const slowStates = /unavailable|stopped|waiting|pending|partial|delayed/u;
 const liveStates = /running|active|started/u;
 const repoInks: ThemeColor[] = ["syntaxFunction", "borderAccent", "syntaxType"];
 
@@ -81,7 +81,7 @@ function sectionBadge(section: string, count: number): Badge {
     ink: sectionInk(section),
   };
 }
-/** Green for finished, red for failed, yellow for waiting, mauve for live. */
+/** Green for succeeded, red for failed, yellow for uncertain or stopped, mauve for live. */
 function stateInk(state: string): ThemeColor {
   if (badStates.test(state)) {
     return "error";

@@ -3,11 +3,8 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
-type DashboardContext = Pick<ExtensionContext, "mode" | "isIdle"> & {
-  ui: Pick<
-    ExtensionContext["ui"],
-    "setWidget" | "notify" | "select" | "editor" | "custom"
-  >;
+type DashboardContext = Pick<ExtensionContext, "mode"> & {
+  ui: Pick<ExtensionContext["ui"], "setWidget" | "notify" | "custom">;
 };
 type LifecycleHandler = (
   event: unknown,
@@ -20,7 +17,6 @@ type DashboardApi = Pick<
   | "registerCommand"
   | "registerShortcut"
   | "registerTool"
-  | "sendUserMessage"
 > & {
   on: (
     event: "session_start" | "session_shutdown",

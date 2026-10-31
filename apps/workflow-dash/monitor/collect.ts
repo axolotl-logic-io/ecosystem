@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
 import type { DatabaseConnection } from "@ecosystem/db";
-import { configure } from "../config.ts";
+import { type Config, configure, runsFolder } from "../config.ts";
+import { errorMessage } from "../errors.ts";
 import { parse } from "../source-records.ts";
 import { collectMonitoring } from "./collector.ts";
 import { monitoringConnection } from "./connection.ts";
@@ -19,7 +20,17 @@ const { values } = parseArgs({
 });
 const configPath: string =
   values.config ?? join(dirname(import.meta.dirname), "workflow-dash.json");
-const config = configure(parse(await readFile(configPath, "utf8")));
+let config: Config;
+let runs: string;
+try {
+  config = configure(parse(await readFile(configPath, "utf8")));
+  runs = runsFolder(process.env.ECOSYSTEM_DATA_ROOT);
+} catch (error) {
+  process.stderr.write(
+    `Monitoring configuration refused: ${errorMessage(error)}\n`,
+  );
+  process.exit(1);
+}
 const connection: DatabaseConnection = await monitoringConnection(
   "writer",
   values.credentials,
@@ -52,7 +63,7 @@ function watch(): Promise<void> {
 }
 async function cycle(): Promise<void> {
   const github = Date.now() - githubAt >= githubMilliseconds;
-  await collectMonitoring(connection.db, config, github);
+  await collectMonitoring(connection.db, config, runs, github);
   if (github) {
     githubAt = Date.now();
   }
@@ -66,7 +77,7 @@ try {
   }
 } catch {
   process.stderr.write(
-    "Monitoring collection failed; no coordination state was changed. Check database grants, migrations and source availability.\n",
+    "Monitoring collection failed. Check database grants, migrations and source availability.\n",
   );
   process.exitCode = 1;
 } finally {

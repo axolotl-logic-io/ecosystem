@@ -1,4 +1,4 @@
-// Keep the root policy. These match the pipeline's documented platform
+// Keep the root policy. These are the dashboard's Node process
 // boundaries; they do not exempt imported code from design or type rules.
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
@@ -7,15 +7,10 @@
     {
       "includes": [
         "config.ts",
-        "data.ts",
         "index.ts",
         "local-files.ts",
         "process-observations.ts",
-        "job-history.ts",
-        "runtime-runs.ts",
-        "session-source.ts",
-        "subagent-runs.ts",
-        "runtime.ts",
+        "task-runs.ts",
         "monitor/collect.ts",
         "monitor/collector.ts",
         "monitor/connection.ts",
@@ -27,6 +22,15 @@
             "noNodejsModules": "off",
             "noProcessGlobal": "off"
           }
+        }
+      }
+    },
+    {
+      // The collector's entrypoint reads the data root from its environment.
+      "includes": ["monitor/collect.ts", "test/system-integration/**"],
+      "linter": {
+        "rules": {
+          "style": { "noProcessEnv": "off" }
         }
       }
     },

@@ -10,7 +10,7 @@ const credentialReadBytes = 16_384;
 const nonOwnerPermissionRange = 0o100;
 
 // The reader and collector are provisioned separately; neither falls back to
-// pipeline credentials or an inherited DATABASE_URL.
+// other credentials or an inherited DATABASE_URL.
 async function monitoringConnection(
   role: "reader" | "writer",
   credentialFile?: string,

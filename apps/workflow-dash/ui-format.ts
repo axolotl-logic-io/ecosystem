@@ -1,11 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-const secondsPerMinute = 60;
-const mergedLabel = /merged/u;
-const stoppedLabel = /stopped/u;
-const questionLabel = /not-doable|ask/u;
-const splitLabel = /split/u;
 const crust: { kind: "rgb"; r: number; g: number; b: number } = {
   kind: "rgb",
   r: 0x11,
@@ -35,37 +30,18 @@ interface Panel {
   content: string[];
   width: number;
   height: number;
-  /** Border and title colors; the defaults are the original subdued frame. */
+  /** Border and title colors; the defaults are a subdued frame. */
   border?: Ink | "borderMuted";
   heading?: Ink;
 }
 const layout = {
-  narrow: 65,
-  compactRun: 75,
-  medium: 90,
-  wide: 110,
-  gutter: 3,
   panelInset: 4,
   frameInset: 2,
 };
 
-function fmt(seconds: number): string {
-  return `${Math.floor(seconds / secondsPerMinute)}m${Math.floor(
-    seconds % secondsPerMinute,
-  )
-    .toString()
-    .padStart(2, "0")}s`;
-}
-function shortRepo(repo: string): string {
-  return repo.slice(repo.lastIndexOf("/") + 1);
-}
-function pad(text: string, width: number, right = false): string {
+function pad(text: string, width: number): string {
   const clipped = truncateToWidth(text, Math.max(0, width), "…");
-  const space = " ".repeat(Math.max(0, width - visibleWidth(clipped)));
-  if (right) {
-    return space + clipped;
-  }
-  return clipped + space;
+  return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 /** Rebuild theme colors at render time; retain no styled strings in state. */
 function pill(theme: StyleTheme, badge: Badge): string {
@@ -88,23 +64,6 @@ function chip(theme: StyleTheme, text: string, ink: Ink): string {
     bg: "userMessageBg",
     bold: true,
   });
-}
-function labelInk(
-  label: string,
-): "success" | "error" | "mdHeading" | "accent" | "syntaxFunction" {
-  if (mergedLabel.test(label)) {
-    return "success";
-  }
-  if (stoppedLabel.test(label)) {
-    return "error";
-  }
-  if (questionLabel.test(label)) {
-    return "mdHeading";
-  }
-  if (splitLabel.test(label)) {
-    return "accent";
-  }
-  return "syntaxFunction";
 }
 function panel(theme: StyleTheme, box: Panel): string[] {
   const {
@@ -145,4 +104,4 @@ function panel(theme: StyleTheme, box: Panel): string[] {
 }
 
 export type { Badge, Ink, Panel, StyleTheme };
-export { chip, fmt, labelInk, layout, pad, panel, pill, shortRepo };
+export { chip, layout, pad, panel, pill };
