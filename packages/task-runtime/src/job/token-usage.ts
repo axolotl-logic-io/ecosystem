@@ -23,8 +23,6 @@ const TOKEN_COUNTS = z.object({
   cacheWrite: COUNT,
   cacheWrite1h: COUNT,
 });
-// A usage as job.json keeps it; a count an older file lacks reads as 0.
-const USAGE = TOKEN_COUNTS.extend({ cost: COUNT });
 // An assistant message's usage as pi prints it, whose `cost` is a breakdown
 // with its `total`.
 const PI_USAGE = TOKEN_COUNTS.extend({
@@ -52,15 +50,5 @@ function addUsage(sum: Usage, usage: Usage): Usage {
   };
 }
 
-// Every token the usage counts: input, output and both cache counts.
-function usageTotal(usage: Usage): number {
-  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-}
-
-// The context one turn's usage shows: what the model read that turn.
-function turnContext(usage: Usage): number {
-  return usage.input + usage.cacheRead + usage.cacheWrite;
-}
-
 export type { Usage };
-export { addUsage, PI_USAGE, turnContext, USAGE, usageTotal, ZERO_USAGE };
+export { addUsage, PI_USAGE, ZERO_USAGE };
