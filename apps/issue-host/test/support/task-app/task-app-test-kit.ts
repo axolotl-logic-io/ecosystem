@@ -7,8 +7,8 @@
 // applied by a person. Tests change the world as GitHub or a person would,
 // hold a run live at its gate, and read back what a person sees. The
 // launcher's tests install the sample app as other tasks' apps in the
-// pipeline root and run the buddy itself (src/buddy.ts), as the operator
-// runs it, reading each app's exit from the buddy's log.
+// install root and run the built launcher, as the operator runs it,
+// reading each app's exit from the buddy's log.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";

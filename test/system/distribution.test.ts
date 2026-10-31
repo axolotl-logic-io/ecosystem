@@ -57,10 +57,6 @@ function fixture(): { root: string; source: string; cleanup: () => void } {
       return !["dist", "node_modules", "test", ".git"].includes(first ?? "");
     },
   });
-  fs.rmSync(path.join(source, "apps/issue-pipeline"), {
-    recursive: true,
-    force: true,
-  });
   fs.symlinkSync(DEPENDENCIES, path.join(source, "node_modules"), "dir");
   command(source, "git", ["init", "--initial-branch=main"]);
   command(source, "git", ["config", "user.name", "Distribution test"]);
@@ -170,13 +166,6 @@ test("installer accepts uncommitted source and records its dirty identity", () =
       [path.join(root, "launcher.mjs"), ...args],
       service,
     );
-    const compatible = command(
-      sandbox.root,
-      process.execPath,
-      [path.join(root, "buddy.mjs"), ...args],
-      service,
-    );
-    assert.equal(compatible, launcher);
     const fleet = path.join(sandbox.root, "fleet.json");
     fs.writeFileSync(
       fleet,

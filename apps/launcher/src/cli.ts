@@ -5,7 +5,7 @@ import { checkLauncher, runLauncher } from "./launcher.ts";
 import { openStop } from "./stop.ts";
 
 const ROOT = installRootOf(process.env);
-const USAGE = "usage: buddy.mjs --config <buddy.json> [--check]";
+const USAGE = "usage: launcher.mjs --config <buddy.json> [--check]";
 
 function messageOf(error: unknown): string {
   if (error instanceof Error) {

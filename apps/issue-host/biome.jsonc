@@ -46,7 +46,6 @@
         "src/job/checkout.ts",
         "src/job/checkout-close.ts",
         "src/job/code-recovery.ts",
-        "src/buddy.ts",
         "src/task-app/stop.ts",
         "src/trusted-file.ts",
         "src/task-app/buddy-file.ts",
