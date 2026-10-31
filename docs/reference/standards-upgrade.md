@@ -93,7 +93,7 @@ To assess the configured repository at its default branch, run from the reposito
 
 ```bash
 npm run build --workspace @ecosystem/issue-host
-node apps/issue-host/dist/standards-upgrade.mjs assess \
+node "$ECOSYSTEM_INSTALL_ROOT/standards-upgrade.mjs" assess \
   --config CONFIG --repo OWNER/REPO --out OUT_DIR
 ```
 
@@ -209,7 +209,7 @@ To deliver an assessment's plan, follow these steps:
 3. Check the issue and get the human-start handoff:
 
    ```bash
-   node apps/issue-host/dist/standards-upgrade.mjs apply --config CONFIG --issue ISSUE
+   node "$ECOSYSTEM_INSTALL_ROOT/standards-upgrade.mjs" apply --config CONFIG --issue ISSUE
    ```
 
    `ISSUE` is the number of the issue you filed.

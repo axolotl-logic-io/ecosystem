@@ -39,7 +39,8 @@ configurations. It does not rewrite private files, move runtime data, select
 policy pins or provision a model provider, discovery cache or credentials.
 See [native runtime provisioning](../../apps/issue-host/runtime/README.md).
 
-The two roots can name the same directory. The orchestrator passes its install
+The two roots can name the same directory. The standalone Safe Refactor and
+standards upgrade commands read the same variables. The orchestrator passes its install
 root to each launcher, and each launcher passes its environment to the task
 programs it starts. The host resolves paths before calling task or package code;
 neither discovers an implicit root.
