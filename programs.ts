@@ -1,4 +1,5 @@
-// One distribution manifest for the build, installer and syntax gate.
+// One distribution list for the build, installer and syntax gate. Each task
+// the launcher accepts installs as `TASK.mjs`, which the launcher runs.
 const PROGRAMS = [
   { source: "apps/issue-host/src/task-apps/fix.ts", file: "fix.mjs" },
   {
@@ -39,7 +40,6 @@ const PROGRAMS = [
 ] as const;
 
 // Task definitions own prompts and agent templates; installed names stay stable.
-const TASKS = ["gherkin", "implement", "fix", "verify", "land"] as const;
 const ASSETS = [
   { source: "tasks/verify/prompts/verify.md", file: "prompts/verify.md" },
   { source: "tasks/gherkin/prompts/gherkin.md", file: "prompts/gherkin.md" },
@@ -79,4 +79,4 @@ const ASSETS = [
   },
 ] as const;
 
-export { ASSETS, PROGRAMS, TASKS };
+export { ASSETS, PROGRAMS };

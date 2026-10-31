@@ -93,11 +93,6 @@ function sources(output: string): Source[] {
       to: path.join(ROOT, file),
       fill: false,
     })),
-    {
-      from: path.join(output, "tasks.json"),
-      to: path.join(ROOT, "tasks.json"),
-      fill: false,
-    },
     ...ASSETS.map(({ file }) => {
       if (file.startsWith("agents/")) {
         return {
