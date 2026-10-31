@@ -9,7 +9,7 @@ import path from "node:path";
 import { OpsError } from "@ecosystem/task-runtime/ops-error";
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
-import { listComments, pipelineCommentAgent } from "./comments.ts";
+import { listComments } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { ghJson, isAllowedUser } from "./github.ts";
@@ -30,32 +30,6 @@ interface IssueContext {
   comments: IssueComment[];
 }
 
-// How issue.md shows a comment: under a heading naming its author, hidden
-// (the state comment, which is the pipeline's record), or withheld because
-// its author isn't trusted.
-type Shown =
-  | { kind: "shown"; heading: string }
-  | { kind: "hidden" }
-  | { kind: "withheld" };
-
-function shownAs(cfg: Config, item: IssueComment): Shown {
-  const login = item.user?.login;
-  const agent = pipelineCommentAgent(cfg, item);
-  const at = item.created_at;
-  if (agent === "state") {
-    return { kind: "hidden" };
-  }
-  if (agent !== null) {
-    const heading = `Comment by the pipeline's ${agent} agent at ${at}:`;
-    return { heading, kind: "shown" };
-  }
-  if (isAllowedUser(cfg, login)) {
-    const heading = `Comment by @${String(login)} (a person) at ${at}:`;
-    return { heading, kind: "shown" };
-  }
-  return { kind: "withheld" };
-}
-
 // The comments section of issue.md, and how many comments from users not on
 // the allow list were left out.
 function commentParts(
@@ -65,10 +39,11 @@ function commentParts(
   const parts: string[] = [];
   let dropped = 0;
   for (const item of comments) {
-    const shown = shownAs(cfg, item);
-    if (shown.kind === "shown") {
-      parts.push("---", shown.heading, "", item.body ?? "", "");
-    } else if (shown.kind === "withheld") {
+    const login = item.user?.login;
+    if (isAllowedUser(cfg, login)) {
+      const heading = `Comment by @${String(login)} (a person) at ${item.created_at}:`;
+      parts.push("---", heading, "", item.body ?? "", "");
+    } else {
       dropped += 1;
     }
   }
@@ -122,17 +97,6 @@ function writeIssueContext(cfg: Config, number: number): IssueContext {
   return { comments, file, issue };
 }
 
-// Whether `item` is a trusted person's input: a comment by an allowed user who
-// is still a collaborator, and not one the pipeline wrote (any comment with
-// the pipeline's marker). A comment an allowed user posts without the pipeline's marker,
-// such as an answer from their own operating session, stays theirs.
-function isTrustedInput(cfg: Config, item: IssueComment): boolean {
-  return (
-    pipelineCommentAgent(cfg, item) === null &&
-    isAllowedUser(cfg, item.user?.login)
-  );
-}
-
 // The trusted-inputs revision: sha256 over the issue's title and body and the
 // bodies of its trusted comments, in id order. Visitor and pipeline comments
 // never change it, so they can't send an issue back to the author.
@@ -146,17 +110,11 @@ function trustedInputsHash(
   hash.update(
     trustedInputBytes(
       issue,
-      comments.filter((item) => isTrustedInput(cfg, item)),
+      comments.filter((item) => isAllowedUser(cfg, item.user?.login)),
     ),
   );
   return hash.digest("hex");
 }
 
 export type { Issue, IssueContext };
-export {
-  authorizedIssue,
-  ISSUE,
-  isTrustedInput,
-  trustedInputsHash,
-  writeIssueContext,
-};
+export { authorizedIssue, ISSUE, trustedInputsHash, writeIssueContext };
