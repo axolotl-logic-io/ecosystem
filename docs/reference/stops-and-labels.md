@@ -12,10 +12,7 @@ A task starts only from its `start:TASK` label on the issue. GitHub permits acco
 
 The framework removes the start and confirms its own account's removal on the timeline before doing the work. A running label shows activity and never blocks another start. Runs may overlap. End comments let a run remove its running label only when no other claim remains open. A crashed run can leave a running label for a person to clear.
 
-`agents:stop` holds new claims while present. Task apps check it before claiming, between lifecycle steps and before writes; ending comments and unmarking remain allowed. Removing it permits a pending start to run. There is no durable stop latch. An in-flight model session may finish before the next check.
+`agents:stop` holds new claims while present. Task apps check it before claiming, between lifecycle steps and before writes; ending comments and unmarking remain allowed. Removing it permits a pending start to run. An in-flight model session may finish before the next check.
 
 A failed run names the failed step and asks a person to apply the start again. A review, assignment, result or removal of a running label starts no task.
 
-## Upgrade labels
-
-After draining and replacing every installed release that writes them, the operator may delete `agent:working`, `agent:merged`, `agent:needs-info` and old `agent:stopped-*` labels. Do not delete start, running or stop labels. Preserve historical issue comments and GitHub artifacts.

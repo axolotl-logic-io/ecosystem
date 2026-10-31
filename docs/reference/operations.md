@@ -47,7 +47,7 @@ root. Move data only after draining, preserve its permissions and update the
 dashboard's `runs` setting if its location changes. The host resolves paths before
 calling task or package code; neither discovers an implicit root.
 
-## Configuration and compatibility
+## Configuration
 
 Use [version 2 buddy files](runtime-runs.md#launcher-buddy-file). Each buddy has
 its own GitHub account, scope, tasks and private credential entry. Credentials
@@ -59,14 +59,6 @@ The installed task CLI `TASK.mjs --config BUDDY_FILE --issue OWNER/REPO#N`
 remains supported. Launcher-created children use validated `--invocation` input
 and a separate credential pipe. The launcher runs task `TASK` as `TASK.mjs` in
 the install root, and accepts only the tasks compiled into it.
-
-Persisted names stay unchanged: `.issue-pipeline.json`, its trusted commit pins,
-operator credential keys, task comment markers, agent names and
-`agents/issue-pipeline/`, and historical run formats. Renaming these is not part
-of the distribution cutover. The dashboard still reads historical buddy/action
-observations and current `task-run` records; its monitoring tables are unchanged.
-`ops.mjs`, `database.mjs` and `recover-implement.mjs` remain retired. Never invoke
-them; retire stale installed copies manually after draining.
 
 ## Drain an installed release
 
@@ -109,39 +101,6 @@ reinstall a complete verified release before activation.
 
 Existing `mise //apps/issue-pipeline:install` and `:install:dry-run` commands still
 forward to this installer. New automation should use the root npm scripts.
-
-## Retire tasks.json
-
-Releases before [#280](https://github.com/axolotl-logic-io/ecosystem/issues/280)
-installed a task manifest, `$ECOSYSTEM_INSTALL_ROOT/tasks.json`, and their fleet
-files and service commands named it. Current releases neither build nor read it.
-The installer never removes files, so an upgrade leaves `tasks.json` in place,
-outside the new ownership list. It is harmless but misleading. To retire it after
-installing, while the launchers are still drained:
-
-1. Confirm that the new `INSTALLED.json` ownership list doesn't name `tasks.json`:
-
-   ```sh
-   grep -q '/tasks.json"' "$ECOSYSTEM_INSTALL_ROOT/INSTALLED.json" && echo "owned: stop" || echo "orphan"
-   ```
-
-   Continue only if it prints `orphan`.
-
-2. Move `tasks.json` into the new installation's backup directory, at its absolute path, where a backup-based rollback finds it:
-
-   ```sh
-   backup="$(node -p 'require(process.argv[1]).backup' "$ECOSYSTEM_INSTALL_ROOT/INSTALLED.json")"
-   mkdir -p "$backup$ECOSYSTEM_INSTALL_ROOT"
-   mv "$ECOSYSTEM_INSTALL_ROOT/tasks.json" "$backup$ECOSYSTEM_INSTALL_ROOT/tasks.json"
-   ```
-
-3. Remove `--manifest MANIFEST_FILE` from every launcher or `buddy.mjs` service command. The launcher refuses it as an unknown option.
-4. Delete the `manifest` line from every fleet file. Fleet files stay version 1; the orchestrator refuses a file that still has `manifest`.
-
-`ECOSYSTEM_INSTALL_ROOT` must be the absolute install path, without a trailing
-slash. To roll back to a release before #280, run that revision's installer,
-which writes `tasks.json` again, and restore the `manifest` fleet field and
-`--manifest` arguments from your recorded configuration.
 
 ## Validate and restart
 
@@ -187,17 +146,5 @@ absent, report installation separately and hand activation to the operator.
 6. Validate the restored buddy or fleet configuration with the restored release's launcher and orchestrator, then restart the previous release.
 
 A source rollback does not undo GitHub comments, branches, reviews or merges.
-Tasks recover from those artifacts. No runtime-data or monitoring-table migration
-is required by this cutover. If rollback changes the data location, restore the
-previous dashboard configuration as well.
-
-## Implementation history
-
-The modular cutover landed through [framework #273](https://github.com/axolotl-logic-io/ecosystem/pull/273),
-[Gherkin #274](https://github.com/axolotl-logic-io/ecosystem/pull/274),
-[shared runtime #275](https://github.com/axolotl-logic-io/ecosystem/pull/275),
-[task workspaces #276](https://github.com/axolotl-logic-io/ecosystem/pull/276),
-[launcher #277](https://github.com/axolotl-logic-io/ecosystem/pull/277),
-[orchestrator #278](https://github.com/axolotl-logic-io/ecosystem/pull/278) and
-[distribution #279](https://github.com/axolotl-logic-io/ecosystem/pull/279).
-Each source merge is separate from installation and activation.
+Tasks recover from those artifacts. If rollback changes the data location,
+restore the previous dashboard configuration as well.

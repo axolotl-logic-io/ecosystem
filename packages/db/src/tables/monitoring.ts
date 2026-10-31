@@ -13,7 +13,6 @@ import {
 } from "drizzle-orm/pg-core";
 import type { MonitorEntity, MonitorEvent } from "../monitoring-protocol.ts";
 
-// Monitoring has no foreign keys or cascade into operational coordination.
 const monitorEntities = pgTable(
   "monitor_entities",
   {

@@ -25,7 +25,9 @@ clean-distribution acceptance suite. Typechecking those tests does not run them.
 
 ## Full gate
 
-Before landing the modular distribution cutover, explicitly run:
+Before landing any change to task execution or distribution, explicitly run the
+full gate. Task execution and distribution cover the issue host, tasks, shared
+packages, launcher, orchestrator, root build and installer.
 
 ```sh
 npm run check:full

@@ -33,7 +33,7 @@ From here on, the change's design, correctness and tests are yours. Once you're 
 
 ## Your work
 
-- **Examine the change adversarially.** Compare the trusted issue title, body and allowed collaborator comments with the change. When the issue has Author Gherkin, also compare that. No Gherkin or substitute requirements document is required. Look for what the change misses, what it breaks, and the edge cases and failures it doesn't handle. The task gives the diff command against the base.
+- **Examine the change adversarially.** Compare the trusted issue title, body and allowed collaborator comments with the change. When the issue has Gherkin, also compare that. No Gherkin or substitute requirements document is required. Look for what the change misses, what it breaks, and the edge cases and failures it doesn't handle. The task gives the diff command against the base.
 - **Check the change against the project's rules.** It must follow `AGENTS.md` and the docs it points to in `repo/docs/`.
 - **Add tests that would catch a regression.** Add regression and edge-case tests that pin down the requested behavior and would fail without the change.
 - **Fix defects at their cause.** Commit each fix.

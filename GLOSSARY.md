@@ -1,8 +1,6 @@
 # Shared domain glossary
 
-This draft records the domain language Autumn accepted for ecosystem, the Pi dash extension, the status-report skill and the test-suite assessment app. Use one canonical term for each shared concept. Different names remain only when they describe different concepts.
-
-These definitions describe the intended domain. They do not claim that existing code, saved records or installed tools already conform. The [domain alignment inventory](docs/domain-alignment.md) identifies known differences and migration decisions. Historical names there are migration references, not permanent synonyms.
+This glossary records the domain language for ecosystem and its workflow dashboard. Use one canonical term for each shared concept. Different names remain only when they describe different concepts.
 
 ## People and buddies
 
@@ -80,19 +78,19 @@ Session identity and run identity are not interchangeable.
 
 Work and its dependency rules toward an outcome, not a fixed serial sequence. A workflow can branch, execute independent work concurrently, join results, repeat checks and recover from interruption.
 
-Dependencies and authorization conditions determine what may proceed. A task list alone does not impose a total execution order. Use Workflow rather than Pipeline for this shared concept; retain old technical names only at explicit compatibility or historical boundaries.
+Dependencies and authorization conditions determine what may proceed. A task list alone does not impose a total execution order. Use Workflow rather than Pipeline for this shared concept.
 
 ### Prerequisite
 
 A specific current result, condition or permission that a task requires before it may proceed. Dependencies identify these prerequisites, not blanket completion of all work of the same kind. A task reads its prerequisites from GitHub when it runs. A missing prerequisite ends the run with a comment that names it; it does not keep the task from starting.
 
-For example, landing revision R of change A requires an approving review that stands on R. A review of change B does not count for A. If A gets a new revision, the earlier review does not satisfy the prerequisite for it; it stays on GitHub as historical evidence. A passing check is evidence, not permission.
+For example, landing revision R of change A requires an approving review that stands on R. A review of change B does not count for A. If A gets a new revision, the earlier review does not satisfy the prerequisite for it; it stays on GitHub as evidence about the old revision. A passing check is evidence, not permission.
 
 ### Workflow run
 
 One execution of a workflow. It may contain buddy runs and deterministic tool executions. It is not necessarily the entire lifetime of a work item: retries or later work can require additional workflow runs.
 
-Each run retains its own identity. Establish parent–child links from explicit records, not from coincident names, times or a shared issue. Dash's workflow-run and buddy-run views currently read different sources and do not establish those links.
+Each run retains its own identity. Establish parent–child links from explicit records, not from coincident names, times or a shared issue.
 
 ### Task
 
@@ -157,7 +155,7 @@ A result differs from an outcome: an outcome belongs to a run, while a result be
 
 What a result applies to. A result's artifact names its own binding: Verify's binding to a head is the commit its review was submitted on, and Land's is the head its merge matched.
 
-A result is current while its binding still matches the revision in question. Otherwise it is stale and remains historical evidence only. A Gherkin comment applies to the issue it answers, not to a revision.
+A result is current while its binding still matches the revision in question. Otherwise it is stale and remains evidence about an earlier revision only. A Gherkin comment applies to the issue it answers, not to a revision.
 
 ### Merge
 
@@ -227,7 +225,7 @@ The workflow that develops and delivers an issue's intended change. Its tasks ar
 
 A task whose prerequisites are missing when it runs ends with a comment that names them. When Fix produces a new head, every earlier review stays bound to the old one, and a new `start:verify` checks the new head; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
 
-A buddy lists its tasks explicitly. Safe Refactor adds no automatic dispatch or fixed workflow position. Verify must use an account different from the PR author. Historical and installed versions can differ.
+A buddy lists its tasks explicitly. Safe Refactor adds no automatic dispatch or fixed workflow position. Verify must use an account different from the PR author.
 
 ### Run state
 
@@ -301,11 +299,11 @@ A task name, an observation or possession of a capability does not by itself est
 
 The technical means to perform an action, such as an available tool, credential or identity. Capability does not establish authorization.
 
-Dash composes requests for the session it runs in; it does not directly control workflow execution. Status-report observes work; it does not manage it.
+The workflow dashboard composes requests for the session it runs in; it does not directly control workflow execution.
 
 ### Artifact
 
-A durable output, such as a report, patch, test log, comment, review or pushed commit. A task's results are GitHub artifacts, and a run keeps no saved state, checkpoints or journals between runs.
+A durable output, such as a report, patch, test log, comment, review or pushed commit. A task's results are GitHub artifacts, and a run keeps no state between runs.
 
 Record is plain English, not a domain term. Name the actual kind: comment, review, run record or observation.
 
@@ -319,47 +317,11 @@ A stable coordination identity carried across related runs. A lane is not a unit
 
 Use run count or capacity when those are the actual meaning; do not call them lanes.
 
-### Slot
-
-One reusable allocation from a bounded pool, such as an isolated test environment.
-
-A slot is released only when every registered consumer reports it's done. It can remain occupied after a run ends. Idle observations, an unknown consumer state or work-item completion do not establish release.
-
-### Reservation
-
-A recorded claim to use a resource under defined conditions, such as exclusive use of heavy-test capacity.
-
-A reservation is not a lane or a slot. Preserve the applicable release conditions and registered consumers.
-
-## Assessment handoff
-
-The assessment app uses these accepted product terms. It is an adversarial assessment instrument, not a review layer or a remediation agent.
-
-### Behavioral gap
-
-A testing opportunity concerning observable behavior. Source-aware analysis or mutation testing may identify it; a corresponding mutation is not required.
-
-Describe suspected failures as testing gaps, not confirmed bugs. When expected behavior is ambiguous, state an open behavioral question rather than inventing an expected answer.
-
-### Public entry point
-
-The externally usable interface through which the relevant behavior can be exercised. Identify it without prescribing tests of private implementation details.
-
-### Open behavioral question
-
-A testing gap expressed without an established expected answer because behavior is undocumented or ambiguous.
-
-### Handoff report
-
-The assessment artifact containing behavioral gaps and relevant public entry points for independent investigation.
-
-Generate matching Markdown and JSON reports from the same assessment data, with identical randomized gap order. Do not include exact mutation details or isolate suspected failures in a separate bug section. The assessment build ends at these artifacts; implementation or launch of the receiving agent is outside its scope.
-
 ## Definitions still required
 
 These contracts remain open:
 
-- The hidden markers that task apps use to find their own comments.
-- Observation schemas.
+- The hidden markers that task apps use to find their own comments ([#290](https://github.com/axolotl-logic-io/ecosystem/issues/290)).
+- Observation schemas ([#291](https://github.com/axolotl-logic-io/ecosystem/issues/291)).
 
 Resolve these contracts before implementing dependent changes. Do not fill missing facts or permissions with inferred defaults.

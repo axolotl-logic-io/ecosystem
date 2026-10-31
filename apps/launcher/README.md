@@ -40,12 +40,6 @@ every configured task to have its installed program. Each program must be a
 regular file owned by the operator and writable by nobody else. Symbolic links
 are refused. `--check` performs these checks without contacting GitHub.
 
-Releases before [#280](https://github.com/axolotl-logic-io/ecosystem/issues/280)
-read task registrations from `tasks.json` and accepted `--manifest MANIFEST_FILE`.
-The launcher no longer reads `tasks.json`, and it refuses `--manifest` as an
-unknown option. To retire an installed `tasks.json`, see
-[retire `tasks.json`](../../docs/reference/operations.md#retire-tasksjson).
-
 ## Task subprocess boundary
 
 For each discovered start, the launcher runs the task's installed program with
@@ -78,18 +72,10 @@ kill them. Apply `agents:stop` to cancel their work at guarded boundaries while
 preserving cleanup and final reports. The launcher exits after its children and
 prints its final JSON line. It writes child exits and discovery warnings to stderr.
 
-## Migrate an installation
+## Install
 
-1. Drain the running buddies and preserve retained checkouts and run folders.
-2. Install the merged release using the [installation procedure](../../docs/reference/operations.md#install-a-release).
-3. Confirm `launcher.mjs`, `buddy.mjs` and every task program are installed together.
-4. Retire an orphaned `tasks.json` and remove `--manifest` from service commands. See [retire `tasks.json`](../../docs/reference/operations.md#retire-tasksjson).
-5. Validate each existing buddy file with `launcher.mjs --config BUDDY_FILE --check`.
-6. Restart one launcher per buddy with the existing private configuration.
-
-The installer backs up replaced files and records `INSTALLED.json`. It does not
-rewrite private configuration or retained work. Do not mix old launchers with
-new task bootstraps during cutover. A source merge alone activates nothing.
+A source merge activates nothing. To install and restart launchers, follow the
+[installation procedure](../../docs/reference/operations.md#install-a-release).
 
 ## Validate source
 

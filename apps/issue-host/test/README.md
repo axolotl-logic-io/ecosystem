@@ -26,7 +26,7 @@ Safe Refactor fixtures live in `support/safe-refactor-test-kit.ts`. Project-poli
 
 ## Fake services
 
-Fake GitHub lives under `support/signals/`; that historical folder name remains for the shared fake, not a production signal subsystem. One long-lived server owns each disposable world. The `gh` on PATH forwards requests through `curl --unix-socket`, rather than starting a server per call. Fake pi lives beside the built task-app kit. Keep real credentials and models out of default tests.
+Fake GitHub lives under `support/signals/`. One long-lived server owns each disposable world. The `gh` on PATH forwards requests through `curl --unix-socket`, rather than starting a server per call. Fake pi lives beside the built task-app kit. Keep real credentials and models out of default tests.
 
 ## Acceptance
 
