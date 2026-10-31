@@ -283,14 +283,6 @@ function compare(base: string, head: string): boolean {
 function gitGet(endpoint: string): boolean {
   const { ref } = REF.exec(endpoint)?.groups ?? {};
   if (ref !== undefined) {
-    // Signal-only fixtures have no coordination refs. Flow fixtures read
-    // their actual Git database; no successful owner is fabricated here.
-    if (
-      origin() === undefined &&
-      ref.startsWith("heads/pipeline-coordination/")
-    ) {
-      return fail("gh: Not Found (HTTP 404)");
-    }
     const read = git(["rev-parse", "--verify", "--quiet", `refs/${ref}`]);
     if (!read.ok) {
       return fail("gh: Not Found (HTTP 404)");

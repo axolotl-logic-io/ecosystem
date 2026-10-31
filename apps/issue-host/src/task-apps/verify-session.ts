@@ -58,10 +58,8 @@ function hooksOf(review: Review): LaunchHooks {
     started: (): void => undefined,
     record: (): void => undefined,
     ended: (): void => undefined,
-    sessionEnded: (): void => undefined,
     env: (): Readonly<Record<string, string>> => env,
     cwd: checkout.root,
-    repo: checkout.repo,
   };
   if (cfg.runtime !== undefined) {
     hooks.runtime = cfg.runtime;

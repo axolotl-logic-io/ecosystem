@@ -226,7 +226,7 @@ The operator applies `start:implement` to start Implement. Each later task also 
 - its author isn't an allow-listed collaborator, or is a pipeline machine account;
 - collaborator evidence is unreadable;
 - it doesn't carry exactly one plan marker, or the marker doesn't parse;
-- the marker names another repository, or a policy other than `standards-v2`, so a `standards-v1` plan needs a new assessment;
+- the marker names another repository, or a policy other than `standards-v2`;
 - the config's base branch has moved past the plan's source commit;
 - another open issue already carries a plan;
 - the open issues can't be listed completely.

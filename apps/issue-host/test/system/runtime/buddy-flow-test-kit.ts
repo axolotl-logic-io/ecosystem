@@ -40,15 +40,8 @@ const OVERSTAY_MS = 140_000;
 // failing the test.
 const WHEN_MS = 30_000;
 const LOGGED = z.strictObject({ login: z.string(), args: z.array(z.string()) });
-// The fields of task-result and coordination records the tests read.
-const RECORD = z.looseObject({
-  kind: z.string(),
-  scope: z.string().optional(),
-  run: z.unknown().optional(),
-  verdict: z.unknown().optional(),
-  receipt: z.unknown().optional(),
-  consumer: z.unknown().optional(),
-});
+// The fields of task-result records the tests read.
+const RECORD = z.looseObject({ kind: z.string() });
 const COMMIT_RESULT = z.looseObject({
   isError: z.boolean(),
   content: z.array(z.looseObject({ text: z.string() })),
