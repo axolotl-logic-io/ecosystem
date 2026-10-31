@@ -1,6 +1,6 @@
 # Shared database
 
-The workflow dashboard and Project Buddy use the shared `@ecosystem/db` PostgreSQL client and independent monitoring tables. The issue pipeline no longer uses a database for coordination and does not ship `database.mjs`. No table drop or migration is needed for that removal. Historical coordination tables and their migration history remain in the shared package; they are not used by task apps.
+The workflow dashboard and Project Buddy use the shared `@ecosystem/db` PostgreSQL client and independent monitoring tables. Task execution uses no database.
 
 ## Start the service
 
