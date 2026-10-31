@@ -2,7 +2,6 @@ import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey } from "@earendil-works/pi-tui";
 import type { MonitorEntity } from "@ecosystem/db/monitoring-protocol";
 import { errorMessage } from "../errors.ts";
-import type { ViewHost } from "../selection.ts";
 import { type Badge, chip, pill } from "../ui-format.ts";
 import {
   actionUsage,
@@ -128,6 +127,10 @@ function stepLabel(row: WorkRow): string {
     return row.state;
   }
   return `${task} ${row.state}`;
+}
+interface ViewHost {
+  terminal: { rows: number };
+  requestRender: () => void;
 }
 class MonitorView implements Component {
   private readonly options: MonitorViewOptions;
